@@ -1,0 +1,37 @@
+{
+    // General
+    "outline.showVariables": false,
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*egg-info": true,
+        ".mypy_cache": true,
+        ".ruff_cache": true,
+        ".pytest_cache": true,
+        ".coverage": true,
+        "htmlcov": true,
+        "lcov.info": true
+    },
+    // Python
+    "python.defaultInterpreterPath": ".tox/dev/bin/python",
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "src"
+    },
+    // Formatting
+    "editor.rulers": [
+        100
+    ],
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.codeActionsOnSave": {
+            // "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+        },
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    // Type Checking
+    "mypy.enabled": false,
+    "pyright.disableOrganizeImports": true, // managed by ruff
+    // Testing
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+}
