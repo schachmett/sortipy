@@ -1,5 +1,6 @@
 # Secrets
 .env
+.session_key*
 
 # Infrastructure
 .tox
