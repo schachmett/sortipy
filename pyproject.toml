@@ -8,19 +8,20 @@ description = "Spotify stuff"
 license = { file = "LICENSE" }
 requires-python = ">= 3.12"
 readme = "README.md"
-dependencies = ["spotipy", "python-dotenv"]
+dependencies = ["spotipy", "python-dotenv", "pylast"]
 
 [build-system]
-requires = ["setuptools>=71", "wheel"]
+requires = ["setuptools>=71", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages.find = { where = ["src"] }
-dynamic.version = { attr = "sortipy.__version__" }
-# dynamic.dependencies = { file = ["requirements.txt"] }
+# dynamic.version = { attr = "sortipy.__version__" }
 zip-safe = false
 include-package-data = true
 # the sdist still contains .tox and similar stuff - could be solved with a MANIFEST.in
+
+[tool.setuptools_scm]
 
 [tool.pytest]
 ini_options.asyncio_mode = "strict"

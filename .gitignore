@@ -1,5 +1,26 @@
+# Secrets
 .env
+
+# Infrastructure
+.tox
 .venv
-**/.cache
-**/__pycache__
+dependencies/
 typings
+
+# Reporting
+htmlcov
+.coverage
+.coverage.*
+lcov.info
+
+# Cache
+**/__pycache__
+**/.cache
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Generated on packaging
+# requirements.txt
+*.egg-info
+dist
