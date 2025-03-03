@@ -12,7 +12,7 @@
         "lcov.info": true
     },
     // Python
-    "python.defaultInterpreterPath": ".tox/dev/bin/python",
+    "python.defaultInterpreterPath": ".venv/bin/python",
     "terminal.integrated.env.linux": {
         "PYTHONPATH": "src"
     },

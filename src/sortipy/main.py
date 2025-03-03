@@ -29,8 +29,9 @@ def display_albums(albums: list[Album]) -> None:
 def main() -> None:
     """Main application entry point."""
     try:
-        tracks = get_recent_tracks()
-        print(tracks)
+        tracks = get_recent_tracks(1700)
+        # tracks = get_recent_tracks()
+        print(tracks[-1])
         # fetcher = SpotifyAlbumFetcher()
         # albums = fetcher.fetch_albums()
         # display_albums(list(albums))

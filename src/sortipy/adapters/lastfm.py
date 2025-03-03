@@ -3,46 +3,100 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from logging import getLogger
-from pathlib import Path
+from typing import Literal, TypedDict, cast
 
-import pylast
+import httpx
 
 log = getLogger(__name__)
 
-SESSION_KEY_FNAME = Path(__file__).parents[3] / ".session_key_lastfm"
+
 API_KEY = os.getenv("LASTFM_API_KEY")
-API_SECRET = os.getenv("LASTFM_API_SECRET")
+USER_NAME = os.getenv("LASTFM_USER_NAME")
+LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
 
-def get_session_key(network: pylast.LastFMNetwork) -> str:
-    """Get the session key for the Last.fm network."""
-    if not SESSION_KEY_FNAME.exists():
-        skg = pylast.SessionKeyGenerator(network)
-        url = skg.get_web_auth_url()
-        import time
-        import webbrowser
+###############
+# Last.fm API #
+###############
 
-        log.info(f"Please authorize this script to access your account: {url}\n")
-
-        webbrowser.open(url)
-
-        while True:
-            try:
-                session_key = skg.get_web_auth_session_key(url)
-                with SESSION_KEY_FNAME.open("w") as f:
-                    f.write(session_key)
-                break
-            except pylast.WSError:
-                time.sleep(1)
-    else:
-        session_key = SESSION_KEY_FNAME.open("r", encoding="utf-8").read()
+type ImageSize = Literal["small", "medium", "large", "extralarge"]
+Artist = TypedDict("Artist", {"mbid": str, "#text": str})
+Image = TypedDict("Image", {"size": ImageSize, "#text": str})
+Album = TypedDict("Album", {"mbid": str, "#text": str})
+Date = TypedDict("Date", {"uts": str, "#text": str})
+# date: DD MMM YYYY, HH:MM
 
 
-def get_recent_tracks() -> list[pylast.Track]:
+class Track(TypedDict):
+    artist: Artist
+    streamable: Literal["0", "1"]
+    image: list[Image]
+    mbid: str
+    album: Album
+    name: str
+    url: str
+    date: Date
+
+
+class ResponseAttr(TypedDict):
+    user: str
+    totalPages: str
+    page: str
+    perPage: str
+    total: str
+
+
+RecentTracks = TypedDict("RecentTracks", {"track": list[Track], "@attr": ResponseAttr})
+
+
+class RecentTracksResponse(TypedDict):
+    recenttracks: RecentTracks
+
+
+def get_recent_tracks(page: int, limit: int = 100) -> list[Track]:
     """Get the recent tracks for a user."""
-    network = pylast.LastFMNetwork(API_KEY, API_SECRET)
-    network.session_key = get_session_key(network)
+    params = {
+        "method": "user.getrecenttracks",
+        "user": USER_NAME,
+        "limit": limit,
+        "page": page,
+        "api_key": API_KEY,
+        "format": "json",
+    }
+    response = httpx.get(LASTFM_BASE_URL, params=params)
+    response.raise_for_status()
+    response_json = cast(RecentTracksResponse, response.json())
+    return response_json["recenttracks"]["track"]
 
-    tracks = network.get_user(os.getenv("LASTFM_USER_NAME")).get_recent_tracks(limit=100)
-    return tracks
+
+##################
+# Our own format #
+##################
+
+
+@dataclass
+class LastFMTrack:
+    track_name: str
+    track_mbid: str
+    artist_name: str
+    artist_mbid: str
+    album_name: str
+    album_mbid: str
+    url: str
+    date: datetime
+
+
+def parse_track(track: Track) -> LastFMTrack:
+    return LastFMTrack(
+        track_name=track["name"],
+        track_mbid=track["mbid"],
+        artist_name=track["artist"]["#text"],
+        artist_mbid=track["artist"]["mbid"],
+        album_name=track["album"]["#text"],
+        album_mbid=track["album"]["mbid"],
+        url=track["url"],
+        date=datetime.fromtimestamp(int(track["date"]["uts"]), tz=UTC),
+    )

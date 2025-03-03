@@ -20,6 +20,13 @@ No real code so far, only one call to API ("proof of concept").
   SPOTIPY_REDIRECT_URI=http://127.0.0.1:9090
   ```
 - (opt.) Create virtual environment and activate it: `python3 -m venv .venv` and `source .venv/bin/activate`
-- ~~Install package (`-e` for editable install) `python3 -m pip install [-e] .`~~ (some issues with python3.12 pip dependency management...)
-- Install dependencies using `python3 -m pip install spotipy python-dotenv`
+- Install package (`-e` for editable install) `python3 -m pip install [-e] .`
 - Run `python3 src/sortipy/main.py`
+
+# Dependencies
+
+Requires python 3.12 or higher.
+- `spotipy` for interacting with Spotify API
+- `python-dotenv` for loading environment variables from `.env` file
+- `httpx` for making HTTP requests
+- ~~`pylast`~~ for interacting with Last.fm API is not used because it is bad and does not support pagination
