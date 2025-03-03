@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
 from sortipy.adapters.lastfm import get_recent_tracks
+from sortipy.adapters.musicbrainz import get_album_info
 from sortipy.adapters.spotipy import SpotifyAlbumFetcher
 
 if TYPE_CHECKING:
@@ -29,9 +30,13 @@ def display_albums(albums: list[Album]) -> None:
 def main() -> None:
     """Main application entry point."""
     try:
-        tracks = get_recent_tracks(1700)
+        # tracks = get_recent_tracks(1)
         # tracks = get_recent_tracks()
-        print(tracks[-1])
+        # print(tracks[-1])
+        # mbid = tracks[-1]["album"]["mbid"]
+        mbid = "e2e62af4-2ae1-46e0-bb93-01e0dce667c5"
+        album_info = get_album_info(mbid)
+        print(album_info)
         # fetcher = SpotifyAlbumFetcher()
         # albums = fetcher.fetch_albums()
         # display_albums(list(albums))
