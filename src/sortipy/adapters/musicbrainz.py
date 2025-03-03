@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-from importlib.metadata import (
-    PackageNotFoundError,  # type: ignore[reportUnknownVariableType]
-    version,  # type: ignore[reportUnknownVariableType]
-)
 from logging import getLogger
 
 import httpx
 
-log = getLogger(__name__)
+from sortipy import __version__
 
-try:
-    __version__ = version("sortipy")
-except PackageNotFoundError:
-    __version__ = "unknown"
+log = getLogger(__name__)
 
 
 def get_album_info(album_mbid: str) -> dict[str, str]:
