@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging import getLogger
-from typing import Literal, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict, cast
 
 import httpx
+
+from sortipy.domain.types import LastFMAlbum, LastFMArtist, LastFMScrobble, LastFMTrack, ObjectType
 
 log = getLogger(__name__)
 
@@ -30,15 +31,24 @@ Date = TypedDict("Date", {"uts": str, "#text": str})
 # date: DD MMM YYYY, HH:MM
 
 
-class Track(TypedDict):
-    artist: Artist
-    streamable: Literal["0", "1"]
-    image: list[Image]
-    mbid: str
-    album: Album
-    name: str
-    url: str
-    date: Date
+class TrackAttr(TypedDict):
+    nowplaying: Literal["true"]
+
+
+Track = TypedDict(
+    "Track",
+    {
+        "artist": Artist,
+        "streamable": Literal["0", "1"],
+        "image": list[Image],
+        "mbid": str,
+        "album": Album,
+        "name": str,
+        "url": str,
+        "date": NotRequired[Date],
+        "@attr": NotRequired[TrackAttr],
+    },
+)
 
 
 class ResponseAttr(TypedDict):
@@ -56,7 +66,7 @@ class RecentTracksResponse(TypedDict):
     recenttracks: RecentTracks
 
 
-def get_recent_tracks(page: int, limit: int = 100) -> list[Track]:
+def get_recent_scrobbles(page: int, limit: int = 100) -> list[Track]:
     """Get the recent tracks for a user."""
     params = {
         "method": "user.getrecenttracks",
@@ -75,28 +85,45 @@ def get_recent_tracks(page: int, limit: int = 100) -> list[Track]:
 ##################
 # Our own format #
 ##################
+def parse_scrobble(scrobble: Track) -> LastFMScrobble:
+    if "@attr" in scrobble and scrobble["@attr"]["nowplaying"] == "true":
+        timestamp = datetime.now(UTC)
+    elif "date" in scrobble:
+        timestamp = datetime.fromtimestamp(int(scrobble["date"]["uts"]), tz=UTC)
+    else:
+        raise ValueError("Invalid scrobble")
 
-
-@dataclass
-class LastFMTrack:
-    track_name: str
-    track_mbid: str
-    artist_name: str
-    artist_mbid: str
-    album_name: str
-    album_mbid: str
-    url: str
-    date: datetime
+    try:
+        return LastFMScrobble(
+            timestamp=timestamp,
+            track=parse_track(scrobble),
+        )
+    except Exception:
+        log.exception("Error parsing scrobble")
+        raise
 
 
 def parse_track(track: Track) -> LastFMTrack:
+    artist = LastFMArtist(
+        id=None,
+        mbid=track["artist"]["mbid"] or None,
+        type=ObjectType.ARTIST,
+        playcount=None,
+        name=track["artist"]["#text"],
+    )
     return LastFMTrack(
-        track_name=track["name"],
-        track_mbid=track["mbid"],
-        artist_name=track["artist"]["#text"],
-        artist_mbid=track["artist"]["mbid"],
-        album_name=track["album"]["#text"],
-        album_mbid=track["album"]["mbid"],
-        url=track["url"],
-        date=datetime.fromtimestamp(int(track["date"]["uts"]), tz=UTC),
+        id=None,
+        mbid=track["mbid"] or None,
+        type=ObjectType.TRACK,
+        playcount=None,
+        name=track["name"],
+        artist=artist,
+        album=LastFMAlbum(
+            id=None,
+            mbid=track["album"]["mbid"] or None,
+            type=ObjectType.ALBUM,
+            playcount=None,
+            name=track["album"]["#text"],
+            artist=artist,
+        ),
     )
