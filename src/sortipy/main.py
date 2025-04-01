@@ -10,36 +10,31 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from sortipy.adapters.lastfm import get_recent_tracks
-from sortipy.adapters.musicbrainz import get_album_info
-from sortipy.adapters.spotipy import SpotifyAlbumFetcher
+from sortipy.adapters.lastfm import get_recent_scrobbles, parse_scrobble
+from sortipy.common.unit_of_work import get_unit_of_work, startup
 
 if TYPE_CHECKING:
     from types import FrameType
 
-    from sortipy.domain._types import Album
 
-
-def display_albums(albums: list[Album]) -> None:
-    """Display the albums in a formatted manner."""
-    sorted_albums = sorted(albums, key=lambda x: x.release_date, reverse=True)
-    for album in sorted_albums:
-        print(str(album))
+# def display_albums(albums: list[LastFMAlbum]) -> None:
+#     """Display the albums in a formatted manner."""
+#     sorted_albums = sorted(albums, key=lambda x: x.release_date, reverse=True)
+#     for album in sorted_albums:
+#         print(str(album))
 
 
 def main() -> None:
     """Main application entry point."""
+    startup()
     try:
-        # tracks = get_recent_tracks(1)
-        # tracks = get_recent_tracks()
-        # print(tracks[-1])
-        # mbid = tracks[-1]["album"]["mbid"]
-        mbid = "e2e62af4-2ae1-46e0-bb93-01e0dce667c5"
-        album_info = get_album_info(mbid)
-        print(album_info)
-        # fetcher = SpotifyAlbumFetcher()
-        # albums = fetcher.fetch_albums()
-        # display_albums(list(albums))
+        scrobbles_raw = get_recent_scrobbles(1)
+        with get_unit_of_work() as uow:
+            for scrobble_raw in scrobbles_raw:
+                scrobble = parse_scrobble(scrobble_raw)
+                uow.scrobbles.add(scrobble)
+            uow.commit()
+
     except Exception as e:  # noqa: BLE001
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
