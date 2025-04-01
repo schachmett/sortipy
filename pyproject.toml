@@ -8,7 +8,8 @@ description = "Spotify stuff"
 license = { file = "LICENSE" }
 requires-python = ">= 3.12"
 readme = "README.md"
-dependencies = ["spotipy", "python-dotenv", "httpx"]
+dependencies = ["spotipy", "python-dotenv", "httpx", "sqlalchemy"]
+optional-dependencies = { dev = ["pytest", "pytest-cov", "ruff"] }
 
 [build-system]
 requires = ["setuptools>=71", "setuptools-scm>=8", "wheel"]
@@ -16,7 +17,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages.find = { where = ["src"] }
-# dynamic.version = { attr = "sortipy.__version__" }
 zip-safe = false
 include-package-data = true
 # the sdist still contains .tox and similar stuff - could be solved with a MANIFEST.in
@@ -95,6 +95,7 @@ lint.select = [
     # "DOC", # no docstring linting
     "RUF",
 ]
+lint.fixable = ["TC003"]
 lint.ignore = [
     "G004",   # log with f-strings
     "TRY003", # use f-strings in exception constructors
@@ -113,6 +114,7 @@ lint.ignore = [
     "COM819",
     "ISC001",
     "ISC002",
+    "TC006"
 ]
 lint.per-file-ignores = { "tests/**/*.py" = [
     "S101",    # allow assert

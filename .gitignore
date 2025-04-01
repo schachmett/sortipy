@@ -1,3 +1,6 @@
+# Test files
+*.db
+
 # Secrets
 .env
 .session_key*

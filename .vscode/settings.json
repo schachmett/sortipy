@@ -20,14 +20,15 @@
     "editor.rulers": [
         100
     ],
-    "editor.formatOnSave": true,
     "[python]": {
         "editor.codeActionsOnSave": {
-            // "source.fixAll": "explicit",
-            "source.organizeImports": "explicit"
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
         },
-        "editor.defaultFormatter": "charliermarsh.ruff"
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true
     },
+    // "editor.formatOnSave": true,
     // Type Checking
     "mypy.enabled": false,
     "pyright.disableOrganizeImports": true, // managed by ruff
