@@ -127,7 +127,21 @@ def create_all_tables(engine: sa_engine.Engine) -> None:
     mapper_registry.metadata.create_all(engine)
 
 
-class LastFMScrobbleRepository(Repository[LastFMScrobble]):
+class SQLAlchemyRepository[T](Repository[T]):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, item: T) -> None:
+        self.session.add(item)
+
+    def remove(self, item: T) -> None:
+        self.session.delete(item)
+
+    def update(self, item: T) -> None:
+        self.session.merge(item)
+
+
+class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -228,7 +242,7 @@ class LastFMScrobbleRepository(Repository[LastFMScrobble]):
         item.track = track
 
         self.session.add(item)
-        self.session.flush()
+        # self.session.flush()
 
     def get(self, key: str) -> LastFMScrobble:
         stmt = select(LastFMScrobble).where(LastFMScrobble.timestamp == key)  # type: ignore[arg-type]
@@ -240,9 +254,3 @@ class LastFMScrobbleRepository(Repository[LastFMScrobble]):
     def query(self, **kwargs: object) -> Sequence[LastFMScrobble]:
         stmt = select(LastFMScrobble).filter_by(**kwargs)
         return self.session.execute(stmt).scalars().all()
-
-    def remove(self, item: LastFMScrobble) -> None:
-        self.session.delete(item)
-
-    def update(self, item: LastFMScrobble) -> None:
-        self.session.merge(item)
