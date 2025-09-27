@@ -26,12 +26,7 @@ from sqlalchemy import engine as sa_engine
 from sqlalchemy.orm import Session, configure_mappers, relationship
 
 from sortipy.common.repository import Repository
-from sortipy.domain.types import (
-    LastFMAlbum,
-    LastFMArtist,
-    LastFMScrobble,
-    LastFMTrack,
-)
+from sortipy.domain.types import Album, Artist, Scrobble, Track
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -92,30 +87,34 @@ def start_mappers() -> orm.registry:
     """Start the mappers."""
     log.info("Starting mappers")
     mapper_registry.map_imperatively(
-        LastFMArtist,
+        Artist,
         lastfm_artist_table,
+        exclude_properties={"sources"},
     )
     mapper_registry.map_imperatively(
-        LastFMAlbum,
+        Album,
         lastfm_album_table,
         properties={
-            "artist": relationship(LastFMArtist, backref="albums"),
+            "artist": relationship(Artist, backref="albums"),
         },
+        exclude_properties={"sources"},
     )
     mapper_registry.map_imperatively(
-        LastFMTrack,
+        Track,
         lastfm_track_table,
         properties={
-            "artist": relationship(LastFMArtist, backref="tracks"),
-            "album": relationship(LastFMAlbum, backref="tracks"),
+            "artist": relationship(Artist, backref="tracks"),
+            "album": relationship(Album, backref="tracks"),
         },
+        exclude_properties={"sources"},
     )
     mapper_registry.map_imperatively(
-        LastFMScrobble,
+        Scrobble,
         lastfm_scrobble_table,
         properties={
-            "track": relationship(LastFMTrack, backref="scrobbles"),
+            "track": relationship(Track, backref="scrobbles"),
         },
+        exclude_properties={"provider"},
     )
     configure_mappers()
     return mapper_registry
@@ -141,18 +140,18 @@ class SQLAlchemyRepository[T](Repository[T]):
         self.session.merge(item)
 
 
-class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
+class LastFMScrobbleRepository(SQLAlchemyRepository[Scrobble]):
     def __init__(self, session: Session) -> None:
         self.session = session
 
     def _complete_artist(
-        self, artist: LastFMArtist, candidate: LastFMArtist | None = None
-    ) -> LastFMArtist:
+        self, artist: Artist, candidate: Artist | None = None
+    ) -> Artist:
         # if we have an id, we can use it to complete the artist
         if artist.id is not None:
             if candidate is not None and candidate.id == artist.id:
                 return candidate
-            artist_db = self.session.get_one(LastFMArtist, artist.id)
+            artist_db = self.session.get_one(Artist, artist.id)
             if artist_db.mbid != artist.mbid or artist_db.name != artist.name:
                 raise ValueError(f"Artist {artist.id} has changed")
             return artist_db
@@ -168,9 +167,9 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
         # if we don't have a candidate, we need to find the artist in the database
         else:
             if artist.mbid is not None:
-                stmt = select(LastFMArtist).where(LastFMArtist.mbid == artist.mbid)  # type: ignore[arg-type]
+                stmt = select(Artist).where(Artist.mbid == artist.mbid)  # type: ignore[arg-type]
             else:
-                stmt = select(LastFMArtist).where(LastFMArtist.name == artist.name)  # type: ignore[arg-type]
+                stmt = select(Artist).where(Artist.name == artist.name)  # type: ignore[arg-type]
             artist_db = self.session.execute(stmt).scalar_one_or_none()
             if artist_db is not None:
                 artist = artist_db
@@ -179,9 +178,9 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
         #     self.session.add(artist)
         return artist
 
-    def _complete_album(self, album: LastFMAlbum) -> LastFMAlbum:
+    def _complete_album(self, album: Album) -> Album:
         if album.id is not None:
-            album_db = self.session.get_one(LastFMAlbum, album.id)
+            album_db = self.session.get_one(Album, album.id)
             if (
                 album_db.mbid != album.mbid
                 or album_db.name != album.name
@@ -191,10 +190,10 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
             return album_db
 
         if album.mbid is not None:
-            stmt = select(LastFMAlbum).where(LastFMAlbum.mbid == album.mbid)  # type: ignore[arg-type]
+            stmt = select(Album).where(Album.mbid == album.mbid)  # type: ignore[arg-type]
         else:
-            stmt = select(LastFMAlbum).where(
-                (LastFMAlbum.name == album.name) & (LastFMAlbum.artist_id == album.artist.id)  # type: ignore[arg-type]
+            stmt = select(Album).where(
+                (Album.name == album.name) & (Album.artist_id == album.artist.id)  # type: ignore[arg-type]
             )
         album_db = self.session.execute(stmt).scalar_one_or_none()
         if album_db is not None:
@@ -203,9 +202,9 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
         #     self.session.add(album)
         return album
 
-    def _complete_track(self, track: LastFMTrack) -> LastFMTrack:
+    def _complete_track(self, track: Track) -> Track:
         if track.id is not None:
-            track_db = self.session.get_one(LastFMTrack, track.id)
+            track_db = self.session.get_one(Track, track.id)
             if (
                 track_db.mbid != track.mbid
                 or track_db.name != track.name
@@ -216,12 +215,12 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
             return track_db
 
         if track.mbid is not None:
-            stmt = select(LastFMTrack).where(LastFMTrack.mbid == track.mbid)  # type: ignore[arg-type]
+            stmt = select(Track).where(Track.mbid == track.mbid)  # type: ignore[arg-type]
         else:
-            stmt = select(LastFMTrack).where(
-                (LastFMTrack.name == track.name)  # type: ignore[arg-type]
-                & (LastFMTrack.artist_id == track.artist.id)  # type: ignore[arg-type]
-                & (LastFMTrack.album_id == track.album.id)  # type: ignore[arg-type]
+            stmt = select(Track).where(
+                (Track.name == track.name)  # type: ignore[arg-type]
+                & (Track.artist_id == track.artist.id)  # type: ignore[arg-type]
+                & (Track.album_id == track.album.id)  # type: ignore[arg-type]
             )
         track_db = self.session.execute(stmt).scalar_one_or_none()
         if track_db is not None:
@@ -230,7 +229,7 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
         #     self.session.add(track)
         return track
 
-    def add(self, item: LastFMScrobble) -> None:
+    def add(self, item: Scrobble) -> None:
         # with self.session.no_autoflush:
         artist = self._complete_artist(item.track.artist)
         item.track.artist = artist
@@ -244,13 +243,13 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[LastFMScrobble]):
         self.session.add(item)
         # self.session.flush()
 
-    def get(self, key: str) -> LastFMScrobble:
-        stmt = select(LastFMScrobble).where(LastFMScrobble.timestamp == key)  # type: ignore[arg-type]
+    def get(self, key: str) -> Scrobble:
+        stmt = select(Scrobble).where(Scrobble.timestamp == key)  # type: ignore[arg-type]
         scrobble = self.session.execute(stmt).scalar_one_or_none()
         if scrobble is None:
             raise ValueError(f"Scrobble with timestamp {key} not found")
         return scrobble
 
-    def query(self, **kwargs: object) -> Sequence[LastFMScrobble]:
-        stmt = select(LastFMScrobble).filter_by(**kwargs)
+    def query(self, **kwargs: object) -> Sequence[Scrobble]:
+        stmt = select(Scrobble).filter_by(**kwargs)
         return self.session.execute(stmt).scalars().all()

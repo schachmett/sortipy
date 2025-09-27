@@ -12,11 +12,11 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from sortipy.common.repository import Repository
-    from sortipy.domain.types import LastFMScrobble
+    from sortipy.domain.types import Scrobble
 
 
 class UnitOfWork(Protocol):
-    scrobbles: Repository[LastFMScrobble]
+    scrobbles: Repository[Scrobble]
 
     def __enter__(self) -> UnitOfWork: ...
 

@@ -1,4 +1,4 @@
-"""Common domain types used throughout the application."""
+"""Canonical domain model used across Sortipy."""
 
 from __future__ import annotations
 
@@ -8,137 +8,122 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import date, datetime
+    from uuid import UUID
 
 
-@dataclass
-class Image:
-    height: int
-    url: str
-    width: int
+class Provider(StrEnum):
+    """External systems that can contribute data."""
+
+    LASTFM = "lastfm"
+    SPOTIFY = "spotify"
+    MUSICBRAINZ = "musicbrainz"
+    RATEYOURMUSIC = "rateyourmusic"
 
 
 class AlbumType(StrEnum):
     ALBUM = "album"
     SINGLE = "single"
     COMPILATION = "compilation"
+    EP = "ep"
+    LIVE = "live"
+    OTHER = "other"
 
 
-class ObjectType(StrEnum):
-    ALBUM = "album"
-    ARTIST = "artist"
-    TRACK = "track"
+def _provider_set() -> set[Provider]:
+    return set()
 
 
-@dataclass
-class SpotifyObject:
-    spotify_id: str
-    type: ObjectType
+def _album_list() -> list[Album]:
+    return []
 
-    @property
-    def url(self) -> str:
-        """Return the object's Spotify URL."""
-        return f"https://open.spotify.com/{self.type}/{self.spotify_id}"
 
-    @property
-    def uri(self) -> str:
-        """Return the object's Spotify URI."""
-        return f"spotify:{self.type}:{self.spotify_id}"
+def _track_list() -> list[Track]:
+    return []
 
-    @property
-    def api_url(self) -> str:
-        """Return the object's Spotify API URL."""
-        return f"https://api.spotify.com/v1/{self.type}s/{self.spotify_id}"
+
+def _scrobble_list() -> list[Scrobble]:
+    return []
 
 
 @dataclass
-class ExternalIDs:
-    isrc: str | None = None
-    ean: str | None = None
-    upc: str | None = None
+class Artist:
+    """Canonical representation of an artist."""
 
-
-@dataclass
-class SpotifyArtist(SpotifyObject):
     name: str
-    followers: int | None = None  # only in full artist object
-    genres: list[str] | None = None  # only in full artist object
-    popularity: int | None = None  # only in full artist object
-    images: list[Image] | None = None  # only in full artist object
-    type = ObjectType.ARTIST
+    id: UUID | None = None
+    mbid: str | None = None  # MusicBrainz identifier (when known)
+    spotify_id: str | None = None
+    playcount: int | None = None
+    sources: set[Provider] = field(default_factory=_provider_set)
+    albums: list[Album] = field(default_factory=_album_list, repr=False)
+    tracks: list[Track] = field(default_factory=_track_list, repr=False)
+
+    def add_source(self, provider: Provider) -> None:
+        self.sources.add(provider)
 
 
 @dataclass
-class SpotifyAlbum(SpotifyObject):
+class Album:
+    """Canonical representation of an album/release."""
+
     name: str
-    artists: list[SpotifyArtist]
-    total_tracks: int
-    album_type: AlbumType
-    release_date: date  # TODO: different precisions?
-    tracks: list[SpotifyTrack] | None = None  # only in full album object
-    external_ids: ExternalIDs = field(default_factory=ExternalIDs)  # only in full album object
-    type = ObjectType.ALBUM
+    artist: Artist
+    id: UUID | None = None
+    mbid: str | None = None
+    spotify_id: str | None = None
+    album_type: AlbumType | None = None
+    release_date: date | None = None
+    playcount: int | None = None
+    sources: set[Provider] = field(default_factory=_provider_set)
+    tracks: list[Track] = field(default_factory=_track_list, repr=False)
+
+    def add_track(self, track: Track) -> None:
+        if track not in self.tracks:
+            self.tracks.append(track)
+
+    def add_source(self, provider: Provider) -> None:
+        self.sources.add(provider)
 
 
 @dataclass
-class SpotifyTrack(SpotifyObject):
+class Track:
+    """Canonical representation of a track."""
+
     name: str
-    disc_number: int
-    track_number: int
-    duration_ms: int
-    explicit: bool
-    artists: list[SpotifyArtist]  # only in full track object
-    album: SpotifyAlbum | None = None  # only in full track object
-    external_ids: ExternalIDs = field(default_factory=ExternalIDs)  # only in full track object
-    type = ObjectType.TRACK
+    artist: Artist
+    album: Album
+    id: UUID | None = None
+    mbid: str | None = None
+    spotify_id: str | None = None
+    duration_ms: int | None = None
+    disc_number: int | None = None
+    track_number: int | None = None
+    playcount: int | None = None
+    sources: set[Provider] = field(default_factory=_provider_set)
+    scrobbles: list[Scrobble] = field(default_factory=_scrobble_list, repr=False)
+
+    def add_scrobble(self, scrobble: Scrobble) -> None:
+        if scrobble not in self.scrobbles:
+            self.scrobbles.append(scrobble)
+
+    def add_source(self, provider: Provider) -> None:
+        self.sources.add(provider)
 
 
 @dataclass
-class LastFMObject:
-    id: str | None
-    mbid: str | None  # MusicBrainz ID, often empty in Last.fm responses
-    type: ObjectType
-    playcount: int | None  # only in full objects
+class Scrobble:
+    """A listening event for a track."""
 
-
-@dataclass
-class LastFMArtist(LastFMObject):
-    name: str
-    type = ObjectType.ARTIST
-    albums: list[LastFMAlbum] = field(default_factory=list)
-    tracks: list[LastFMTrack] = field(default_factory=list)
-
-
-@dataclass
-class LastFMAlbum(LastFMObject):
-    name: str
-    artist: LastFMArtist
-    type = ObjectType.ALBUM
-    tracks: list[LastFMTrack] = field(default_factory=list)
-
-
-@dataclass
-class LastFMTrack(LastFMObject):
-    name: str
-    artist: LastFMArtist
-    album: LastFMAlbum
-    type = ObjectType.TRACK
-    scrobbles: list[LastFMScrobble] = field(default_factory=list)
-
-
-@dataclass
-class LastFMScrobble:
     timestamp: datetime
-    track: LastFMTrack
+    track: Track
+    provider: Provider = Provider.LASTFM
 
 
 @dataclass
-class MergedAlbum:
-    """Represents a Spotify album with essential metadata."""
+class LibrarySnapshot:
+    """Aggregated view of the user's library."""
 
-    release_date: str
-    title: str
-    artists: str
-
-    def __str__(self) -> str:
-        """Return a formatted string representation of the album."""
-        return f"{self.release_date} - {self.title} - {self.artists}"
+    artists: list[Artist]
+    albums: list[Album]
+    tracks: list[Track]
+    scrobbles: list[Scrobble]

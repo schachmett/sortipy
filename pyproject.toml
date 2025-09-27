@@ -9,7 +9,7 @@ license = { file = "LICENSE" }
 requires-python = ">= 3.12"
 readme = "README.md"
 dependencies = ["spotipy", "python-dotenv", "httpx", "sqlalchemy"]
-optional-dependencies = { dev = ["pytest", "pytest-cov", "ruff"] }
+optional-dependencies = { dev = ["pytest", "pytest-cov", "ruff", "pyright"] }
 
 [build-system]
 requires = ["setuptools>=71", "setuptools-scm>=8", "wheel"]
