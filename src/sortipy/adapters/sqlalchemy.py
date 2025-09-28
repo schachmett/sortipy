@@ -26,10 +26,12 @@ from sqlalchemy import engine as sa_engine
 from sqlalchemy.orm import Session, configure_mappers, relationship
 
 from sortipy.common.repository import Repository
+from sortipy.domain.data_integration import ScrobbleRepository
 from sortipy.domain.types import Album, Artist, Scrobble, Track
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -140,7 +142,7 @@ class SQLAlchemyRepository[T](Repository[T]):
         self.session.merge(item)
 
 
-class LastFMScrobbleRepository(SQLAlchemyRepository[Scrobble]):
+class SqlAlchemyScrobbleRepository(ScrobbleRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -229,18 +231,18 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[Scrobble]):
         #     self.session.add(track)
         return track
 
-    def add(self, item: Scrobble) -> None:
+    def add(self, scrobble: Scrobble) -> None:
         # with self.session.no_autoflush:
-        artist = self._complete_artist(item.track.artist)
-        item.track.artist = artist
-        album_artist = self._complete_artist(item.track.album.artist, artist)
-        item.track.album.artist = album_artist
-        album = self._complete_album(item.track.album)
-        item.track.album = album
-        track = self._complete_track(item.track)
-        item.track = track
+        artist = self._complete_artist(scrobble.track.artist)
+        scrobble.track.artist = artist
+        album_artist = self._complete_artist(scrobble.track.album.artist, artist)
+        scrobble.track.album.artist = album_artist
+        album = self._complete_album(scrobble.track.album)
+        scrobble.track.album = album
+        track = self._complete_track(scrobble.track)
+        scrobble.track = track
 
-        self.session.add(item)
+        self.session.add(scrobble)
         # self.session.flush()
 
     def get(self, key: str) -> Scrobble:
@@ -253,3 +255,17 @@ class LastFMScrobbleRepository(SQLAlchemyRepository[Scrobble]):
     def query(self, **kwargs: object) -> Sequence[Scrobble]:
         stmt = select(Scrobble).filter_by(**kwargs)
         return self.session.execute(stmt).scalars().all()
+
+    def exists(self, timestamp: datetime) -> bool:
+        stmt = select(lastfm_scrobble_table.c.timestamp).where(
+            lastfm_scrobble_table.c.timestamp == timestamp
+        )
+        return self.session.execute(stmt).scalar_one_or_none() is not None
+
+    def latest_timestamp(self) -> datetime | None:
+        stmt = (
+            select(lastfm_scrobble_table.c.timestamp)
+            .order_by(lastfm_scrobble_table.c.timestamp.desc())
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()

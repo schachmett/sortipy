@@ -1,32 +1,20 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from sortipy.adapters.sqlalchemy import LastFMScrobbleRepository, create_all_tables, start_mappers
+from sortipy.adapters.sqlalchemy import (
+    SqlAlchemyScrobbleRepository,
+    create_all_tables,
+    start_mappers,
+)
+from sortipy.domain.data_integration import ScrobbleUnitOfWork
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-    from sortipy.common.repository import Repository
-    from sortipy.domain.types import Scrobble
-
-
-class UnitOfWork(Protocol):
-    scrobbles: Repository[Scrobble]
-
-    def __enter__(self) -> UnitOfWork: ...
-
-    def __exit__(
-        self, exc_type: type[BaseException], exc_value: BaseException, traceback: TracebackType
-    ) -> Literal[False]: ...
-
-    def commit(self) -> None: ...
-
-    def rollback(self) -> None: ...
 
 
 ENGINE = create_engine(os.environ["DATABASE_URI"], future=True)
@@ -38,23 +26,28 @@ def startup() -> None:
     create_all_tables(ENGINE)
 
 
-def get_unit_of_work() -> UnitOfWork:
+def get_unit_of_work() -> ScrobbleUnitOfWork:
     """Get a new unit of work."""
     return SqlAlchemyUnitOfWork()
 
 
-class SqlAlchemyUnitOfWork(UnitOfWork):
+class SqlAlchemyUnitOfWork(ScrobbleUnitOfWork):
     def __init__(self) -> None:
         self.session_factory = sessionmaker(bind=ENGINE)
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self.session_factory()
-        self.scrobbles = LastFMScrobbleRepository(self.session)
+        self.scrobbles = SqlAlchemyScrobbleRepository(self.session)
         return self
 
     def __exit__(
-        self, exc_type: type[BaseException], exc_value: BaseException, traceback: TracebackType
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> Literal[False]:
+        if exc_type is not None:
+            self.rollback()
         self.session.close()
         return False  # don't swallow exceptions
 

@@ -9,6 +9,7 @@ from typing import Literal, NotRequired, TypedDict, cast
 
 import httpx
 
+from sortipy.domain.data_integration import FetchScrobblesResult, LastFmScrobbleSource
 from sortipy.domain.types import Album, Artist, Provider, Scrobble, Track
 
 log = getLogger(__name__)
@@ -18,10 +19,6 @@ API_KEY = os.getenv("LASTFM_API_KEY")
 USER_NAME = os.getenv("LASTFM_USER_NAME")
 LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
-
-###############
-# Last.fm API #
-###############
 
 type ImageSize = Literal["small", "medium", "large", "extralarge"]
 ArtistPayload = TypedDict("ArtistPayload", {"mbid": str, "#text": str})
@@ -66,25 +63,89 @@ class RecentTracksResponse(TypedDict):
     recenttracks: RecentTracks
 
 
-def get_recent_scrobbles(page: int, limit: int = 100) -> list[TrackPayload]:
-    """Get the recent tracks for a user."""
-    params = {
-        "method": "user.getrecenttracks",
-        "user": USER_NAME,
-        "limit": limit,
-        "page": page,
-        "api_key": API_KEY,
-        "format": "json",
-    }
-    response = httpx.get(LASTFM_BASE_URL, params=params)
-    response.raise_for_status()
-    response_json = cast(RecentTracksResponse, response.json())
-    return response_json["recenttracks"]["track"]
+class HttpLastFmScrobbleSource(LastFmScrobbleSource):
+    """HTTP implementation of the Last.fm scrobble source port."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        user_name: str | None = None,
+        client: httpx.Client | None = None,
+    ) -> None:
+        self._api_key = api_key or API_KEY
+        self._user_name = user_name or USER_NAME
+        if not self._api_key or not self._user_name:
+            msg = "Last.fm API key and user name must be configured"
+            raise RuntimeError(msg)
+        self._client = client or httpx.Client()
+
+    def fetch_recent(
+        self,
+        *,
+        page: int = 1,
+        limit: int = 200,
+        from_ts: int | None = None,
+        to_ts: int | None = None,
+        extended: bool = False,
+    ) -> FetchScrobblesResult:
+        payloads, attrs = self._request_recent_scrobbles(
+            page=page,
+            limit=limit,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            extended=extended,
+        )
+
+        scrobbles: list[Scrobble] = []
+        now_playing: Scrobble | None = None
+        for payload in payloads:
+            if payload.get("@attr", {}).get("nowplaying") == "true":
+                now_playing = parse_scrobble(payload)
+                continue
+            scrobbles.append(parse_scrobble(payload))
+
+        page_number = int(attrs["page"])
+        total_pages = int(attrs["totalPages"])
+
+        return FetchScrobblesResult(
+            scrobbles=scrobbles,
+            page=page_number,
+            total_pages=total_pages,
+            now_playing=now_playing,
+        )
+
+    def _request_recent_scrobbles(
+        self,
+        *,
+        page: int,
+        limit: int,
+        from_ts: int | None,
+        to_ts: int | None,
+        extended: bool,
+    ) -> tuple[list[TrackPayload], ResponseAttr]:
+        params = {
+            "method": "user.getrecenttracks",
+            "user": self._user_name,
+            "limit": limit,
+            "page": page,
+            "api_key": self._api_key,
+            "format": "json",
+        }
+        if from_ts is not None:
+            params["from"] = from_ts
+        if to_ts is not None:
+            params["to"] = to_ts
+        if extended:
+            params["extended"] = 1
+
+        response = self._client.get(LASTFM_BASE_URL, params=params)
+        response.raise_for_status()
+        response_json = cast(RecentTracksResponse, response.json())
+        recent = response_json["recenttracks"]
+        return recent["track"], recent["@attr"]
 
 
-##################
-# Our own format #
-##################
 def parse_scrobble(scrobble: TrackPayload) -> Scrobble:
     if "@attr" in scrobble and scrobble["@attr"]["nowplaying"] == "true":
         timestamp = datetime.now(UTC)

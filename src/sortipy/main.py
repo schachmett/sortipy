@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from sortipy.adapters.lastfm import get_recent_scrobbles, parse_scrobble
+from sortipy.adapters.lastfm import HttpLastFmScrobbleSource
 from sortipy.common.unit_of_work import get_unit_of_work, startup
+from sortipy.domain.data_integration import SyncScrobbles
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -28,12 +29,11 @@ def main() -> None:
     """Main application entry point."""
     startup()
     try:
-        scrobbles_raw = get_recent_scrobbles(1)
-        with get_unit_of_work() as uow:
-            for scrobble_raw in scrobbles_raw:
-                scrobble = parse_scrobble(scrobble_raw)
-                uow.scrobbles.add(scrobble)
-            uow.commit()
+        sync_service = SyncScrobbles(
+            source=HttpLastFmScrobbleSource(),
+            unit_of_work=get_unit_of_work,
+        )
+        sync_service.run()
 
     except Exception as e:  # noqa: BLE001
         print(f"Error: {e}", file=sys.stderr)
