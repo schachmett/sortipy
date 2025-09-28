@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 from logging import getLogger
 from typing import Literal, NotRequired, TypedDict, cast
 
 import httpx
 
+from sortipy.common import MissingConfigurationError, require_env_var
 from sortipy.domain.data_integration import FetchScrobblesResult, LastFmScrobbleSource
 from sortipy.domain.types import Album, Artist, Provider, Scrobble, Track
 
 log = getLogger(__name__)
 
 
-API_KEY = os.getenv("LASTFM_API_KEY")
-USER_NAME = os.getenv("LASTFM_USER_NAME")
 LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
 
@@ -73,11 +71,8 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
         user_name: str | None = None,
         client: httpx.Client | None = None,
     ) -> None:
-        self._api_key = api_key or API_KEY
-        self._user_name = user_name or USER_NAME
-        if not self._api_key or not self._user_name:
-            msg = "Last.fm API key and user name must be configured"
-            raise RuntimeError(msg)
+        self._api_key = _coalesce_credential("LASTFM_API_KEY", api_key)
+        self._user_name = _coalesce_credential("LASTFM_USER_NAME", user_name)
         self._client = client or httpx.Client()
 
     def fetch_recent(
@@ -198,3 +193,11 @@ def parse_track(track: TrackPayload) -> Track:
     if album not in artist.albums:
         artist.albums.append(album)
     return track_entity
+
+def _coalesce_credential(env_name: str, override: str | None) -> str:
+    if override is not None:
+        trimmed = override.strip()
+        if not trimmed:
+            raise MissingConfigurationError(f"{env_name} must not be blank")
+        return trimmed
+    return require_env_var(env_name)

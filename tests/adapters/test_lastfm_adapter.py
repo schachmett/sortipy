@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from sortipy.adapters.lastfm import HttpLastFmScrobbleSource, TrackPayload, parse_scrobble
+from sortipy.common.config import MissingConfigurationError
 from sortipy.domain.data_integration import FetchScrobblesResult
 from sortipy.domain.types import Provider
 
@@ -93,3 +94,55 @@ def test_http_source_fetches_scrobbles(sample_payload: TrackPayload) -> None:
     scrobble = scrobbles[0]
     assert scrobble.provider is Provider.LASTFM
     assert result.now_playing is not None
+
+
+def test_http_source_raises_when_credentials_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    monkeypatch.delenv("LASTFM_USER_NAME", raising=False)
+
+    with pytest.raises(MissingConfigurationError):
+        HttpLastFmScrobbleSource()
+
+
+def test_http_source_raises_when_credentials_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LASTFM_API_KEY", "   ")
+    monkeypatch.setenv("LASTFM_USER_NAME", "   ")
+
+    with pytest.raises(MissingConfigurationError):
+        HttpLastFmScrobbleSource()
+
+
+def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LASTFM_API_KEY", "env-key")
+    monkeypatch.setenv("LASTFM_USER_NAME", "env-user")
+
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["api_key"] = request.url.params["api_key"]
+        captured["user"] = request.url.params["user"]
+        return httpx.Response(
+            status_code=200,
+            json={
+                "recenttracks": {
+                    "track": [],
+                    "@attr": {
+                        "user": request.url.params["user"],
+                        "page": "1",
+                        "perPage": request.url.params.get("limit", "200"),
+                        "total": "0",
+                        "totalPages": "1",
+                    },
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(client=client)
+        source.fetch_recent()
+    finally:
+        client.close()
+
+    assert captured["api_key"] == "env-key"
+    assert captured["user"] == "env-user"
