@@ -11,7 +11,7 @@ We adopt a ports-and-adapters (hexagonal) architecture. Domain use cases and ent
 
 Layering rules:
 - The domain layer owns port definitions, entities, and use cases; it has no dependencies on adapters or frameworks.
-- Secondary adapters implement domain ports and may depend on shared wiring in `adapters.common`, but never the other way around.
+- Secondary adapters implement domain ports and may depend on shared wiring in `common`, but never the other way around.
 - Primary adapters (e.g. CLI) compose concrete adapters with domain use cases, providing the only outward-facing assembly points.
 
 ## Consequences
