@@ -1,0 +1,19 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff Check
+        entry: .venv/bin/ruff check
+        language: system
+        types_or: [python]
+        pass_filenames: true
+      - id: pyright
+        name: Pyright
+        entry: .venv/bin/pyright
+        language: system
+        pass_filenames: false
+      - id: pytest
+        name: Pytest
+        entry: .venv/bin/pytest
+        language: system
+        pass_filenames: false
