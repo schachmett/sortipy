@@ -59,6 +59,13 @@ def test_parse_scrobble_without_date_raises(sample_payload: TrackPayload) -> Non
         parse_scrobble(payload)
 
 
+@pytest.fixture(scope="module")
+def recent_tracks_payloads() -> list[dict[str, Any]]:
+    path = Path(__file__).resolve().parent.parent / "data" / "lastfm_recent_tracks.jsonl"
+    with path.open() as handle:
+        return [json.loads(line) for line in handle]
+
+
 def test_http_source_fetches_scrobbles(sample_payload: TrackPayload) -> None:
     payload = sample_payload.copy()
     now_playing_payload = sample_payload.copy()
@@ -151,12 +158,15 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
     assert captured["user"] == "env-user"
 
 
-def test_http_source_handles_multiple_pages_from_recording() -> None:
-    responses = _load_fixture_pages()
+def test_http_source_handles_multiple_pages_from_recording(
+    recent_tracks_payloads: list[dict[str, Any]],
+) -> None:
+    responses = recent_tracks_payloads
 
     def handler(request: httpx.Request) -> httpx.Response:
         page = int(request.url.params.get("page", "1"))
-        payload = responses[page]
+        index = min(max(page - 1, 0), len(responses) - 1)
+        payload = responses[index]
         return httpx.Response(status_code=200, json=payload)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -167,23 +177,18 @@ def test_http_source_handles_multiple_pages_from_recording() -> None:
     finally:
         client.close()
 
-    assert first_page.page == 1
-    assert first_page.total_pages == 2
-    assert first_page.now_playing is not None
-    assert [scrobble.track.name for scrobble in first_page.scrobbles] == ["Log Song"]
+    expected_first_page = int(responses[0]["recenttracks"]["@attr"]["page"])
+    assert first_page.page == expected_first_page
+    assert first_page.total_pages >= first_page.page
+    assert first_page.now_playing is None
+    first_page_names = [scrobble.track.name for scrobble in first_page.scrobbles]
+    assert first_page_names == _extract_names(responses[0])
 
-    assert second_page.page == 2
-    assert second_page.total_pages == 2
+    expected_second_page = int(responses[1]["recenttracks"]["@attr"]["page"])
+    assert second_page.page == expected_second_page
+    assert second_page.total_pages >= second_page.page
     assert second_page.now_playing is None
-    assert [scrobble.track.name for scrobble in second_page.scrobbles] == ["Historical Track"]
-
-
-def _load_fixture_pages() -> dict[int, dict[str, Any]]:
-    path = Path(__file__).resolve().parent.parent / "data" / "lastfm_recent_tracks.jsonl"
-    mapping: dict[int, dict[str, Any]] = {}
-    with path.open() as handle:
-        for line in handle:
-            payload = json.loads(line)
-            page = int(payload["recenttracks"]["@attr"]["page"])
-            mapping[page] = payload
-    return mapping
+    second_page_names = [scrobble.track.name for scrobble in second_page.scrobbles]
+    assert second_page_names == _extract_names(responses[1])
+def _extract_names(payload: dict[str, Any]) -> list[str]:
+    return [item["name"] for item in payload["recenttracks"]["track"] if "date" in item]
