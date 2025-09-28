@@ -187,3 +187,31 @@ def test_sync_scrobbles_returns_now_playing_without_persisting() -> None:
     assert result.now_playing is in_progress
     assert in_progress not in repo.items
     assert scrobble in repo.items
+
+
+def test_sync_scrobbles_resumes_across_pages() -> None:
+    base_time = datetime.now(tz=UTC).replace(microsecond=0)
+    existing = make_scrobble("Existing")
+    existing.timestamp = base_time
+    first_new = make_scrobble("First New")
+    first_new.timestamp = base_time + timedelta(seconds=30)
+    second_new = make_scrobble("Second New")
+    second_new.timestamp = base_time + timedelta(seconds=60)
+    repo = FakeRepository()
+    repo.add(existing)
+    fake_source = FakeSource([[first_new], [second_new]])
+    service = SyncScrobbles(
+        source=fake_source,
+        unit_of_work=lambda: FakeUnitOfWork(repo),
+    )
+
+    result = service.run(SyncRequest(limit=1))
+
+    timestamps = {item.timestamp for item in repo.items}
+    assert timestamps == {existing.timestamp, first_new.timestamp, second_new.timestamp}
+    assert result.stored == 2
+    assert result.pages_processed == 2
+    assert fake_source.calls[0][0] == 1
+    assert fake_source.calls[0][2] is not None
+    assert fake_source.calls[1][0] == 2
+    assert fake_source.calls[1][2] is None

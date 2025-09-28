@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -146,3 +149,41 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
 
     assert captured["api_key"] == "env-key"
     assert captured["user"] == "env-user"
+
+
+def test_http_source_handles_multiple_pages_from_recording() -> None:
+    responses = _load_fixture_pages()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params.get("page", "1"))
+        payload = responses[page]
+        return httpx.Response(status_code=200, json=payload)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(api_key="demo", user_name="demo-user", client=client)
+        first_page = source.fetch_recent(page=1)
+        second_page = source.fetch_recent(page=2)
+    finally:
+        client.close()
+
+    assert first_page.page == 1
+    assert first_page.total_pages == 2
+    assert first_page.now_playing is not None
+    assert [scrobble.track.name for scrobble in first_page.scrobbles] == ["Log Song"]
+
+    assert second_page.page == 2
+    assert second_page.total_pages == 2
+    assert second_page.now_playing is None
+    assert [scrobble.track.name for scrobble in second_page.scrobbles] == ["Historical Track"]
+
+
+def _load_fixture_pages() -> dict[int, dict[str, Any]]:
+    path = Path(__file__).resolve().parent.parent / "data" / "lastfm_recent_tracks.jsonl"
+    mapping: dict[int, dict[str, Any]] = {}
+    with path.open() as handle:
+        for line in handle:
+            payload = json.loads(line)
+            page = int(payload["recenttracks"]["@attr"]["page"])
+            mapping[page] = payload
+    return mapping
