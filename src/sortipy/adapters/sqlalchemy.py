@@ -87,6 +87,8 @@ lastfm_scrobble_table = Table(
 
 def start_mappers() -> orm.registry:
     """Start the mappers."""
+    if getattr(start_mappers, "_started", False):
+        return mapper_registry
     log.info("Starting mappers")
     mapper_registry.map_imperatively(
         Artist,
@@ -119,6 +121,7 @@ def start_mappers() -> orm.registry:
         exclude_properties={"provider"},
     )
     configure_mappers()
+    start_mappers.__dict__["_started"] = True
     return mapper_registry
 
 

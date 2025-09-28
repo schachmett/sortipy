@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import json
+from collections.abc import Sequence  # noqa: TC003
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
 
-from sortipy.adapters.lastfm import HttpLastFmScrobbleSource, TrackPayload, parse_scrobble
+from sortipy.adapters.lastfm import (
+    HttpLastFmScrobbleSource,
+    RecentTracksResponse,
+    TrackPayload,
+    parse_scrobble,
+)
 from sortipy.common.config import MissingConfigurationError
 from sortipy.domain.data_integration import FetchScrobblesResult
 from sortipy.domain.types import Provider
@@ -57,13 +60,6 @@ def test_parse_scrobble_without_date_raises(sample_payload: TrackPayload) -> Non
 
     with pytest.raises(ValueError, match="Invalid scrobble"):
         parse_scrobble(payload)
-
-
-@pytest.fixture(scope="module")
-def recent_tracks_payloads() -> list[dict[str, Any]]:
-    path = Path(__file__).resolve().parent.parent / "data" / "lastfm_recent_tracks.jsonl"
-    with path.open() as handle:
-        return [json.loads(line) for line in handle]
 
 
 def test_http_source_fetches_scrobbles(sample_payload: TrackPayload) -> None:
@@ -159,7 +155,7 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
 
 
 def test_http_source_handles_multiple_pages_from_recording(
-    recent_tracks_payloads: list[dict[str, Any]],
+    recent_tracks_payloads: Sequence[RecentTracksResponse],
 ) -> None:
     responses = recent_tracks_payloads
 
@@ -190,5 +186,5 @@ def test_http_source_handles_multiple_pages_from_recording(
     assert second_page.now_playing is None
     second_page_names = [scrobble.track.name for scrobble in second_page.scrobbles]
     assert second_page_names == _extract_names(responses[1])
-def _extract_names(payload: dict[str, Any]) -> list[str]:
+def _extract_names(payload: RecentTracksResponse) -> list[str]:
     return [item["name"] for item in payload["recenttracks"]["track"] if "date" in item]
