@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -12,13 +13,11 @@ from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict, cast
 import httpx
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable
 else:  # pragma: no cover - imported for runtime type hint resolution
     from collections.abc import Callable as _Callable
-    from collections.abc import Mapping as _Mapping
 
     Callable = _Callable
-    Mapping = _Mapping
 
 from sortipy.common import MissingConfigurationError, require_env_var
 from sortipy.domain.data_integration import FetchScrobblesResult, LastFmScrobbleSource
@@ -96,6 +95,33 @@ class RetryConfiguration:
     backoff_max: float = DEFAULT_BACKOFF_MAX
 
 
+@dataclass(frozen=True)
+class CacheConfiguration:
+    """Configuration for caching Last.fm responses."""
+
+    ttl_seconds: float = 30.0
+    max_entries: int = 256
+
+
+CacheKey = tuple[tuple[str, str], ...]
+
+
+@dataclass
+class CacheEntry:
+    response: RecentTracksResponse
+    expires_at: float
+
+
+@dataclass(frozen=True)
+class LastFmRuntimeOptions:
+    """Tune runtime behaviour for the Last.fm adapter."""
+
+    retry: RetryConfiguration | None = None
+    cache: CacheConfiguration | None = None
+    sleep: Callable[[float], None] | None = None
+    time_provider: Callable[[], float] | None = None
+
+
 class LastFmAPIError(RuntimeError):
     """Raised when the Last.fm API returns an application-level error."""
 
@@ -113,18 +139,24 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
         api_key: str | None = None,
         user_name: str | None = None,
         client: httpx.Client | None = None,
-        sleep: Callable[[float], None] | None = None,
-        retry: RetryConfiguration | None = None,
+        options: LastFmRuntimeOptions | None = None,
     ) -> None:
         self._api_key = _coalesce_credential("LASTFM_API_KEY", api_key)
         self._user_name = _coalesce_credential("LASTFM_USER_NAME", user_name)
         self._client = client or httpx.Client()
-        self._sleep = sleep or time.sleep
-        retry_config = retry or RetryConfiguration()
+        runtime = options or LastFmRuntimeOptions()
+        self._sleep = runtime.sleep or time.sleep
+        self._time = runtime.time_provider or time.time
+        retry_config = runtime.retry or RetryConfiguration()
         self._max_attempts = max(1, retry_config.max_attempts)
         self._backoff_initial = max(retry_config.backoff_initial, 0.0)
         self._backoff_factor = max(retry_config.backoff_factor, 1.0)
         self._backoff_max = max(retry_config.backoff_max, self._backoff_initial)
+        cache_config = runtime.cache or CacheConfiguration()
+        self._cache_enabled = cache_config.ttl_seconds > 0 and cache_config.max_entries > 0
+        self._cache_ttl = max(cache_config.ttl_seconds, 0.0)
+        self._cache_max_entries = max(cache_config.max_entries, 1) if self._cache_enabled else 0
+        self._cache: OrderedDict[CacheKey, CacheEntry] = OrderedDict()
 
     def fetch_recent(
         self,
@@ -185,18 +217,26 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
         if extended:
             params["extended"] = 1
 
-        response_json = self._perform_request_with_retry(params)
+        query_params = httpx.QueryParams(params)
+        cache_key = self._build_cache_key(query_params)
+        cached_response = self._cache_get(cache_key)
+        if cached_response is not None:
+            recent = cached_response["recenttracks"]
+            return recent["track"], recent["@attr"]
+
+        response_json = self._perform_request_with_retry(query_params)
+        if self._should_cache_response(response_json):
+            self._cache_store(cache_key, response_json)
         recent = response_json["recenttracks"]
         return recent["track"], recent["@attr"]
 
     def _perform_request_with_retry(
-        self, params: Mapping[str, int | str]
+        self, params: httpx.QueryParams
     ) -> RecentTracksResponse:
-        query_params = httpx.QueryParams(params)
         for attempt in range(1, self._max_attempts + 1):
             response: httpx.Response | None = None
             try:
-                response = self._client.get(LASTFM_BASE_URL, params=query_params)
+                response = self._client.get(LASTFM_BASE_URL, params=params)
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 status_code = exc.response.status_code
@@ -271,6 +311,40 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
             return min(retry_after, self._backoff_max)
         base = self._backoff_initial * (self._backoff_factor ** (attempt - 1))
         return min(base, self._backoff_max)
+
+    def _build_cache_key(self, query_params: httpx.QueryParams) -> CacheKey:
+        return tuple(query_params.multi_items())
+
+    def _cache_get(self, key: CacheKey) -> RecentTracksResponse | None:
+        if not self._cache_enabled:
+            return None
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        if self._time() >= entry.expires_at:
+            self._cache.pop(key, None)
+            return None
+        self._cache.move_to_end(key)
+        return entry.response
+
+    def _cache_store(self, key: CacheKey, response: RecentTracksResponse) -> None:
+        if not self._cache_enabled:
+            return
+        expires_at = self._time() + self._cache_ttl
+        self._cache[key] = CacheEntry(response=response, expires_at=expires_at)
+        self._cache.move_to_end(key)
+        while len(self._cache) > self._cache_max_entries:
+            self._cache.popitem(last=False)
+
+    def _should_cache_response(self, response: RecentTracksResponse) -> bool:
+        if not self._cache_enabled:
+            return False
+        tracks = response["recenttracks"]["track"]
+        for track in tracks:
+            attrs = track.get("@attr")
+            if attrs and attrs.get("nowplaying") == "true":
+                return False
+        return True
 
 
 def _parse_retry_after(value: str | None) -> float | None:

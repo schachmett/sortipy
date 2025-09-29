@@ -8,8 +8,10 @@ import httpx
 import pytest
 
 from sortipy.adapters.lastfm import (
+    CacheConfiguration,
     HttpLastFmScrobbleSource,
     LastFmAPIError,
+    LastFmRuntimeOptions,
     RecentTracksResponse,
     RetryConfiguration,
     TrackPayload,
@@ -217,8 +219,10 @@ def test_http_source_retries_on_rate_limit_status(sample_payload: TrackPayload) 
             api_key="demo",
             user_name="demo-user",
             client=client,
-            sleep=fake_sleep,
-            retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1),
+            options=LastFmRuntimeOptions(
+                retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1),
+                sleep=fake_sleep,
+            ),
         )
         result = source.fetch_recent(limit=1)
     finally:
@@ -252,8 +256,10 @@ def test_http_source_retries_on_rate_limit_error_payload(sample_payload: TrackPa
             api_key="demo",
             user_name="demo-user",
             client=client,
-            sleep=fake_sleep,
-            retry=RetryConfiguration(max_attempts=3, backoff_initial=0.2),
+            options=LastFmRuntimeOptions(
+                retry=RetryConfiguration(max_attempts=3, backoff_initial=0.2),
+                sleep=fake_sleep,
+            ),
         )
         result = source.fetch_recent(limit=1)
     finally:
@@ -281,8 +287,10 @@ def test_http_source_raises_on_non_retryable_error() -> None:
             api_key="demo",
             user_name="demo-user",
             client=client,
-            sleep=fake_sleep,
-            retry=RetryConfiguration(max_attempts=2, backoff_initial=0.1),
+            options=LastFmRuntimeOptions(
+                retry=RetryConfiguration(max_attempts=2, backoff_initial=0.1),
+                sleep=fake_sleep,
+            ),
         )
         with pytest.raises(LastFmAPIError) as exc_info:
             source.fetch_recent()
@@ -291,6 +299,129 @@ def test_http_source_raises_on_non_retryable_error() -> None:
 
     assert exc_info.value.code == 6
     assert sleep_calls == []
+
+
+def test_http_source_reuses_cached_response(sample_payload: TrackPayload) -> None:
+    payload_copy = sample_payload.copy()
+    call_count = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(
+            status_code=200,
+            json=_make_recenttracks_response([payload_copy], page=2, total_pages=5),
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            options=LastFmRuntimeOptions(
+                cache=CacheConfiguration(ttl_seconds=60.0, max_entries=16),
+            ),
+        )
+        first = source.fetch_recent(page=2, limit=1)
+        second = source.fetch_recent(page=2, limit=1)
+    finally:
+        client.close()
+
+    assert call_count == 1
+    assert [s.track.name for s in first.scrobbles] == [payload_copy["name"]]
+    assert [s.track.name for s in second.scrobbles] == [payload_copy["name"]]
+
+
+def test_http_source_cache_expires_after_ttl(sample_payload: TrackPayload) -> None:
+    class FakeClock:
+        def __init__(self) -> None:
+            self.value = 0.0
+
+        def time(self) -> float:
+            return self.value
+
+        def advance(self, amount: float) -> None:
+            self.value += amount
+
+    clock = FakeClock()
+    attempts = 0
+
+    first_payload = sample_payload.copy()
+    second_payload = sample_payload.copy()
+    second_payload["name"] = "Updated Track"
+
+    responses = [
+        _make_recenttracks_response([first_payload]),
+        _make_recenttracks_response([second_payload]),
+    ]
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        index = min(attempts, len(responses) - 1)
+        attempts += 1
+        return httpx.Response(status_code=200, json=responses[index])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            options=LastFmRuntimeOptions(
+                cache=CacheConfiguration(ttl_seconds=5.0, max_entries=4),
+                time_provider=clock.time,
+            ),
+        )
+        first = source.fetch_recent(limit=1)
+        clock.advance(1.0)
+        cached = source.fetch_recent(limit=1)
+        clock.advance(10.0)
+        refreshed = source.fetch_recent(limit=1)
+    finally:
+        client.close()
+
+    assert attempts == 2
+    first_names = [s.track.name for s in first.scrobbles]
+    cached_names = [s.track.name for s in cached.scrobbles]
+    refreshed_names = [s.track.name for s in refreshed.scrobbles]
+    assert first_names == cached_names
+    assert refreshed_names != first_names
+
+
+def test_http_source_does_not_cache_now_playing(sample_payload: TrackPayload) -> None:
+    now_playing_payload = sample_payload.copy()
+    now_playing_payload.pop("date", None)
+    now_playing_payload["@attr"] = {"nowplaying": "true"}
+
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            status_code=200,
+            json=_make_recenttracks_response([now_playing_payload, sample_payload]),
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            options=LastFmRuntimeOptions(
+                cache=CacheConfiguration(ttl_seconds=60.0, max_entries=16),
+            ),
+        )
+        first = source.fetch_recent(page=1, limit=2)
+        second = source.fetch_recent(page=1, limit=2)
+    finally:
+        client.close()
+
+    assert attempts == 2
+    assert first.now_playing is not None
+    assert second.now_playing is not None
 
 
 def _make_recenttracks_response(
