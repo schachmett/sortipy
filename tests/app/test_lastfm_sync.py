@@ -5,6 +5,7 @@ from typing import Protocol
 
 from sortipy.app import sync_lastfm_scrobbles
 from sortipy.domain.data_integration import ScrobbleUnitOfWork, SyncRequest, SyncScrobblesResult
+from sortipy.domain.time_windows import TimeWindow
 from tests.support.scrobbles import (
     FakeScrobbleRepository,
     FakeScrobbleSource,
@@ -71,3 +72,35 @@ def test_sync_lastfm_scrobbles_respects_existing_entries(monkeypatch: MonkeyPatc
     assert result.stored == 1
     assert newer in repository.items
     assert existing in repository.items
+
+
+def test_sync_lastfm_scrobbles_applies_time_window(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr("sortipy.app.startup", lambda: None)
+
+    now = datetime(2025, 3, 5, 12, tzinfo=UTC)
+    lookback = timedelta(hours=2)
+    older = make_scrobble("Older", timestamp=now - lookback - timedelta(minutes=10))
+    recent = make_scrobble("Recent", timestamp=now - timedelta(minutes=30))
+
+    repository = FakeScrobbleRepository()
+    source = FakeScrobbleSource([[older, recent]])
+
+    def factory() -> ScrobbleUnitOfWork:
+        return FakeScrobbleUnitOfWork(repository)
+
+    result = sync_lastfm_scrobbles(
+        SyncRequest(limit=5),
+        source=source,
+        unit_of_work_factory=factory,
+        time_window=TimeWindow(lookback=lookback),
+        clock=lambda: now,
+    )
+
+    assert result.stored == 1
+    assert repository.items == [recent]
+
+    first_call = source.calls[0]
+    expected_from = int((now - lookback).timestamp()) + 1
+    expected_to = int(now.timestamp())
+    assert first_call[2] == expected_from
+    assert first_call[3] == expected_to
