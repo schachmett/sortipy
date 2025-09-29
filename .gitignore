@@ -23,6 +23,7 @@ lcov.info
 **/.pytest_cache
 **/.mypy_cache
 **/.ruff_cache
+.pre-commit-cache/
 
 # Generated on packaging
 # requirements.txt
