@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence  # noqa: TC003
 from datetime import UTC, datetime
 
@@ -8,7 +9,9 @@ import pytest
 
 from sortipy.adapters.lastfm import (
     HttpLastFmScrobbleSource,
+    LastFmAPIError,
     RecentTracksResponse,
+    RetryConfiguration,
     TrackPayload,
     parse_scrobble,
 )
@@ -186,5 +189,129 @@ def test_http_source_handles_multiple_pages_from_recording(
     assert second_page.now_playing is None
     second_page_names = [scrobble.track.name for scrobble in second_page.scrobbles]
     assert second_page_names == _extract_names(responses[1])
+
+
+def test_http_source_retries_on_rate_limit_status(sample_payload: TrackPayload) -> None:
+    payload_copy = sample_payload.copy()
+    attempts = 0
+    responses = [
+        httpx.Response(status_code=429, headers={"Retry-After": "2"}),
+        httpx.Response(status_code=503),
+        httpx.Response(status_code=200, json=_make_recenttracks_response([payload_copy])),
+    ]
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        index = min(attempts, len(responses) - 1)
+        attempts += 1
+        return responses[index]
+
+    sleep_calls: list[float] = []
+
+    def fake_sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            sleep=fake_sleep,
+            retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1),
+        )
+        result = source.fetch_recent(limit=1)
+    finally:
+        client.close()
+
+    assert attempts == 3
+    assert len(sleep_calls) == 2
+    assert math.isclose(sleep_calls[0], 2.0, rel_tol=1e-6)
+    assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
+    assert [scrobble.track.name for scrobble in result.scrobbles] == [payload_copy["name"]]
+
+
+def test_http_source_retries_on_rate_limit_error_payload(sample_payload: TrackPayload) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(status_code=200, json={"error": 29, "message": "Rate limit"})
+        return httpx.Response(status_code=200, json=_make_recenttracks_response([sample_payload]))
+
+    sleep_calls: list[float] = []
+
+    def fake_sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            sleep=fake_sleep,
+            retry=RetryConfiguration(max_attempts=3, backoff_initial=0.2),
+        )
+        result = source.fetch_recent(limit=1)
+    finally:
+        client.close()
+
+    assert attempts == 2
+    assert len(sleep_calls) == 1
+    assert math.isclose(sleep_calls[0], 0.2, rel_tol=1e-6)
+    scrobbles = list(result.scrobbles)
+    assert len(scrobbles) == 1
+
+
+def test_http_source_raises_on_non_retryable_error() -> None:
+    sleep_calls: list[float] = []
+
+    def fake_sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, json={"error": 6, "message": "Invalid user"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            sleep=fake_sleep,
+            retry=RetryConfiguration(max_attempts=2, backoff_initial=0.1),
+        )
+        with pytest.raises(LastFmAPIError) as exc_info:
+            source.fetch_recent()
+    finally:
+        client.close()
+
+    assert exc_info.value.code == 6
+    assert sleep_calls == []
+
+
+def _make_recenttracks_response(
+    payloads: Sequence[TrackPayload],
+    *,
+    page: int = 1,
+    total_pages: int = 1,
+) -> RecentTracksResponse:
+    return {
+        "recenttracks": {
+            "track": list(payloads),
+            "@attr": {
+                "user": "demo-user",
+                "page": str(page),
+                "perPage": str(len(payloads)),
+                "total": str(len(payloads)),
+                "totalPages": str(total_pages),
+            },
+        }
+    }
+
+
 def _extract_names(payload: RecentTracksResponse) -> list[str]:
     return [item["name"] for item in payload["recenttracks"]["track"] if "date" in item]

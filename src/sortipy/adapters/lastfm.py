@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from logging import getLogger
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict, cast
 
 import httpx
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+else:  # pragma: no cover - imported for runtime type hint resolution
+    from collections.abc import Callable as _Callable
+    from collections.abc import Mapping as _Mapping
+
+    Callable = _Callable
+    Mapping = _Mapping
 
 from sortipy.common import MissingConfigurationError, require_env_var
 from sortipy.domain.data_integration import FetchScrobblesResult, LastFmScrobbleSource
@@ -61,6 +73,37 @@ class RecentTracksResponse(TypedDict):
     recenttracks: RecentTracks
 
 
+class LastFmErrorResponse(TypedDict, total=False):
+    error: int
+    message: str
+
+
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+RETRYABLE_ERROR_CODES = {16, 29}
+DEFAULT_MAX_ATTEMPTS = 5
+DEFAULT_BACKOFF_INITIAL = 0.5
+DEFAULT_BACKOFF_FACTOR = 2.0
+DEFAULT_BACKOFF_MAX = 8.0
+
+
+@dataclass(frozen=True)
+class RetryConfiguration:
+    """Configuration values for Last.fm retry behaviour."""
+
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS
+    backoff_initial: float = DEFAULT_BACKOFF_INITIAL
+    backoff_factor: float = DEFAULT_BACKOFF_FACTOR
+    backoff_max: float = DEFAULT_BACKOFF_MAX
+
+
+class LastFmAPIError(RuntimeError):
+    """Raised when the Last.fm API returns an application-level error."""
+
+    def __init__(self, message: str, *, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class HttpLastFmScrobbleSource(LastFmScrobbleSource):
     """HTTP implementation of the Last.fm scrobble source port."""
 
@@ -70,10 +113,18 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
         api_key: str | None = None,
         user_name: str | None = None,
         client: httpx.Client | None = None,
+        sleep: Callable[[float], None] | None = None,
+        retry: RetryConfiguration | None = None,
     ) -> None:
         self._api_key = _coalesce_credential("LASTFM_API_KEY", api_key)
         self._user_name = _coalesce_credential("LASTFM_USER_NAME", user_name)
         self._client = client or httpx.Client()
+        self._sleep = sleep or time.sleep
+        retry_config = retry or RetryConfiguration()
+        self._max_attempts = max(1, retry_config.max_attempts)
+        self._backoff_initial = max(retry_config.backoff_initial, 0.0)
+        self._backoff_factor = max(retry_config.backoff_factor, 1.0)
+        self._backoff_max = max(retry_config.backoff_max, self._backoff_initial)
 
     def fetch_recent(
         self,
@@ -134,11 +185,108 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
         if extended:
             params["extended"] = 1
 
-        response = self._client.get(LASTFM_BASE_URL, params=params)
-        response.raise_for_status()
-        response_json = cast(RecentTracksResponse, response.json())
+        response_json = self._perform_request_with_retry(params)
         recent = response_json["recenttracks"]
         return recent["track"], recent["@attr"]
+
+    def _perform_request_with_retry(
+        self, params: Mapping[str, int | str]
+    ) -> RecentTracksResponse:
+        query_params = httpx.QueryParams(params)
+        for attempt in range(1, self._max_attempts + 1):
+            response: httpx.Response | None = None
+            try:
+                response = self._client.get(LASTFM_BASE_URL, params=query_params)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                if not self._should_retry_status(status_code) or attempt == self._max_attempts:
+                    raise
+                delay = self._compute_backoff(attempt, exc.response.headers.get("Retry-After"))
+                log.warning(
+                    "Last.fm request failed with status %s; retrying in %.2fs (attempt %s/%s)",
+                    status_code,
+                    delay,
+                    attempt,
+                    self._max_attempts,
+                )
+                self._sleep(delay)
+                continue
+            except httpx.RequestError as exc:
+                if attempt == self._max_attempts:
+                    raise
+                delay = self._compute_backoff(attempt, None)
+                log.warning(
+                    "Last.fm request error %s; retrying in %.2fs (attempt %s/%s)",
+                    exc,
+                    delay,
+                    attempt,
+                    self._max_attempts,
+                )
+                self._sleep(delay)
+                continue
+
+            payload = response.json()
+            if isinstance(payload, dict) and "error" in payload:
+                error_payload = cast(LastFmErrorResponse, payload)
+                error_code = error_payload.get("error")
+                message = error_payload.get("message", "Last.fm API error")
+                if (
+                    isinstance(error_code, int)
+                    and self._should_retry_error(error_code)
+                    and attempt < self._max_attempts
+                ):
+                    delay = self._compute_backoff(attempt, None)
+                    log.warning(
+                        "Last.fm returned error %s (%s); retrying in %.2fs (attempt %s/%s)",
+                        error_code,
+                        message,
+                        delay,
+                        attempt,
+                        self._max_attempts,
+                    )
+                    self._sleep(delay)
+                    continue
+                raise LastFmAPIError(
+                    message,
+                    code=error_code if isinstance(error_code, int) else None,
+                )
+
+            if not isinstance(payload, dict) or "recenttracks" not in payload:
+                raise LastFmAPIError("Unexpected Last.fm response payload")
+
+            return cast(RecentTracksResponse, payload)
+
+        raise LastFmAPIError("Exceeded retry attempts for Last.fm request")
+
+    def _should_retry_status(self, status_code: int) -> bool:
+        return status_code in RETRYABLE_STATUS_CODES
+
+    def _should_retry_error(self, error_code: int) -> bool:
+        return error_code in RETRYABLE_ERROR_CODES
+
+    def _compute_backoff(self, attempt: int, retry_after_header: str | None) -> float:
+        retry_after = _parse_retry_after(retry_after_header)
+        if retry_after is not None:
+            return min(retry_after, self._backoff_max)
+        base = self._backoff_initial * (self._backoff_factor ** (attempt - 1))
+        return min(base, self._backoff_max)
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        try:
+            target = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=UTC)
+        seconds = (target - datetime.now(UTC)).total_seconds()
+    return max(seconds, 0.0)
 
 
 def parse_scrobble(scrobble: TrackPayload) -> Scrobble:
