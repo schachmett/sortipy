@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.lastfm import HttpLastFmScrobbleSource
@@ -22,6 +23,9 @@ if TYPE_CHECKING:
     UnitOfWorkFactory = Callable[[], ScrobbleUnitOfWork]
 else:  # pragma: no cover - runtime placeholder for type checking
     UnitOfWorkFactory = object
+
+
+log = getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -45,7 +49,20 @@ def sync_lastfm_scrobbles(
     params = request or SyncRequest()
     if time_window is not None:
         params = apply_time_window(params, time_window, clock=clock or _utcnow)
-    return service.run(params)
+
+    log.info(
+        f"Starting Last.fm sync: limit={params.limit}, max_pages={params.max_pages}, "
+        f"from={params.from_timestamp}, to={params.to_timestamp}"
+    )
+
+    result = service.run(params)
+
+    log.info(
+        f"Finished Last.fm sync: stored={result.stored}, pages={result.pages_processed}, "
+        f"latest={result.latest_timestamp}, now_playing={bool(result.now_playing)}"
+    )
+
+    return result
 
 
 __all__ = ["sync_lastfm_scrobbles"]

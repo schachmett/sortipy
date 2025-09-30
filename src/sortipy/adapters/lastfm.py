@@ -244,11 +244,8 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
                     raise
                 delay = self._compute_backoff(attempt, exc.response.headers.get("Retry-After"))
                 log.warning(
-                    "Last.fm request failed with status %s; retrying in %.2fs (attempt %s/%s)",
-                    status_code,
-                    delay,
-                    attempt,
-                    self._max_attempts,
+                    f"Last.fm request failed with status {status_code}; retrying in "
+                    f"{delay:.2f}s (attempt {attempt}/{self._max_attempts})"
                 )
                 self._sleep(delay)
                 continue
@@ -257,11 +254,8 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
                     raise
                 delay = self._compute_backoff(attempt, None)
                 log.warning(
-                    "Last.fm request error %s; retrying in %.2fs (attempt %s/%s)",
-                    exc,
-                    delay,
-                    attempt,
-                    self._max_attempts,
+                    f"Last.fm transport error {exc!r}; retrying in {delay:.2f}s "
+                    f"(attempt {attempt}/{self._max_attempts})"
                 )
                 self._sleep(delay)
                 continue
@@ -278,15 +272,15 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
                 ):
                     delay = self._compute_backoff(attempt, None)
                     log.warning(
-                        "Last.fm returned error %s (%s); retrying in %.2fs (attempt %s/%s)",
-                        error_code,
-                        message,
-                        delay,
-                        attempt,
-                        self._max_attempts,
+                        f"Last.fm API error {error_code} ({message}); retrying in {delay:.2f}s "
+                        f"(attempt {attempt}/{self._max_attempts})"
                     )
                     self._sleep(delay)
                     continue
+                if isinstance(error_code, int):
+                    log.error(f"Last.fm API error {error_code}: {message}")
+                else:
+                    log.error(f"Last.fm API error: {message}")
                 raise LastFmAPIError(
                     message,
                     code=error_code if isinstance(error_code, int) else None,

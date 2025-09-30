@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from datetime import UTC, datetime, timedelta
 from signal import SIGINT, signal
@@ -13,12 +14,16 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
 from sortipy.app import sync_lastfm_scrobbles
+from sortipy.common.logging import configure_logging
 from sortipy.domain.data_integration import SyncRequest
 from sortipy.domain.time_windows import TimeWindow
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from types import FrameType
+
+
+log = logging.getLogger(__name__)
 
 
 # def display_albums(albums: list[LastFMAlbum]) -> None:
@@ -86,26 +91,27 @@ def _build_time_window(args: argparse.Namespace) -> TimeWindow | None:
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Main application entry point."""
+    configure_logging()
     parsed_args: argparse.Namespace
     try:
         parsed_args = _parse_args(argv or sys.argv[1:])
         window = _build_time_window(parsed_args)
         request = SyncRequest(limit=parsed_args.limit, max_pages=parsed_args.max_pages)
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except ValueError:
+        log.exception("CLI validation error")
         sys.exit(2)
 
     try:
         sync_lastfm_scrobbles(request, time_window=window)
 
-    except Exception as e:  # noqa: BLE001
-        print(f"Error: {e}", file=sys.stderr)
+    except Exception:
+        log.exception("Fatal error during sync")
         sys.exit(1)
 
 
 def sigint_handler(_signal_received: int, _frame: FrameType | None) -> None:
     """Handle SIGINT (Ctrl+C) gracefully."""
-    print("\nClosed by user (Ctrl+C)")
+    log.info("Closed by user (Ctrl+C)")
     sys.exit(0)
 
 
