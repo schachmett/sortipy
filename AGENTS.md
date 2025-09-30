@@ -12,6 +12,7 @@
 - If a required tool is missing or blocked, pause and ask the user how they want to fix it, offering concrete remediation steps you can take.
 - When adding a Python module, place `from __future__ import annotations` at the top to satisfy Ruff's required import rule.
 - If a test is known to be flaky, call that out explicitly, reference the test name, and explain the observed flake instead of chasing it endlessly; otherwise treat failures as real until proven flaky.
+- Follow the logging policy in `docs/policies/logging.md` for new log statements (levels, style, and scope).
 
 **Git Hygiene**
 - Create commits proactively; keep them atomic and scoped (tooling, docs, feature, refactor, bugfix, etc.) instead of bundling unrelated changes.
