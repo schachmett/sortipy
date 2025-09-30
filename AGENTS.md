@@ -21,6 +21,7 @@
 - Run `.venv/bin/ruff check`, `.venv/bin/pyright`, and `.venv/bin/pytest` before presenting a commit proposal unless the user approves skipping tests.
 - If you cannot resolve a failure, pause and ask for guidance rather than advancing a broken proposal.
 - After completing work, share a concise list of the proposed commit(s) and staged files so the user understands what will change.
+- Use conventional scope keywords (`feat`, `bugfix`, `docs`, `test`, `refactor`, `tooling`, `chore`, etc.) at the start of commit messages to keep history scannable.
 - Never attempt to resolve merge conflicts without explicit user direction.
 - Keep secrets out of the repository and documentation entirely; if something looks sensitive, stop and confirm with the user before continuing.
 
