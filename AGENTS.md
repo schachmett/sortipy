@@ -7,6 +7,7 @@
 
 **Tooling & Testing**
 - For any non-trivial edit (multi-line changes, new files, refactors), run `.venv/bin/ruff check`, `.venv/bin/pyright`, and `.venv/bin/pytest` before wrapping up.
+- When you touch imports, run `./.venv/bin/ruff check --select I --fix <path>` (or `--fix` on the whole tree) before the full lint pass so import order is cleaned automatically.
 - Minor code tweaks or documentation-only updates can skip the full test suite; note the rationale when you do.
 - Fix or explain any failures those tools surface; do not leave known lint/test issues unresolved.
 - If a required tool is missing or blocked, pause and ask the user how they want to fix it, offering concrete remediation steps you can take.
