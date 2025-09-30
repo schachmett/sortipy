@@ -93,8 +93,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Main application entry point."""
     configure_logging()
     parsed_args: argparse.Namespace
+    args_list = list(argv) if argv is not None else list(sys.argv[1:])
     try:
-        parsed_args = _parse_args(argv or sys.argv[1:])
+        parsed_args = _parse_args(args_list)
         window = _build_time_window(parsed_args)
         request = SyncRequest(limit=parsed_args.limit, max_pages=parsed_args.max_pages)
     except ValueError:
