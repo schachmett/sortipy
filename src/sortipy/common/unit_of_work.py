@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import create_engine
@@ -11,13 +10,15 @@ from sortipy.adapters.sqlalchemy import (
     create_all_tables,
     start_mappers,
 )
+from sortipy.common.storage import get_database_uri
 from sortipy.domain.data_integration import ScrobbleUnitOfWork
 
 if TYPE_CHECKING:
     from types import TracebackType
 
 
-ENGINE = create_engine(os.environ["DATABASE_URI"], future=True)
+DATABASE_URI = get_database_uri()
+ENGINE = create_engine(DATABASE_URI, future=True)
 
 
 def startup() -> None:

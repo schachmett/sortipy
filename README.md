@@ -25,7 +25,7 @@ Work is focused on the data foundation stories: reliable ingestion of Last.fm sc
 - Python 3.12+
 - Spotify developer application with OAuth credentials
 - Last.fm API key and username
-- A database URI compatible with SQLAlchemy (SQLite recommended during development)
+- Optional: a custom database URI (SQLite recommended) or a data directory override
 
 ## Setup
 1. Clone the repository and `cd` into it.
@@ -45,7 +45,9 @@ Work is focused on the data foundation stories: reliable ingestion of Last.fm sc
    SPOTIPY_REDIRECT_URI=http://127.0.0.1:9090
    LASTFM_API_KEY=<lastfm-api-key>
    LASTFM_USER_NAME=<lastfm-username>
-   DATABASE_URI=sqlite:///sortipy.db
+   # Optional overrides
+   # DATABASE_URI=sqlite+pysqlite:///absolute/path/to/sortipy.db
+   # SORTIPY_DATA_DIR=/absolute/path/to/data-directory
    ```
 
 ## Running the CLI prototype
