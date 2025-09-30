@@ -15,12 +15,11 @@
 - Follow the logging policy in `docs/policies/logging.md` for new log statements (levels, style, and scope).
 
 **Git Hygiene**
-- Create commits proactively; keep them atomic and scoped (tooling, docs, feature, refactor, bugfix, etc.) instead of bundling unrelated changes.
-- Only commit after `.venv/bin/ruff check`, `.venv/bin/pyright`, and `.venv/bin/pytest` all succeed so the history stays green (or you have explicitly justified why tests were skipped).
-- If you cannot resolve a failure before committing, stop and ask for guidance instead of committing a broken state.
-- After completing work, list only the commits you created during the current task (`git log --oneline -n <count>`) with brief descriptions so the user sees exactly what changed.
-- If the planned work fits into a single commit—or multiple commits that touch disjoint files—prepare the changes and propose the commit(s) instead of committing.
-- When proposing commit(s), stage the changes for the first proposed commit so it is ready to publish; leave subsequent proposals unstaged unless you are asked otherwise.
+- Do not create commits unless the user explicitly asks for them. Instead, stage changes and propose one or more commits (atomic and scoped) for approval.
+- Only stage files for the earliest proposed commit; leave other planned commits unstaged until the first is accepted.
+- Run `.venv/bin/ruff check`, `.venv/bin/pyright`, and `.venv/bin/pytest` before presenting a commit proposal unless the user approves skipping tests.
+- If you cannot resolve a failure, pause and ask for guidance rather than advancing a broken proposal.
+- After completing work, share a concise list of the proposed commit(s) and staged files so the user understands what will change.
 - Never attempt to resolve merge conflicts without explicit user direction.
 - Keep secrets out of the repository and documentation entirely; if something looks sensitive, stop and confirm with the user before continuing.
 
