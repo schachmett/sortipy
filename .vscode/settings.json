@@ -4,6 +4,7 @@
     "files.exclude": {
         "**/__pycache__": true,
         "**/*egg-info": true,
+        ".pre-commit-cache": true,
         ".mypy_cache": true,
         ".ruff_cache": true,
         ".pytest_cache": true,
