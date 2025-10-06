@@ -272,6 +272,45 @@ def test_http_source_retries_on_rate_limit_error_payload(sample_payload: TrackPa
     assert len(scrobbles) == 1
 
 
+def test_http_source_retries_on_consecutive_rate_limit_errors(
+    sample_payload: TrackPayload,
+) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            return httpx.Response(status_code=200, json={"error": 29, "message": "Rate limit"})
+        return httpx.Response(status_code=200, json=_make_recenttracks_response([sample_payload]))
+
+    sleep_calls: list[float] = []
+
+    def fake_sleep(duration: float) -> None:
+        sleep_calls.append(duration)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        source = HttpLastFmScrobbleSource(
+            api_key="demo",
+            user_name="demo-user",
+            client=client,
+            options=LastFmRuntimeOptions(
+                retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1, backoff_factor=2.0),
+                sleep=fake_sleep,
+            ),
+        )
+        result = source.fetch_recent(limit=1)
+    finally:
+        client.close()
+
+    assert attempts == 3
+    assert len(sleep_calls) == 2
+    assert math.isclose(sleep_calls[0], 0.1, rel_tol=1e-6)
+    assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
+    assert [scrobble.track.name for scrobble in result.scrobbles] == [sample_payload["name"]]
+
+
 def test_http_source_raises_on_non_retryable_error() -> None:
     sleep_calls: list[float] = []
 

@@ -123,3 +123,22 @@ def test_sync_scrobbles_resumes_across_pages() -> None:
     assert fake_source.calls[0][2] is not None
     assert fake_source.calls[1][0] == 2
     assert fake_source.calls[1][2] is None
+
+
+def test_sync_scrobbles_respects_to_timestamp_upper_bound() -> None:
+    base_time = datetime.now(tz=UTC).replace(microsecond=0)
+    within_window = make_scrobble("Within", timestamp=base_time)
+    beyond_window = make_scrobble("Beyond", timestamp=base_time + timedelta(seconds=60))
+    repo = FakeScrobbleRepository()
+    fake_source = FakeScrobbleSource([[within_window, beyond_window]])
+    service = SyncScrobbles(
+        source=fake_source,
+        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
+    )
+
+    window_end = base_time + timedelta(seconds=10)
+    result = service.run(SyncRequest(to_timestamp=window_end))
+
+    assert result.stored == 1
+    assert within_window in repo.items
+    assert beyond_window not in repo.items
