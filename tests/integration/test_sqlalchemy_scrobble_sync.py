@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Callable, Iterator, Sequence  # noqa: UP035
 
 import httpx
@@ -9,7 +10,8 @@ from sqlalchemy import create_engine, select
 from sortipy.adapters.lastfm import HttpLastFmScrobbleSource, RecentTracksResponse
 from sortipy.common.unit_of_work import SqlAlchemyUnitOfWork, startup
 from sortipy.domain.data_integration import SyncRequest, SyncScrobbles
-from sortipy.domain.types import Scrobble
+from sortipy.domain.types import Album, Artist, Scrobble, Track
+from tests.support.scrobbles import FakeScrobbleSource
 
 
 @pytest.fixture
@@ -71,3 +73,57 @@ def test_sync_scrobbles_persists_payload(
 
 def _extract_names(payload: RecentTracksResponse) -> list[str]:
     return [item["name"] for item in payload["recenttracks"]["track"] if "date" in item]
+
+
+def _make_scrobble(
+    *,
+    track_name: str,
+    artist_name: str,
+    album_name: str,
+    timestamp: datetime,
+) -> Scrobble:
+    artist = Artist(name=artist_name)
+    album = Album(name=album_name, artist=artist)
+    track = Track(name=track_name, artist=artist, album=album)
+    artist.tracks.append(track)
+    artist.albums.append(album)
+    album.add_track(track)
+    scrobble = Scrobble(timestamp=timestamp, track=track)
+    track.add_scrobble(scrobble)
+    return scrobble
+
+
+def test_sync_scrobbles_stores_tracks_with_same_name_different_artists(
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
+) -> None:
+    base_time = datetime.now(tz=UTC).replace(microsecond=0)
+    first = _make_scrobble(
+        track_name="Common Title",
+        artist_name="First Artist",
+        album_name="First Album",
+        timestamp=base_time,
+    )
+    second = _make_scrobble(
+        track_name="Common Title",
+        artist_name="Second Artist",
+        album_name="Second Album",
+        timestamp=base_time + timedelta(seconds=30),
+    )
+
+    service = SyncScrobbles(
+        source=FakeScrobbleSource([[first, second]]),
+        unit_of_work=sqlite_unit_of_work,
+    )
+
+    result = service.run(SyncRequest(limit=5))
+
+    assert result.stored == 2
+
+    with sqlite_unit_of_work() as uow:
+        persisted = uow.session.execute(select(Scrobble)).scalars().all()
+        artist_names = {scrobble.track.artist.name for scrobble in persisted}
+        track_names = {scrobble.track.name for scrobble in persisted}
+
+    assert len(persisted) == 2
+    assert artist_names == {"First Artist", "Second Artist"}
+    assert track_names == {"Common Title"}

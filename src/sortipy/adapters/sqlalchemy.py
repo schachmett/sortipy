@@ -69,7 +69,7 @@ lastfm_track_table = Table(
     "lastfm_track",
     mapper_registry.metadata,
     Column("id", Uuid, primary_key=True, default=uuid.uuid4),  # type: ignore[reportUnknownArgumentType]
-    Column("name", String, nullable=False, unique=True),
+    Column("name", String, nullable=False),
     Column("mbid", String, unique=True),
     Column("artist_id", Uuid, ForeignKey("lastfm_artist.id")),  # type: ignore[reportUnknownArgumentType]
     Column("album_id", Uuid, ForeignKey("lastfm_album.id")),  # type: ignore[reportUnknownArgumentType]
@@ -162,12 +162,15 @@ class SqlAlchemyScrobbleRepository(ScrobbleRepository):
             return artist_db
 
         # if we have a candidate, we can use it to complete the artist
-        if (
-            candidate is not None
-            and candidate.id is not None
-            and ((artist.mbid == candidate.mbid is not None) or artist.name == candidate.name)
-        ):
-            artist = candidate
+        if candidate is not None and candidate.id is not None:
+            mbid_matches = (
+                artist.mbid is not None
+                and candidate.mbid is not None
+                and artist.mbid == candidate.mbid
+            )
+            names_match = artist.name == candidate.name
+            if mbid_matches or names_match:
+                artist = candidate
 
         # if we don't have a candidate, we need to find the artist in the database
         else:
