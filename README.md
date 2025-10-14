@@ -8,7 +8,7 @@ Sortipy is an experimental music library explorer. It combines your Spotify save
 - Deliver analytics such as decade views, unheard albums, genre exploration, and artist timelines.
 - Start with a CLI adapter, paving the way for richer visualizations later.
 
-The high level plan and user-facing stories live in `docs/user-stories.md`. Architectural decisions are tracked under `docs/adr/`.
+The high level plan and user-facing stories live under `docs/user-stories/` (start with `docs/user-stories/index.md`). Architectural decisions are tracked under `docs/adr/`.
 
 ## Architecture
 Sortipy follows a ports-and-adapters (hexagonal) style:
@@ -57,9 +57,10 @@ python3 src/sortipy/main.py
 The current entry point performs a proof-of-concept Last.fm sync into the configured database. As domain services mature, new commands and outputs will be added.
 
 ## Contributing
-- Review `docs/user-stories.md` to understand the planned features.
-- Read the ADRs in `docs/adr/` to stay aligned with architectural decisions.
-- Use `ruff` and `pytest` (configured in `pyproject.toml`) before submitting changes.
+- Review `docs/user-stories/index.md` to understand the planned features.
+- Read `AGENTS.md` for automation workflow expectations and links to the key policies.
+- Follow the testing guidance in `docs/policies/testing.md` and the architectural decisions in `docs/adr/`.
+- Use the tooling configured in `pyproject.toml` (or `pre-commit run --all-files`) before submitting changes.
 
 ## License
 MIT License. See `LICENSE` for details.
