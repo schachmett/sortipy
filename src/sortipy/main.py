@@ -16,10 +16,9 @@ from dotenv import load_dotenv
 from sortipy.app import sync_lastfm_scrobbles
 from sortipy.common.logging import configure_logging
 from sortipy.domain.data_integration import SyncRequest
-from sortipy.domain.time_windows import TimeWindow
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from types import FrameType
 
 
@@ -76,17 +75,38 @@ def _parse_iso_datetime(value: str) -> datetime:
     return dt.astimezone(UTC)
 
 
-def _build_time_window(args: argparse.Namespace) -> TimeWindow | None:
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _compute_time_bounds(
+    args: argparse.Namespace,
+    *,
+    now_provider: Callable[[], datetime] = _utcnow,
+) -> tuple[datetime | None, datetime | None]:
     start = _parse_iso_datetime(args.start) if args.start else None
     end = _parse_iso_datetime(args.end) if args.end else None
-    lookback = None
+
+    lookback: timedelta | None = None
     if args.lookback_hours is not None:
         if args.lookback_hours < 0:
             raise ValueError("Lookback hours must be non-negative")
         lookback = timedelta(hours=args.lookback_hours)
-    if any(value is not None for value in (start, end, lookback)):
-        return TimeWindow(start=start, end=end, lookback=lookback)
-    return None
+
+    if lookback is not None:
+        anchor = end or now_provider()
+        if anchor.tzinfo is None:
+            anchor = anchor.replace(tzinfo=UTC)
+        anchor = anchor.astimezone(UTC)
+        start_from_lookback = anchor - lookback
+        start = start_from_lookback if start is None else max(start, start_from_lookback)
+        if end is None:
+            end = anchor
+
+    if start and end and start > end:
+        raise ValueError("Time window start must be before end")
+
+    return start, end
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -96,14 +116,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     args_list = list(argv) if argv is not None else list(sys.argv[1:])
     try:
         parsed_args = _parse_args(args_list)
-        window = _build_time_window(parsed_args)
-        request = SyncRequest(limit=parsed_args.limit, max_pages=parsed_args.max_pages)
+        start, end = _compute_time_bounds(parsed_args)
+        request = SyncRequest(
+            limit=parsed_args.limit,
+            max_pages=parsed_args.max_pages,
+            from_timestamp=start,
+            to_timestamp=end,
+        )
     except ValueError:
         log.exception("CLI validation error")
         sys.exit(2)
 
     try:
-        sync_lastfm_scrobbles(request, time_window=window)
+        sync_lastfm_scrobbles(request)
 
     except Exception:
         log.exception("Fatal error during sync")
