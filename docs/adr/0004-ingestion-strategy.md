@@ -1,6 +1,6 @@
 # ADR 0004: Layered Ingestion Strategy
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-10-17
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0003: Persistence via SQLAlchemy with Imperative Mappers
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-03-05
 
 ## Context

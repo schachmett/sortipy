@@ -1,6 +1,6 @@
 # ADR 0002: Canonical Domain Model for Library Entities
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-10-17
 
 ## Context

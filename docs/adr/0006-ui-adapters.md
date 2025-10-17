@@ -1,6 +1,6 @@
 # ADR 0006: Initial UI via CLI Adapter
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-03-05
 
 ## Context

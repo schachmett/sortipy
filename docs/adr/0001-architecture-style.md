@@ -1,6 +1,6 @@
 # ADR 0001: Adopt Ports-and-Adapters Architecture
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-03-05
 
 ## Context

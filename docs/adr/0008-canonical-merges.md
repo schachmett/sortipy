@@ -1,6 +1,6 @@
 # ADR 0008: Canonical Merges via Self-Pointer
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-10-17
 
 ## Context

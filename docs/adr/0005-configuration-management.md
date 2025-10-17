@@ -1,6 +1,6 @@
 # ADR 0005: Configuration via dotenv Files (for now)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-03-05
 
 ## Context

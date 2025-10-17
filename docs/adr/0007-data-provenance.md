@@ -1,6 +1,6 @@
 # ADR 0007: Raw Data Provenance & Checkpointing
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2025-10-17
 
 ## Context
