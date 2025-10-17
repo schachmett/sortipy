@@ -32,4 +32,3 @@ Retention:
 ## Adjacent ADRs
 - ADR 0002 (Domain Model) – describes the canonical entities that consume transformed data.
 - ADR 0004 (Ingestion Strategy) – defines the layered ingestion approach that relies on this provenance schema.
-- ADR TBD (Canonical Merge Behaviour) – explains how canonical entities deduplicate after raw payload processing.
