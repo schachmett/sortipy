@@ -26,4 +26,3 @@ Consumers resolve the canonical entity by coalescing `canonical_id` with the pri
 
 ## Adjacent ADRs
 - ADR 0002 (Domain Model) – the canonical entities that receive these merge pointers.
-- ADR 0007 (Data Provenance) – raw payload and checkpoint information used to justify/inspect merges.
