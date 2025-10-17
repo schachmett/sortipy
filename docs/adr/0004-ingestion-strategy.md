@@ -9,7 +9,7 @@ Sortipy ingests data from heterogeneous sources with different fidelity: user-fa
 ## Decision
 Adopt a **three-layer ingestion pipeline**:
 
-1. **Primary (user-centric) layer** – imports data owned or curated by the user (Spotify saved albums, Last.fm play events, manual library edits). Jobs focus on idempotent upserts plus checkpointing (see adjecent ADRs).
+1. **Primary (user-centric) layer** – imports data owned or curated by the user (Spotify saved albums, Last.fm play events, manual library edits). Jobs focus on idempotent upserts plus checkpointing (see ADR 0007).
 2. **Reference (canonical) layer** – enriches entities with authoritative catalogues (MusicBrainz to resolve ReleaseSets/Releases/Recordings, Discogs for label/catalog data). Runs after primary ingestion, matching and linking to canonical IDs without overwriting user-sourced facts.
 3. **Enrichment (tertiary) layer** – augments canonical entities with optional metadata such as ratings (RateYourMusic), audio features (Spotify analysis), artwork, or fan statistics. These enrichment jobs can execute independently once primary and reference layers have established the canonical keys.
 
@@ -24,5 +24,5 @@ Each layer operates through explicit ports/adapters and produces outputs that do
 - Event-driven or streaming ingestion can later replace the pull jobs per layer without altering domain services.
 
 ## Adjacent ADRs
-- Canonical merge behavior – covers self-referencing merges and dedupe auditing.
-- Data provenance & raw payload storage – covers SourceIngest/RawPayload tables and checkpointing mechanics.
+- Canonical merge behavior – covers self-referencing merges and dedupe auditing (ADR TBD).
+- Data provenance & raw payload storage – see ADR 0007.

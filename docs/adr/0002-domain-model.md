@@ -47,4 +47,4 @@ Provider metadata is stored externally. External IDs live primarily in the Exter
 
 ## Adjacent ADRs
 - Canonical merge behavior (self-referencing canonical IDs, audit trail) – documented separately.
-- Raw data provenance and ingestion batch tracking – documented separately.
+- Raw data provenance and ingestion batch tracking – see ADR 0007.
