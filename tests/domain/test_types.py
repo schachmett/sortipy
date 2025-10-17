@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sortipy.domain.types import Album, AlbumType, Artist, Provider, Scrobble, Track
+from sortipy.domain.types import Album, AlbumType, Artist, PlayEvent, Provider, Track
 
 
 def test_add_track_to_album_is_idempotent() -> None:
@@ -16,16 +16,16 @@ def test_add_track_to_album_is_idempotent() -> None:
     assert album.tracks == [track]
 
 
-def test_track_scrobbles_are_unique() -> None:
+def test_track_play_events_are_unique() -> None:
     artist = Artist(name="Test Artist")
     album = Album(name="Test Album", artist=artist)
     track = Track(name="Song", artist=artist, album=album)
-    scrobble = Scrobble(timestamp=datetime.now(tz=UTC), track=track)
+    event = PlayEvent(timestamp=datetime.now(tz=UTC), track=track)
 
-    track.add_scrobble(scrobble)
-    track.add_scrobble(scrobble)
+    track.add_play_event(event)
+    track.add_play_event(event)
 
-    assert track.scrobbles == [scrobble]
+    assert track.play_events == [event]
 
 
 def test_sources_are_tracked() -> None:
@@ -40,10 +40,10 @@ def test_album_and_track_cross_links() -> None:
     artist = Artist(name="Test Artist")
     album = Album(name="Test Album", artist=artist)
     track = Track(name="Song", artist=artist, album=album)
-    scrobble = Scrobble(timestamp=datetime(2024, 1, 1, tzinfo=UTC), track=track)
-    track.add_scrobble(scrobble)
+    event = PlayEvent(timestamp=datetime(2024, 1, 1, tzinfo=UTC), track=track)
+    track.add_play_event(event)
     album.add_track(track)
 
     assert track in album.tracks
     assert track.album is album
-    assert track.scrobbles[0].track is track
+    assert track.play_events[0].track is track

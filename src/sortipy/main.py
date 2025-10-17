@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from sortipy.app import sync_lastfm_scrobbles
+from sortipy.app import sync_lastfm_play_events
 from sortipy.common.logging import configure_logging
 from sortipy.domain.data_integration import SyncRequest
 
@@ -34,15 +34,15 @@ log = logging.getLogger(__name__)
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Synchronise Last.fm scrobbles")
     parser.add_argument(
-        "--limit",
+        "--batch-size",
         type=int,
-        default=SyncRequest().limit,
-        help="Number of scrobbles to request per page (default: %(default)s)",
+        default=SyncRequest().batch_size,
+        help="Number of events to request per API call (default: %(default)s)",
     )
     parser.add_argument(
-        "--max-pages",
+        "--max-events",
         type=int,
-        help="Maximum number of pages to fetch before stopping",
+        help="Maximum number of events to fetch before stopping",
     )
     parser.add_argument(
         "--start",
@@ -118,8 +118,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         parsed_args = _parse_args(args_list)
         start, end = _compute_time_bounds(parsed_args)
         request = SyncRequest(
-            limit=parsed_args.limit,
-            max_pages=parsed_args.max_pages,
+            batch_size=parsed_args.batch_size,
+            max_events=parsed_args.max_events,
             from_timestamp=start,
             to_timestamp=end,
         )
@@ -128,7 +128,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         sys.exit(2)
 
     try:
-        sync_lastfm_scrobbles(request)
+        sync_lastfm_play_events(request)
 
     except Exception:
         log.exception("Fatal error during sync")

@@ -26,8 +26,8 @@ from sqlalchemy import engine as sa_engine
 from sqlalchemy.orm import Session, configure_mappers, relationship
 
 from sortipy.common.repository import Repository
-from sortipy.domain.data_integration import ScrobbleRepository
-from sortipy.domain.types import Album, Artist, Scrobble, Track
+from sortipy.domain.data_integration import PlayEventRepository
+from sortipy.domain.types import Album, Artist, PlayEvent, Track
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -77,8 +77,8 @@ lastfm_track_table = Table(
     Column("playcount", Integer),
 )
 
-lastfm_scrobble_table = Table(
-    "lastfm_scrobble",
+lastfm_play_event_table = Table(
+    "lastfm_play_event",
     mapper_registry.metadata,
     Column("timestamp", DateTime, primary_key=True, nullable=False),
     Column("track_id", Uuid, ForeignKey("lastfm_track.id")),  # type: ignore[reportUnknownArgumentType]
@@ -113,10 +113,10 @@ def start_mappers() -> orm.registry:
         exclude_properties={"sources"},
     )
     mapper_registry.map_imperatively(
-        Scrobble,
-        lastfm_scrobble_table,
+        PlayEvent,
+        lastfm_play_event_table,
         properties={
-            "track": relationship(Track, backref="scrobbles"),
+            "track": relationship(Track, backref="play_events"),
         },
         exclude_properties={"provider"},
     )
@@ -145,7 +145,7 @@ class SQLAlchemyRepository[T](Repository[T]):
         self.session.merge(item)
 
 
-class SqlAlchemyScrobbleRepository(ScrobbleRepository):
+class SqlAlchemyPlayEventRepository(PlayEventRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -237,41 +237,41 @@ class SqlAlchemyScrobbleRepository(ScrobbleRepository):
         #     self.session.add(track)
         return track
 
-    def add(self, scrobble: Scrobble) -> None:
+    def add(self, event: PlayEvent) -> None:
         # with self.session.no_autoflush:
-        artist = self._complete_artist(scrobble.track.artist)
-        scrobble.track.artist = artist
-        album_artist = self._complete_artist(scrobble.track.album.artist, artist)
-        scrobble.track.album.artist = album_artist
-        album = self._complete_album(scrobble.track.album)
-        scrobble.track.album = album
-        track = self._complete_track(scrobble.track)
-        scrobble.track = track
+        artist = self._complete_artist(event.track.artist)
+        event.track.artist = artist
+        album_artist = self._complete_artist(event.track.album.artist, artist)
+        event.track.album.artist = album_artist
+        album = self._complete_album(event.track.album)
+        event.track.album = album
+        track = self._complete_track(event.track)
+        event.track = track
 
-        self.session.add(scrobble)
+        self.session.add(event)
         # self.session.flush()
 
-    def get(self, key: str) -> Scrobble:
-        stmt = select(Scrobble).where(Scrobble.timestamp == key)  # type: ignore[arg-type]
-        scrobble = self.session.execute(stmt).scalar_one_or_none()
-        if scrobble is None:
-            raise ValueError(f"Scrobble with timestamp {key} not found")
-        return scrobble
+    def get(self, key: str) -> PlayEvent:
+        stmt = select(PlayEvent).where(PlayEvent.timestamp == key)  # type: ignore[arg-type]
+        play_event = self.session.execute(stmt).scalar_one_or_none()
+        if play_event is None:
+            raise ValueError(f"Play event with timestamp {key} not found")
+        return play_event
 
-    def query(self, **kwargs: object) -> Sequence[Scrobble]:
-        stmt = select(Scrobble).filter_by(**kwargs)
+    def query(self, **kwargs: object) -> Sequence[PlayEvent]:
+        stmt = select(PlayEvent).filter_by(**kwargs)
         return self.session.execute(stmt).scalars().all()
 
     def exists(self, timestamp: datetime) -> bool:
-        stmt = select(lastfm_scrobble_table.c.timestamp).where(
-            lastfm_scrobble_table.c.timestamp == timestamp
+        stmt = select(lastfm_play_event_table.c.timestamp).where(
+            lastfm_play_event_table.c.timestamp == timestamp
         )
         return self.session.execute(stmt).scalar_one_or_none() is not None
 
     def latest_timestamp(self) -> datetime | None:
         stmt = (
-            select(lastfm_scrobble_table.c.timestamp)
-            .order_by(lastfm_scrobble_table.c.timestamp.desc())
+            select(lastfm_play_event_table.c.timestamp)
+            .order_by(lastfm_play_event_table.c.timestamp.desc())
             .limit(1)
         )
         return self.session.execute(stmt).scalar_one_or_none()

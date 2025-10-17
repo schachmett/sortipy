@@ -16,14 +16,14 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["request"] = request
         captured["kwargs"] = kwargs
 
-    monkeypatch.setattr(main_module, "sync_lastfm_scrobbles", fake_sync)
+    monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
 
     main_module.main([])
 
     assert isinstance(captured["request"], SyncRequest)
     request = captured["request"]
-    assert request.limit == SyncRequest().limit
-    assert request.max_pages is None
+    assert request.batch_size == SyncRequest().batch_size
+    assert request.max_events is None
     assert captured["kwargs"] == {}
 
 
@@ -36,13 +36,13 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["request"] = request
         captured["kwargs"] = kwargs
 
-    monkeypatch.setattr(main_module, "sync_lastfm_scrobbles", fake_sync)
+    monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
 
     main_module.main(
         [
-            "--limit",
+            "--batch-size",
             "50",
-            "--max-pages",
+            "--max-events",
             "3",
             "--start",
             "2025-01-01T03:00:00+03:00",
@@ -55,8 +55,8 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
     request = captured["request"]
     assert isinstance(request, SyncRequest)
-    assert request.limit == 50
-    assert request.max_pages == 3
+    assert request.batch_size == 50
+    assert request.max_events == 3
     assert request.from_timestamp == datetime(2025, 1, 1, 21, 30, tzinfo=UTC)
     assert request.to_timestamp == datetime(2025, 1, 2, 0, 0, tzinfo=UTC)
     assert captured["kwargs"] == {}
@@ -68,7 +68,7 @@ def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_sync(*_: object, **__: object) -> None:
         return None
 
-    monkeypatch.setattr(main_module, "sync_lastfm_scrobbles", fake_sync)
+    monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
 
     with pytest.raises(SystemExit) as excinfo:
         main_module.main(["--start", "not-a-date"])

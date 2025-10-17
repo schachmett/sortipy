@@ -5,20 +5,20 @@ from __future__ import annotations
 from logging import getLogger
 from typing import TYPE_CHECKING
 
-from sortipy.adapters.lastfm import HttpLastFmScrobbleSource
+from sortipy.adapters.lastfm import HttpLastFmPlayEventSource
 from sortipy.common.unit_of_work import get_unit_of_work, startup
 from sortipy.domain.data_integration import (
-    LastFmScrobbleSource,
-    ScrobbleUnitOfWork,
+    PlayEventSource,
+    PlayEventUnitOfWork,
+    SyncPlayEvents,
+    SyncPlayEventsResult,
     SyncRequest,
-    SyncScrobbles,
-    SyncScrobblesResult,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    UnitOfWorkFactory = Callable[[], ScrobbleUnitOfWork]
+    UnitOfWorkFactory = Callable[[], PlayEventUnitOfWork]
 else:  # pragma: no cover - runtime placeholder for type checking
     UnitOfWorkFactory = object
 
@@ -26,32 +26,33 @@ else:  # pragma: no cover - runtime placeholder for type checking
 log = getLogger(__name__)
 
 
-def sync_lastfm_scrobbles(
+def sync_lastfm_play_events(
     request: SyncRequest | None = None,
     *,
-    source: LastFmScrobbleSource | None = None,
+    source: PlayEventSource | None = None,
     unit_of_work_factory: UnitOfWorkFactory | None = None,
-) -> SyncScrobblesResult:
-    """Synchronise Last.fm scrobbles using the configured adapters."""
+) -> SyncPlayEventsResult:
+    """Synchronise Last.fm play events using the configured adapters."""
 
     startup()
-    effective_source = source or HttpLastFmScrobbleSource()
+    effective_source = source or HttpLastFmPlayEventSource()
     effective_uow = unit_of_work_factory or get_unit_of_work
-    service = SyncScrobbles(source=effective_source, unit_of_work=effective_uow)
+    service = SyncPlayEvents(source=effective_source, unit_of_work=effective_uow)
     params = request or SyncRequest()
+
     log.info(
-        f"Starting Last.fm sync: limit={params.limit}, max_pages={params.max_pages}, "
+        f"Starting Last.fm sync: batch_size={params.batch_size}, max_events={params.max_events}, "
         f"from={params.from_timestamp}, to={params.to_timestamp}"
     )
 
     result = service.run(params)
 
     log.info(
-        f"Finished Last.fm sync: stored={result.stored}, pages={result.pages_processed}, "
+        f"Finished Last.fm sync: stored={result.stored}, fetched={result.fetched}, "
         f"latest={result.latest_timestamp}, now_playing={bool(result.now_playing)}"
     )
 
     return result
 
 
-__all__ = ["sync_lastfm_scrobbles"]
+__all__ = ["sync_lastfm_play_events"]

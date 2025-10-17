@@ -1,4 +1,4 @@
-"""Exercise SQLAlchemy scrobble repository helpers."""
+"""Exercise SQLAlchemy play-event repository helpers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Never, cast
 import pytest
 from sqlalchemy.orm import Session
 
-from sortipy.adapters.sqlalchemy import SqlAlchemyScrobbleRepository
+from sortipy.adapters.sqlalchemy import SqlAlchemyPlayEventRepository
 from sortipy.domain.types import Artist
 
 
@@ -34,7 +34,7 @@ def test_complete_artist_reuses_candidate_when_mbid_matches(
     artist_name: str,
     candidate_name: str,
 ) -> None:
-    repository = SqlAlchemyScrobbleRepository(cast(Session, _StubSession()))
+    repository = SqlAlchemyPlayEventRepository(cast(Session, _StubSession()))
     candidate = Artist(name=candidate_name, id=uuid.uuid4(), mbid="mbid-123")
     artist = Artist(name=artist_name, mbid="mbid-123")
 

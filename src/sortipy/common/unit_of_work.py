@@ -6,12 +6,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from sortipy.adapters.sqlalchemy import (
-    SqlAlchemyScrobbleRepository,
+    SqlAlchemyPlayEventRepository,
     create_all_tables,
     start_mappers,
 )
 from sortipy.common.storage import get_database_uri
-from sortipy.domain.data_integration import ScrobbleUnitOfWork
+from sortipy.domain.data_integration import PlayEventUnitOfWork
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -27,18 +27,18 @@ def startup() -> None:
     create_all_tables(ENGINE)
 
 
-def get_unit_of_work() -> ScrobbleUnitOfWork:
+def get_unit_of_work() -> PlayEventUnitOfWork:
     """Get a new unit of work."""
     return SqlAlchemyUnitOfWork()
 
 
-class SqlAlchemyUnitOfWork(ScrobbleUnitOfWork):
+class SqlAlchemyUnitOfWork(PlayEventUnitOfWork):
     def __init__(self) -> None:
         self.session_factory = sessionmaker(bind=ENGINE)
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self.session_factory()
-        self.scrobbles = SqlAlchemyScrobbleRepository(self.session)
+        self.play_events = SqlAlchemyPlayEventRepository(self.session)
         return self
 
     def __exit__(

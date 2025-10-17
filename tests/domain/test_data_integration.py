@@ -2,41 +2,37 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sortipy.domain.data_integration import (
-    SyncRequest,
-    SyncScrobbles,
-    SyncScrobblesResult,
-)
-from tests.support.scrobbles import (
-    FakeScrobbleRepository,
-    FakeScrobbleSource,
-    FakeScrobbleUnitOfWork,
-    make_scrobble,
+from sortipy.domain.data_integration import SyncPlayEvents, SyncPlayEventsResult, SyncRequest
+from tests.support.play_events import (
+    FakePlayEventRepository,
+    FakePlayEventSource,
+    FakePlayEventUnitOfWork,
+    make_play_event,
 )
 
 
-def test_sync_scrobbles_persists_results() -> None:
-    scrobble = make_scrobble()
-    repo = FakeScrobbleRepository()
-    service = SyncScrobbles(
-        source=FakeScrobbleSource([[scrobble]]),
-        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
+def test_sync_play_events_persists_results() -> None:
+    event = make_play_event()
+    repo = FakePlayEventRepository()
+    service = SyncPlayEvents(
+        source=FakePlayEventSource([[event]]),
+        unit_of_work=lambda: FakePlayEventUnitOfWork(repo),
     )
 
-    result = service.run(SyncRequest(limit=5))
+    result = service.run(SyncRequest(batch_size=5))
 
-    assert isinstance(result, SyncScrobblesResult)
+    assert isinstance(result, SyncPlayEventsResult)
     assert result.stored == 1
-    assert result.pages_processed == 1
-    assert repo.items == [scrobble]
-    assert repo.items[0].timestamp == scrobble.timestamp
+    assert result.fetched == 1
+    assert repo.items == [event]
+    assert repo.items[0].timestamp == event.timestamp
 
 
-def test_sync_scrobbles_skips_commit_when_empty() -> None:
-    repo = FakeScrobbleRepository()
-    uow = FakeScrobbleUnitOfWork(repo)
-    service = SyncScrobbles(
-        source=FakeScrobbleSource([[]]),
+def test_sync_play_events_skips_commit_when_empty() -> None:
+    repo = FakePlayEventRepository()
+    uow = FakePlayEventUnitOfWork(repo)
+    service = SyncPlayEvents(
+        source=FakePlayEventSource([[]]),
         unit_of_work=lambda: uow,
     )
 
@@ -47,93 +43,65 @@ def test_sync_scrobbles_skips_commit_when_empty() -> None:
     assert uow.committed is False
 
 
-def test_sync_scrobbles_skips_existing_timestamps() -> None:
-    scrobble = make_scrobble()
-    repo = FakeScrobbleRepository([scrobble])
-    service = SyncScrobbles(
-        source=FakeScrobbleSource([[scrobble]]),
-        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
+def test_sync_play_events_skips_existing_timestamps() -> None:
+    event = make_play_event()
+    repo = FakePlayEventRepository([event])
+    service = SyncPlayEvents(
+        source=FakePlayEventSource([[event]]),
+        unit_of_work=lambda: FakePlayEventUnitOfWork(repo),
     )
 
     result = service.run()
 
     assert result.stored == 0
-    assert repo.items == [scrobble]
+    assert repo.items == [event]
 
 
-def test_sync_scrobbles_respects_from_timestamp() -> None:
-    scrobble_old = make_scrobble("Old")
-    scrobble_old.timestamp = scrobble_old.timestamp.replace(microsecond=0)
-    scrobble_new = make_scrobble("New")
-    scrobble_new.timestamp = scrobble_old.timestamp + timedelta(seconds=60)
-    repo = FakeScrobbleRepository()
-    repo.add(scrobble_old)
-    fake_source = FakeScrobbleSource([[scrobble_old, scrobble_new]])
-    service = SyncScrobbles(
+def test_sync_play_events_respects_from_timestamp() -> None:
+    older = make_play_event("Old")
+    older.timestamp = older.timestamp.replace(microsecond=0)
+    newer = make_play_event("New")
+    newer.timestamp = older.timestamp + timedelta(seconds=60)
+    repo = FakePlayEventRepository([older])
+    fake_source = FakePlayEventSource([[older, newer]])
+    service = SyncPlayEvents(
         source=fake_source,
-        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
+        unit_of_work=lambda: FakePlayEventUnitOfWork(repo),
     )
 
-    result = service.run()
+    result = service.run(SyncRequest(from_timestamp=older.timestamp))
 
     assert result.stored == 1
-    assert scrobble_new in repo.items
-    assert fake_source.calls[0][2] is not None
+    assert newer in repo.items
+    assert fake_source.calls[0]["since"] == older.timestamp
 
 
-def test_sync_scrobbles_returns_now_playing_without_persisting() -> None:
-    in_progress = make_scrobble("Now Playing")
-    scrobble = make_scrobble("Logged")
-    repo = FakeScrobbleRepository()
-    fake_source = FakeScrobbleSource([[scrobble]], now_playing=[in_progress])
-    service = SyncScrobbles(
+def test_sync_play_events_returns_now_playing_without_persisting() -> None:
+    in_progress = make_play_event("Now Playing")
+    logged = make_play_event("Logged")
+    repo = FakePlayEventRepository()
+    fake_source = FakePlayEventSource([[logged]], now_playing=in_progress)
+    service = SyncPlayEvents(
         source=fake_source,
-        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
+        unit_of_work=lambda: FakePlayEventUnitOfWork(repo),
     )
 
     result = service.run()
 
     assert result.now_playing is in_progress
     assert in_progress not in repo.items
-    assert scrobble in repo.items
+    assert logged in repo.items
 
 
-def test_sync_scrobbles_resumes_across_pages() -> None:
+def test_sync_play_events_respects_to_timestamp_upper_bound() -> None:
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
-    existing = make_scrobble("Existing")
-    existing.timestamp = base_time
-    first_new = make_scrobble("First New")
-    first_new.timestamp = base_time + timedelta(seconds=30)
-    second_new = make_scrobble("Second New")
-    second_new.timestamp = base_time + timedelta(seconds=60)
-    repo = FakeScrobbleRepository([existing])
-    fake_source = FakeScrobbleSource([[first_new], [second_new]])
-    service = SyncScrobbles(
+    within_window = make_play_event("Within", timestamp=base_time)
+    beyond_window = make_play_event("Beyond", timestamp=base_time + timedelta(seconds=60))
+    repo = FakePlayEventRepository()
+    fake_source = FakePlayEventSource([[within_window, beyond_window]])
+    service = SyncPlayEvents(
         source=fake_source,
-        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
-    )
-
-    result = service.run(SyncRequest(limit=1))
-
-    timestamps = {item.timestamp for item in repo.items}
-    assert timestamps == {existing.timestamp, first_new.timestamp, second_new.timestamp}
-    assert result.stored == 2
-    assert result.pages_processed == 2
-    assert fake_source.calls[0][0] == 1
-    assert fake_source.calls[0][2] is not None
-    assert fake_source.calls[1][0] == 2
-    assert fake_source.calls[1][2] is None
-
-
-def test_sync_scrobbles_respects_to_timestamp_upper_bound() -> None:
-    base_time = datetime.now(tz=UTC).replace(microsecond=0)
-    within_window = make_scrobble("Within", timestamp=base_time)
-    beyond_window = make_scrobble("Beyond", timestamp=base_time + timedelta(seconds=60))
-    repo = FakeScrobbleRepository()
-    fake_source = FakeScrobbleSource([[within_window, beyond_window]])
-    service = SyncScrobbles(
-        source=fake_source,
-        unit_of_work=lambda: FakeScrobbleUnitOfWork(repo),
+        unit_of_work=lambda: FakePlayEventUnitOfWork(repo),
     )
 
     window_end = base_time + timedelta(seconds=10)

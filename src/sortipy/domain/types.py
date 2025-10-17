@@ -41,7 +41,7 @@ def _track_list() -> list[Track]:
     return []
 
 
-def _scrobble_list() -> list[Scrobble]:
+def _play_event_list() -> list[PlayEvent]:
     return []
 
 
@@ -100,18 +100,18 @@ class Track:
     track_number: int | None = None
     playcount: int | None = None
     sources: set[Provider] = field(default_factory=_provider_set)
-    scrobbles: list[Scrobble] = field(default_factory=_scrobble_list, repr=False)
+    play_events: list[PlayEvent] = field(default_factory=_play_event_list, repr=False)
 
-    def add_scrobble(self, scrobble: Scrobble) -> None:
-        if scrobble not in self.scrobbles:
-            self.scrobbles.append(scrobble)
+    def add_play_event(self, play_event: PlayEvent) -> None:
+        if play_event not in self.play_events:
+            self.play_events.append(play_event)
 
     def add_source(self, provider: Provider) -> None:
         self.sources.add(provider)
 
 
 @dataclass
-class Scrobble:
+class PlayEvent:
     """A listening event for a track."""
 
     timestamp: datetime
@@ -126,4 +126,4 @@ class LibrarySnapshot:
     artists: list[Artist]
     albums: list[Album]
     tracks: list[Track]
-    scrobbles: list[Scrobble]
+    play_events: list[PlayEvent]

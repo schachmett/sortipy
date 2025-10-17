@@ -1,65 +1,63 @@
-"""Ports and use cases for integrating scrobble data."""
+"""Ports and services for ingesting listening history."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Callable, Iterable, Protocol  # noqa: UP035
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+    from datetime import datetime
     from types import TracebackType
 
-    from sortipy.domain.types import Scrobble
+    from sortipy.domain.types import PlayEvent
 
 
 @dataclass
-class FetchScrobblesResult:
-    """Snapshot of a paged Last.fm scrobble response."""
+class FetchPlayEventsResult:
+    """Container for a batch of play events returned by a source."""
 
-    scrobbles: Iterable[Scrobble]
-    page: int
-    total_pages: int
-    now_playing: Scrobble | None = None
+    events: Iterable[PlayEvent]
+    now_playing: PlayEvent | None = None
 
 
-class LastFmScrobbleSource(Protocol):
-    """Port for retrieving Last.fm scrobbles."""
+class PlayEventSource(Protocol):
+    """Port for retrieving play events from an external provider."""
 
     def fetch_recent(
         self,
         *,
-        page: int = 1,
-        limit: int = 200,
-        from_ts: int | None = None,
-        to_ts: int | None = None,
-        extended: bool = False,
-    ) -> FetchScrobblesResult:
-        """Return a page of the most recent scrobbles for a user."""
+        batch_size: int = 200,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        max_events: int | None = None,
+    ) -> FetchPlayEventsResult:
+        """Return recent play events, honouring optional temporal bounds."""
         ...
 
 
-class ScrobbleRepository(Protocol):
-    """Persistence port for storing scrobbles."""
+class PlayEventRepository(Protocol):
+    """Persistence port for storing play events."""
 
-    def add(self, scrobble: Scrobble) -> None:
-        """Persist a scrobble instance."""
+    def add(self, event: PlayEvent) -> None:
+        """Persist a play event instance."""
         ...
 
     def exists(self, timestamp: datetime) -> bool:
-        """Return whether a scrobble at the given timestamp already exists."""
+        """Return whether a play event at the given timestamp already exists."""
         ...
 
     def latest_timestamp(self) -> datetime | None:
-        """Return the most recent scrobble timestamp in the store."""
+        """Return the most recent play event timestamp seen so far."""
         ...
 
 
-class ScrobbleUnitOfWork(Protocol):
-    """Transaction boundary for scrobble related persistence."""
+class PlayEventUnitOfWork(Protocol):
+    """Transaction boundary for play-event persistence operations."""
 
-    scrobbles: ScrobbleRepository
+    play_events: PlayEventRepository
 
-    def __enter__(self) -> ScrobbleUnitOfWork: ...
+    def __enter__(self) -> PlayEventUnitOfWork: ...
 
     def __exit__(
         self,
@@ -74,130 +72,114 @@ class ScrobbleUnitOfWork(Protocol):
 
 
 @dataclass
-class SyncScrobblesResult:
-    """Outcome of a sync operation."""
+class SyncPlayEventsResult:
+    """Outcome of a play-event sync operation."""
 
     stored: int
-    pages_processed: int
+    fetched: int
     latest_timestamp: datetime | None
-    now_playing: Scrobble | None
+    now_playing: PlayEvent | None
 
 
 @dataclass
 class SyncRequest:
     """Parameters controlling a sync invocation."""
 
-    limit: int = 200
-    start_page: int = 1
-    max_pages: int | None = None
+    batch_size: int = 200
+    max_events: int | None = None
     from_timestamp: datetime | None = None
     to_timestamp: datetime | None = None
-    extended: bool = False
 
 
 @dataclass
-class SyncScrobbles:
-    """Application service for synchronising Last.fm scrobbles into storage."""
+class SyncPlayEvents:
+    """Application service for synchronising play events into storage."""
 
-    source: LastFmScrobbleSource
-    unit_of_work: Callable[[], ScrobbleUnitOfWork]
+    source: PlayEventSource
+    unit_of_work: Callable[[], PlayEventUnitOfWork]
 
-    def run(self, request: SyncRequest | None = None) -> SyncScrobblesResult:
-        """Fetch scrobbles and persist them, returning a sync summary."""
+    def run(self, request: SyncRequest | None = None) -> SyncPlayEventsResult:
+        """Fetch play events and persist them, returning a sync summary."""
 
         params = request or SyncRequest()
-        pages_processed = 0
+        fetched = 0
         stored = 0
         latest_seen: datetime | None = None
-        now_playing: Scrobble | None = None
         effective_cutoff: datetime | None = params.from_timestamp
+
+        result: FetchPlayEventsResult | None = None
 
         with self.unit_of_work() as uow:
             if effective_cutoff is None:
-                effective_cutoff = uow.scrobbles.latest_timestamp()
+                effective_cutoff = uow.play_events.latest_timestamp()
 
-            from_ts_epoch = _to_epoch_seconds(effective_cutoff) + 1 if effective_cutoff else None
-            to_ts_epoch = _to_epoch_seconds(params.to_timestamp) if params.to_timestamp else None
+            result = self.source.fetch_recent(
+                batch_size=params.batch_size,
+                since=effective_cutoff,
+                until=params.to_timestamp,
+                max_events=params.max_events,
+            )
 
-            page = params.start_page
-            while True:
-                result = self.source.fetch_recent(
-                    page=page,
-                    limit=params.limit,
-                    from_ts=from_ts_epoch,
-                    to_ts=to_ts_epoch,
-                    extended=params.extended,
-                )
-                pages_processed += 1
-                now_playing = now_playing or result.now_playing
+            events = list(result.events)
+            fetched = len(events)
 
-                new_scrobbles, newest_in_page = self._filter_new_scrobbles(
-                    result.scrobbles,
-                    effective_cutoff,
-                    params.to_timestamp,
-                    uow.scrobbles,
-                )
-                if newest_in_page:
-                    latest_seen = max(latest_seen or newest_in_page, newest_in_page)
+            new_events, newest_observed = self._filter_new_events(
+                events,
+                effective_cutoff,
+                params.to_timestamp,
+                uow.play_events,
+            )
 
-                stored += self._persist_scrobbles(uow, new_scrobbles)
+            if newest_observed is not None:
+                latest_seen = max(latest_seen or newest_observed, newest_observed)
 
-                if self._should_stop(params, pages_processed, page, result.total_pages):
-                    break
-                page += 1
-                # After the first page the `from` constraint is no longer required.
-                from_ts_epoch = None
+            stored += self._persist_events(uow, new_events)
 
-        return SyncScrobblesResult(
+        if result is None:
+            raise RuntimeError("Play event source did not return a result")
+
+        return SyncPlayEventsResult(
             stored=stored,
-            pages_processed=pages_processed,
+            fetched=fetched,
             latest_timestamp=latest_seen or effective_cutoff,
-            now_playing=now_playing,
+            now_playing=result.now_playing,
         )
 
-    def _filter_new_scrobbles(
+    def _filter_new_events(
         self,
-        scrobbles: Iterable[Scrobble],
+        events: Iterable[PlayEvent],
         cutoff: datetime | None,
         upper: datetime | None,
-        repository: ScrobbleRepository,
-    ) -> tuple[list[Scrobble], datetime | None]:
+        repository: PlayEventRepository,
+    ) -> tuple[list[PlayEvent], datetime | None]:
         newest: datetime | None = None
-        fresh: list[Scrobble] = []
-        for scrobble in scrobbles:
-            if cutoff and scrobble.timestamp <= cutoff:
+        fresh: list[PlayEvent] = []
+        for event in events:
+            if cutoff and event.timestamp <= cutoff:
                 continue
-            if upper and scrobble.timestamp > upper:
+            if upper and event.timestamp > upper:
                 continue
-            if repository.exists(scrobble.timestamp):
+            if repository.exists(event.timestamp):
                 continue
-            fresh.append(scrobble)
-            newest = max(newest or scrobble.timestamp, scrobble.timestamp)
+            fresh.append(event)
+            newest = max(newest or event.timestamp, event.timestamp)
         return fresh, newest
 
-    def _persist_scrobbles(self, uow: ScrobbleUnitOfWork, scrobbles: list[Scrobble]) -> int:
-        if not scrobbles:
+    def _persist_events(self, uow: PlayEventUnitOfWork, events: list[PlayEvent]) -> int:
+        if not events:
             return 0
-        for scrobble in scrobbles:
-            uow.scrobbles.add(scrobble)
+        for event in events:
+            uow.play_events.add(event)
         uow.commit()
-        return len(scrobbles)
-
-    @staticmethod
-    def _should_stop(
-        params: SyncRequest,
-        pages_processed: int,
-        current_page: int,
-        total_pages: int,
-    ) -> bool:
-        if params.max_pages is not None and pages_processed >= params.max_pages:
-            return True
-        return current_page >= total_pages
+        return len(events)
 
 
-def _to_epoch_seconds(value: datetime | None) -> int:
-    if value is None:
-        raise ValueError("Cannot convert None to epoch seconds")
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return int(value.timestamp())
+__all__ = [
+    "FetchPlayEventsResult",
+    "PlayEventRepository",
+    "PlayEventSource",
+    "PlayEventUnitOfWork",
+    "SyncPlayEvents",
+    "SyncPlayEventsResult",
+    "SyncRequest",
+]

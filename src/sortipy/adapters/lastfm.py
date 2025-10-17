@@ -20,13 +20,19 @@ else:  # pragma: no cover - imported for runtime type hint resolution
     Callable = _Callable
 
 from sortipy.common import MissingConfigurationError, require_env_var
-from sortipy.domain.data_integration import FetchScrobblesResult, LastFmScrobbleSource
-from sortipy.domain.types import Album, Artist, Provider, Scrobble, Track
+from sortipy.domain.data_integration import FetchPlayEventsResult, PlayEventSource
+from sortipy.domain.types import Album, Artist, PlayEvent, Provider, Track
 
 log = getLogger(__name__)
 
 
 LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
+
+
+def _datetime_to_epoch_seconds(value: datetime) -> int:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return int(value.astimezone(UTC).timestamp())
 
 
 type ImageSize = Literal["small", "medium", "large", "extralarge"]
@@ -130,8 +136,8 @@ class LastFmAPIError(RuntimeError):
         self.code = code
 
 
-class HttpLastFmScrobbleSource(LastFmScrobbleSource):
-    """HTTP implementation of the Last.fm scrobble source port."""
+class HttpLastFmPlayEventSource(PlayEventSource):
+    """HTTP implementation of the Last.fm play-event source port."""
 
     def __init__(
         self,
@@ -161,37 +167,47 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
     def fetch_recent(
         self,
         *,
-        page: int = 1,
-        limit: int = 200,
-        from_ts: int | None = None,
-        to_ts: int | None = None,
-        extended: bool = False,
-    ) -> FetchScrobblesResult:
-        payloads, attrs = self._request_recent_scrobbles(
-            page=page,
-            limit=limit,
-            from_ts=from_ts,
-            to_ts=to_ts,
-            extended=extended,
-        )
+        batch_size: int = 200,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        max_events: int | None = None,
+    ) -> FetchPlayEventsResult:
+        from_ts = _datetime_to_epoch_seconds(since) + 1 if since else None
+        to_ts = _datetime_to_epoch_seconds(until) if until else None
 
-        scrobbles: list[Scrobble] = []
-        now_playing: Scrobble | None = None
-        for payload in payloads:
-            if payload.get("@attr", {}).get("nowplaying") == "true":
-                now_playing = parse_scrobble(payload)
-                continue
-            scrobbles.append(parse_scrobble(payload))
+        events: list[PlayEvent] = []
+        now_playing: PlayEvent | None = None
+        page = 1
+        remaining = max_events
 
-        page_number = int(attrs["page"])
-        total_pages = int(attrs["totalPages"])
+        while True:
+            payloads, attrs = self._request_recent_scrobbles(
+                page=page,
+                limit=batch_size,
+                from_ts=from_ts,
+                to_ts=to_ts,
+                extended=True,
+            )
 
-        return FetchScrobblesResult(
-            scrobbles=scrobbles,
-            page=page_number,
-            total_pages=total_pages,
-            now_playing=now_playing,
-        )
+            for payload in payloads:
+                if payload.get("@attr", {}).get("nowplaying") == "true":
+                    now_playing = parse_play_event(payload)
+                    continue
+                event = parse_play_event(payload)
+                events.append(event)
+                if remaining is not None:
+                    remaining -= 1
+                    if remaining <= 0:
+                        return FetchPlayEventsResult(events=events, now_playing=now_playing)
+
+            total_pages = int(attrs["totalPages"])
+            if page >= total_pages:
+                break
+            page += 1
+            # Once we move past the initial page, the from bound is no longer required.
+            from_ts = None
+
+        return FetchPlayEventsResult(events=events, now_playing=now_playing)
 
     def _request_recent_scrobbles(
         self,
@@ -230,9 +246,7 @@ class HttpLastFmScrobbleSource(LastFmScrobbleSource):
         recent = response_json["recenttracks"]
         return recent["track"], recent["@attr"]
 
-    def _perform_request_with_retry(
-        self, params: httpx.QueryParams
-    ) -> RecentTracksResponse:
+    def _perform_request_with_retry(self, params: httpx.QueryParams) -> RecentTracksResponse:
         for attempt in range(1, self._max_attempts + 1):
             response: httpx.Response | None = None
             try:
@@ -357,7 +371,7 @@ def _parse_retry_after(value: str | None) -> float | None:
     return max(seconds, 0.0)
 
 
-def parse_scrobble(scrobble: TrackPayload) -> Scrobble:
+def parse_play_event(scrobble: TrackPayload) -> PlayEvent:
     if "@attr" in scrobble and scrobble["@attr"]["nowplaying"] == "true":
         timestamp = datetime.now(UTC)
     elif "date" in scrobble:
@@ -368,12 +382,12 @@ def parse_scrobble(scrobble: TrackPayload) -> Scrobble:
     try:
         track = parse_track(scrobble)
     except Exception:
-        log.exception("Error parsing scrobble")
+        log.exception("Error parsing play event")
         raise
 
-    listen = Scrobble(timestamp=timestamp, track=track, provider=Provider.LASTFM)
-    track.add_scrobble(listen)
-    return listen
+    event = PlayEvent(timestamp=timestamp, track=track, provider=Provider.LASTFM)
+    track.add_play_event(event)
+    return event
 
 
 def parse_track(track: TrackPayload) -> Track:
@@ -409,6 +423,7 @@ def parse_track(track: TrackPayload) -> Track:
     if album not in artist.albums:
         artist.albums.append(album)
     return track_entity
+
 
 def _coalesce_credential(env_name: str, override: str | None) -> str:
     if override is not None:
