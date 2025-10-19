@@ -156,6 +156,7 @@ class Artist(CanonicalEntity):
     formed_year: int | None = None
     disbanded_year: int | None = None
     mbid: Mbid | None = None
+    # list[T] remains callable on Python >= 3.12, which keeps pyright happy about the element type.
     release_sets: list[ReleaseSet] = field(default_factory=list["ReleaseSet"])
     recordings: list[Recording] = field(default_factory=list["Recording"])
 
