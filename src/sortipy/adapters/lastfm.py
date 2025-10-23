@@ -430,12 +430,12 @@ def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release,
                 provider=Provider.MUSICBRAINZ,
             )
         )
-    artist.add_source(Provider.LASTFM)
+    artist.sources.add(Provider.LASTFM)
 
     album_name = payload["album"]["#text"]
     album_mbid = payload["album"]["mbid"] or None
     release_set = ReleaseSet(title=album_name)
-    release_set.add_source(Provider.LASTFM)
+    release_set.sources.add(Provider.LASTFM)
     if album_mbid:
         release_set.add_external_id(
             ExternalID(
@@ -447,7 +447,7 @@ def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release,
         )
 
     release = Release(title=album_name or payload["name"], release_set=release_set)
-    release.add_source(Provider.LASTFM)
+    release.sources.add(Provider.LASTFM)
     if album_mbid:
         release.add_external_id(
             ExternalID(
@@ -460,7 +460,7 @@ def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release,
 
     track_mbid = payload.get("mbid") or None
     recording = Recording(title=payload["name"])
-    recording.add_source(Provider.LASTFM)
+    recording.sources.add(Provider.LASTFM)
     if track_mbid:
         recording.add_external_id(
             ExternalID(
@@ -475,7 +475,7 @@ def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release,
         release=release,
         recording=recording,
     )
-    track.add_source(Provider.LASTFM)
+    track.sources.add(Provider.LASTFM)
 
     release_set.releases.append(release)
     release_set.artists.append(

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
     CanonicalEntityType,
     ExternalID,
+    ExternalNamespace,
+    Label,
+    PartialDate,
     PlayEvent,
     Provider,
     Recording,
@@ -79,8 +82,8 @@ def test_release_structure_links_entities() -> None:
 
 def test_sources_are_tracked() -> None:
     artist = Artist(name="Source Test")
-    artist.add_source(Provider.LASTFM)
-    artist.add_source(Provider.SPOTIFY)
+    artist.sources.add(Provider.LASTFM)
+    artist.sources.add(Provider.SPOTIFY)
 
     assert artist.sources == {Provider.LASTFM, Provider.SPOTIFY}
 
@@ -88,12 +91,12 @@ def test_sources_are_tracked() -> None:
 def test_external_ids_replace_by_namespace() -> None:
     artist = Artist(name="External ID Test")
     first = ExternalID(
-        namespace="spotify:artist",
+        namespace=ExternalNamespace.SPOTIFY_ARTIST,
         value="artist-1",
         entity_type=CanonicalEntityType.ARTIST,
     )
     second = ExternalID(
-        namespace="spotify:artist",
+        namespace=ExternalNamespace.SPOTIFY_ARTIST,
         value="artist-2",
         entity_type=CanonicalEntityType.ARTIST,
     )
@@ -103,3 +106,53 @@ def test_external_ids_replace_by_namespace() -> None:
 
     artist.add_external_id(second, replace=True)
     assert artist.external_ids == [second]
+
+
+def test_external_ids_by_namespace_property() -> None:
+    artist = Artist(name="Mapping Test")
+    spotify = ExternalID(
+        namespace=ExternalNamespace.SPOTIFY_ARTIST,
+        value="artist-spotify",
+        entity_type=CanonicalEntityType.ARTIST,
+    )
+    mb = ExternalID(
+        namespace=ExternalNamespace.MUSICBRAINZ_ARTIST,
+        value="artist-mbid",
+        entity_type=CanonicalEntityType.ARTIST,
+    )
+    artist.add_external_id(spotify)
+    artist.add_external_id(mb)
+
+    mapping = artist.external_ids_by_namespace
+    assert mapping[ExternalNamespace.SPOTIFY_ARTIST].value == "artist-spotify"
+    assert mapping[ExternalNamespace.MUSICBRAINZ_ARTIST].value == "artist-mbid"
+
+
+def test_partial_date_helpers() -> None:
+    exact = PartialDate(year=2024, month=5, day=10)
+    assert exact.as_date == date(2024, 5, 10)
+
+    partial_month = PartialDate(year=1999, month=None, day=None)
+    assert partial_month.as_date == date(1999, 1, 1)
+
+    undefined = PartialDate()
+    assert undefined.as_date is None
+
+    composite = PartialDate(year=2001, month=12, day=None)
+    assert composite.__composite_values__() == (2001, 12, None)
+
+
+def test_entity_type_properties() -> None:
+    artist = Artist(name="Type Test Artist")
+    release_set = ReleaseSet(title="Type Test Release Set")
+    release = Release(title="Type Test Release", release_set=release_set)
+    recording = Recording(title="Type Test Recording")
+    track = Track(release=release, recording=recording)
+    label = Label(name="Type Test Label")
+
+    assert artist.entity_type is CanonicalEntityType.ARTIST
+    assert release_set.entity_type is CanonicalEntityType.RELEASE_SET
+    assert release.entity_type is CanonicalEntityType.RELEASE
+    assert recording.entity_type is CanonicalEntityType.RECORDING
+    assert track.entity_type is CanonicalEntityType.TRACK
+    assert label.entity_type is CanonicalEntityType.LABEL

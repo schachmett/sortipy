@@ -32,6 +32,7 @@ class ExternalNamespace(StrEnum):
     MUSICBRAINZ_RELEASE = "musicbrainz:release"
     MUSICBRAINZ_RECORDING = "musicbrainz:recording"
     MUSICBRAINZ_LABEL = "musicbrainz:label"
+    SPOTIFY_ARTIST = "spotify:artist"
     RECORDING_ISRC = "recording:isrc"
     LABEL_CATALOG_NUMBER = "label:catalog_number"
     LABEL_BARCODE = "label:barcode"
@@ -159,9 +160,6 @@ class CanonicalEntity(IngestedEntity):
     def entity_type(self) -> CanonicalEntityType:
         raise NotImplementedError
 
-    def add_source(self, provider: Provider) -> None:
-        self.sources.add(provider)
-
     def add_external_id(self, external_id: ExternalID, *, replace: bool = False) -> None:
         if replace:
             self.external_ids = [
@@ -171,11 +169,13 @@ class CanonicalEntity(IngestedEntity):
             ]
         self.external_ids.append(external_id)
 
-    def get_external_id(self, namespace: Namespace) -> str | None:
+    @property
+    def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]:
+        """Return the latest external ID per namespace for convenient lookups."""
+        mapping: dict[Namespace, ExternalID] = {}
         for external_id in self.external_ids:
-            if external_id.namespace == namespace:
-                return external_id.value
-        return None
+            mapping[external_id.namespace] = external_id
+        return mapping
 
 
 @dataclass
