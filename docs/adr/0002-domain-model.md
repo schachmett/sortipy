@@ -9,10 +9,10 @@ External providers expose different shapes: Spotify centers on albums with track
 ## Decision
 Adopt a canonical domain model inspired by MusicBrainz terminology but expressed in project-agnostic names. The core entities are:
 
-- **Artist** – performers, composers, producers, etc. Fields include name, sort_name, country, and optional formation/disbandment dates.
-- **ReleaseSet** – the abstract concept of a release (studio album, EP, live set). Tracks high-level metadata such as title, primary type, and first release year.
-- **Release** – a concrete manifestation of a ReleaseSet (regional pressing, deluxe edition, digital reissue). Fields include release date, country, label, catalog number, barcode, etc.
-- **Recording** – a specific performance/mix of a composition. Includes duration, ISRC, version/mix hints.
+- **Artist** – performers, composers, producers, etc. Fields include name, sort_name, country, and optional formation/disbandment dates. Provider identifiers (MusicBrainz, Spotify, …) are captured exclusively via `ExternalID`.
+- **ReleaseSet** – the abstract concept of a release (studio album, EP, live set). Tracks high-level metadata such as title, primary type, and first release year, with external identifiers stored in `ExternalID` rather than on the entity.
+- **Release** – a concrete manifestation of a ReleaseSet (regional pressing, deluxe edition, digital reissue). Tracks release date, country, associated labels, format, and medium counts; catalog numbers, barcodes, and provider IDs are stored as `ExternalID` rows.
+- **Recording** – a specific performance/mix of a composition. Includes duration and version/mix hints; identifiers such as ISRC or MusicBrainz recording IDs live in `ExternalID`.
 - **Track** – the placement of a Recording on a particular Release (disc number, track number, title overrides, track-level duration).
 - **PlayEvent** – a user listening event/scrobble tying back to the Recording (and optionally the Track) with timestamp and source information.
 - **User** – local representation of a listener with links to external account identifiers.
@@ -21,11 +21,11 @@ Adopt a canonical domain model inspired by MusicBrainz terminology but expressed
 
 Association tables that carry additional semantics include:
 
-- **ReleaseSetArtist** – m:n between ReleaseSet and Artist with role and position (primary artist, featured, producer, etc.).
-- **RecordingArtist** – m:n between Recording and Artist with rich role metadata (instrument, guest vocals, remix…).
+- **ReleaseSetArtist** – m:n between ReleaseSet and Artist with role and position (primary artist, featured, producer, etc.) referencing the shared `ArtistRole` vocabulary.
+- **RecordingArtist** – m:n between Recording and Artist with rich role metadata (instrument, guest vocals, remix…) reusing the same role vocabulary.
 - **UserLibraryItem** – user/library relationship with origin timestamps and source tags.
 
-Provider metadata is stored externally. External IDs live primarily in the ExternalID table; only frequently used IDs may be duplicated on the entity for performance. Tertiary enrichment (audio features, ratings, artwork) resides in dedicated enrichment tables to keep the core model lean.
+ Provider metadata is stored externally. External IDs live primarily in the ExternalID table; canonical entities no longer duplicate provider-specific columns. Tertiary enrichment (audio features, ratings, artwork) resides in dedicated enrichment tables to keep the core model lean.
 
 ## Rationale
 - Separating ReleaseSet/Release/Recording mirrors industry and MusicBrainz realities, enabling accurate deduplication across variants.
@@ -38,12 +38,12 @@ Provider metadata is stored externally. External IDs live primarily in the Exter
 - Adapter layers must map provider payloads into the canonical hierarchy (e.g., Last.fm scrobbles → Recording + PlayEvent, Spotify album → ReleaseSet + Release + Tracks).
 - SQLAlchemy mappings will need to model one-to-many (Artist ↔ ReleaseSet, ReleaseSet ↔ Releases, Release ↔ Tracks) and many-to-many relationships (ReleaseSetArtist, RecordingArtist) explicitly.
 - External metadata retrieval (MusicBrainz, Discogs, etc.) will populate ReleaseSet/Release/Recording structures; user-facing ingests (Spotify saved albums, Last.fm plays) can slot into the same model without schema changes.
-- External metadata retrieval (MusicBrainz, Discogs, etc.) will populate ReleaseSet/Release/Recording structures; user-facing ingests (Spotify saved albums, Last.fm plays) can slot into the same model without schema changes.
+- Shared enumerations (e.g., `ExternalNamespace`, `ArtistRole`) centralise common string values so adapters and domain code reference a consistent vocabulary while still permitting novel identifiers or roles as plain strings when required.
 
 ## Future Work / Open Questions
 - Introduce **Work** entities (composition-level) once needed, adding an optional `work_id` to Recordings.
 - Define richer `RecordingArtist`/`ReleaseSetArtist` role vocabularies and reference data.
-- Explore caching of frequently used external IDs on entities (e.g., `spotify_release_id`) and index requirements.
+- Evaluate whether additional helper enums or reference data are required as the role vocabulary and external-identifier catalogue grows.
 
 ## Adjacent ADRs
 - Canonical merge behavior (self-referencing canonical IDs, audit trail) – documented separately.

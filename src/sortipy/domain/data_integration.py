@@ -44,7 +44,7 @@ class PlayEventRepository(Protocol):
         ...
 
     def exists(self, timestamp: datetime) -> bool:
-        """Return whether a play event at the given timestamp already exists."""
+        """Return whether a play event at the given played-at timestamp already exists."""
         ...
 
     def latest_timestamp(self) -> datetime | None:
@@ -155,14 +155,14 @@ class SyncPlayEvents:
         newest: datetime | None = None
         fresh: list[PlayEvent] = []
         for event in events:
-            if cutoff and event.timestamp <= cutoff:
+            if cutoff and event.played_at <= cutoff:
                 continue
-            if upper and event.timestamp > upper:
+            if upper and event.played_at > upper:
                 continue
-            if repository.exists(event.timestamp):
+            if repository.exists(event.played_at):
                 continue
             fresh.append(event)
-            newest = max(newest or event.timestamp, event.timestamp)
+            newest = max(newest or event.played_at, event.played_at)
         return fresh, newest
 
     def _persist_events(self, uow: PlayEventUnitOfWork, events: list[PlayEvent]) -> int:

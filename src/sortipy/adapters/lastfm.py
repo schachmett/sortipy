@@ -21,7 +21,21 @@ else:  # pragma: no cover - imported for runtime type hint resolution
 
 from sortipy.common import MissingConfigurationError, require_env_var
 from sortipy.domain.data_integration import FetchPlayEventsResult, PlayEventSource
-from sortipy.domain.types import Album, Artist, PlayEvent, Provider, Track
+from sortipy.domain.types import (
+    Artist,
+    ArtistRole,
+    CanonicalEntityType,
+    ExternalID,
+    ExternalNamespace,
+    PlayEvent,
+    Provider,
+    Recording,
+    RecordingArtist,
+    Release,
+    ReleaseSet,
+    ReleaseSetArtist,
+    Track,
+)
 
 log = getLogger(__name__)
 
@@ -373,56 +387,113 @@ def _parse_retry_after(value: str | None) -> float | None:
 
 def parse_play_event(scrobble: TrackPayload) -> PlayEvent:
     if "@attr" in scrobble and scrobble["@attr"]["nowplaying"] == "true":
-        timestamp = datetime.now(UTC)
+        played_at = datetime.now(UTC)
     elif "date" in scrobble:
-        timestamp = datetime.fromtimestamp(int(scrobble["date"]["uts"]), tz=UTC)
+        played_at = datetime.fromtimestamp(int(scrobble["date"]["uts"]), tz=UTC)
     else:
         raise ValueError("Invalid scrobble")
 
     try:
-        track = parse_track(scrobble)
+        artist, release_set, _release, recording, track = _parse_entities(scrobble)
     except Exception:
         log.exception("Error parsing play event")
         raise
 
-    event = PlayEvent(timestamp=timestamp, track=track, provider=Provider.LASTFM)
-    track.add_play_event(event)
+    event = PlayEvent(
+        played_at=played_at,
+        source=Provider.LASTFM,
+        recording=recording,
+        track=track,
+    )
+    recording.play_events.append(event)
+    track.play_events.append(event)
+
+    # Ensure bidirectional references stay aligned for primary artist relationships.
+    if recording not in artist.recordings:
+        artist.recordings.append(recording)
+    if release_set not in artist.release_sets:
+        artist.release_sets.append(release_set)
+
     return event
 
 
-def parse_track(track: TrackPayload) -> Track:
-    artist = Artist(
-        id=None,
-        name=track["artist"]["#text"],
-        mbid=track["artist"]["mbid"] or None,
-        playcount=None,
-    )
+def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release, Recording, Track]:
+    artist_name = payload["artist"]["#text"]
+    artist_mbid = payload["artist"]["mbid"] or None
+    artist = Artist(name=artist_name)
+    if artist_mbid:
+        artist.add_external_id(
+            ExternalID(
+                namespace=ExternalNamespace.MUSICBRAINZ_ARTIST.value,
+                value=artist_mbid,
+                entity_type=CanonicalEntityType.ARTIST,
+                provider=Provider.MUSICBRAINZ,
+            )
+        )
     artist.add_source(Provider.LASTFM)
 
-    album = Album(
-        id=None,
-        name=track["album"]["#text"],
-        artist=artist,
-        mbid=track["album"]["mbid"] or None,
-        playcount=None,
-    )
-    album.add_source(Provider.LASTFM)
+    album_name = payload["album"]["#text"]
+    album_mbid = payload["album"]["mbid"] or None
+    release_set = ReleaseSet(title=album_name)
+    release_set.add_source(Provider.LASTFM)
+    if album_mbid:
+        release_set.add_external_id(
+            ExternalID(
+                namespace=ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP.value,
+                value=album_mbid,
+                entity_type=CanonicalEntityType.RELEASE_SET,
+                provider=Provider.MUSICBRAINZ,
+            )
+        )
 
-    track_entity = Track(
-        id=None,
-        name=track["name"],
-        artist=artist,
-        album=album,
-        mbid=track["mbid"] or None,
-        playcount=None,
+    release = Release(title=album_name or payload["name"], release_set=release_set)
+    release.add_source(Provider.LASTFM)
+    if album_mbid:
+        release.add_external_id(
+            ExternalID(
+                namespace=ExternalNamespace.MUSICBRAINZ_RELEASE.value,
+                value=album_mbid,
+                entity_type=CanonicalEntityType.RELEASE,
+                provider=Provider.MUSICBRAINZ,
+            )
+        )
+
+    track_mbid = payload.get("mbid") or None
+    recording = Recording(title=payload["name"])
+    recording.add_source(Provider.LASTFM)
+    if track_mbid:
+        recording.add_external_id(
+            ExternalID(
+                namespace=ExternalNamespace.MUSICBRAINZ_RECORDING.value,
+                value=track_mbid,
+                entity_type=CanonicalEntityType.RECORDING,
+                provider=Provider.MUSICBRAINZ,
+            )
+        )
+
+    track = Track(
+        release=release,
+        recording=recording,
     )
-    track_entity.add_source(Provider.LASTFM)
-    album.add_track(track_entity)
-    if track_entity not in artist.tracks:
-        artist.tracks.append(track_entity)
-    if album not in artist.albums:
-        artist.albums.append(album)
-    return track_entity
+    track.add_source(Provider.LASTFM)
+
+    release_set.releases.append(release)
+    release_set.artists.append(
+        ReleaseSetArtist(
+            release_set=release_set,
+            artist=artist,
+            role=ArtistRole.PRIMARY,
+        )
+    )
+
+    release.tracks.append(track)
+
+    recording.tracks.append(track)
+    recording.artists.append(
+        RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
+    )
+
+    return artist, release_set, release, recording, track
 
 
 def _coalesce_credential(env_name: str, override: str | None) -> str:

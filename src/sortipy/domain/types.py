@@ -14,7 +14,6 @@ type Barcode = str
 type Mbid = str
 type Isrc = str
 type DurationMs = int
-type Namespace = str  # identifies external system for an ExternalID (e.g. "musicbrainz:recording")
 
 
 class Provider(StrEnum):
@@ -23,6 +22,34 @@ class Provider(StrEnum):
     LASTFM = "lastfm"
     SPOTIFY = "spotify"
     MUSICBRAINZ = "musicbrainz"
+
+
+class ExternalNamespace(StrEnum):
+    """Convenience constants for commonly used external-ID namespaces."""
+
+    MUSICBRAINZ_ARTIST = "musicbrainz:artist"
+    MUSICBRAINZ_RELEASE_GROUP = "musicbrainz:release-group"
+    MUSICBRAINZ_RELEASE = "musicbrainz:release"
+    MUSICBRAINZ_RECORDING = "musicbrainz:recording"
+    MUSICBRAINZ_LABEL = "musicbrainz:label"
+    RECORDING_ISRC = "recording:isrc"
+    LABEL_CATALOG_NUMBER = "label:catalog_number"
+    LABEL_BARCODE = "label:barcode"
+    USER_SPOTIFY = "spotify:user"
+    USER_LASTFM = "lastfm:user"
+
+
+type Namespace = str | ExternalNamespace  # identifies external system for an ExternalID
+
+
+class ArtistRole(StrEnum):
+    """Role descriptor shared by release-set and recording artist associations."""
+
+    PRIMARY = "primary"
+    FEATURED = "featured"
+    PRODUCER = "producer"
+    COMPOSER = "composer"
+    CONDUCTOR = "conductor"
 
 
 class ReleaseSetType(StrEnum):
@@ -71,6 +98,10 @@ class PartialDate:
         day = self.day or 1
         return date(self.year, month, day)
 
+    def __composite_values__(self) -> tuple[int | None, int | None, int | None]:
+        """Return values in a shape suitable for SQLAlchemy composite columns."""
+        return (self.year, self.month, self.day)
+
 
 @dataclass
 class ExternalID:
@@ -78,7 +109,8 @@ class ExternalID:
 
     The ``namespace`` identifies the provider and type of identifier (for example
     ``"musicbrainz:recording"`` or ``"spotify:album"``) so multiple IDs can coexist per entity
-    without adding provider-specific columns.
+    without adding provider-specific columns. See :class:`ExternalNamespace` for convenience
+    constants covering common namespaces; arbitrary strings remain valid for new providers.
     """
 
     namespace: Namespace
@@ -148,14 +180,16 @@ class CanonicalEntity(IngestedEntity):
 
 @dataclass
 class Artist(CanonicalEntity):
-    """Canonical representation of an artist."""
+    """Canonical representation of an artist.
+
+    Common external identifiers are carried via :class:`ExternalID`, e.g. ``musicbrainz:artist``.
+    """
 
     name: str
     sort_name: str | None = None
     country: CountryCode | None = None
     formed_year: int | None = None
     disbanded_year: int | None = None
-    mbid: Mbid | None = None
     # list[T] remains callable on Python >= 3.12, which keeps pyright happy about the element type.
     release_sets: list[ReleaseSet] = field(default_factory=list["ReleaseSet"])
     recordings: list[Recording] = field(default_factory=list["Recording"])
@@ -167,13 +201,14 @@ class Artist(CanonicalEntity):
 
 @dataclass
 class ReleaseSet(CanonicalEntity):
-    """Conceptual collection of releases (e.g., an album and its editions)."""
+    """Conceptual collection of releases (e.g., an album and its editions).
+
+    Common external identifiers: ``musicbrainz:release-group``.
+    """
 
     title: str
-    primary_artist: Artist | None
     primary_type: ReleaseSetType | None = None
     first_release: PartialDate | None = None
-    mbid: Mbid | None = None
     releases: list[Release] = field(default_factory=list["Release"])
     artists: list[ReleaseSetArtist] = field(default_factory=list["ReleaseSetArtist"])
 
@@ -184,11 +219,13 @@ class ReleaseSet(CanonicalEntity):
 
 @dataclass
 class Label(CanonicalEntity):
-    """Music label or publisher."""
+    """Music label or publisher.
+
+    Common external identifiers: ``musicbrainz:label``.
+    """
 
     name: str
     country: CountryCode | None = None
-    mbid: Mbid | None = None
 
     @property
     def entity_type(self) -> CanonicalEntityType:
@@ -197,18 +234,19 @@ class Label(CanonicalEntity):
 
 @dataclass
 class Release(CanonicalEntity):
-    """Concrete manifestation of a release (e.g., region-specific edition)."""
+    """Concrete manifestation of a release (e.g., region-specific edition).
+
+    Common external identifiers (catalog numbers, barcodes, MusicBrainz release IDs) live in
+    :class:`ExternalID` rows.
+    """
 
     title: str
     release_set: ReleaseSet
     release_date: PartialDate | None = None
     country: CountryCode | None = None
     labels: list[Label] = field(default_factory=list[Label])
-    catalog_number: CatalogNumber | None = None
-    barcode: Barcode | None = None
     format: str | None = None
     medium_count: int | None = None
-    mbid: Mbid | None = None
     tracks: list[Track] = field(default_factory=list["Track"])
 
     @property
@@ -218,13 +256,13 @@ class Release(CanonicalEntity):
 
 @dataclass
 class Recording(CanonicalEntity):
-    """Specific performance or mix of a composition."""
+    """Specific performance or mix of a composition.
+
+    Common external identifiers (ISRC, MusicBrainz recording IDs) live in :class:`ExternalID` rows.
+    """
 
     title: str
-    primary_artist: Artist | None
     duration_ms: DurationMs | None = None
-    isrc: Isrc | None = None
-    mbid: Mbid | None = None
     version: str | None = None
     tracks: list[Track] = field(default_factory=list["Track"])
     play_events: list[PlayEvent] = field(default_factory=list["PlayEvent"])
@@ -256,10 +294,11 @@ class Track(CanonicalEntity):
 class User(IngestedEntity):
     """Local representation of a listener."""
 
+    id: UUID | None = None
     display_name: str
     email: str | None = None
-    spotify_user_id: str | None = None
-    lastfm_user: str | None = None
+    spotify_user_id: str | None = None  # Denormalized external account identifier.
+    lastfm_user: str | None = None  # Denormalized external account identifier.
     created_at: datetime | None = None
     updated_at: datetime | None = None
     library_items: list[LibraryItem] = field(default_factory=list["LibraryItem"])
@@ -283,11 +322,17 @@ class LibraryItem(IngestedEntity):
 
     The ``entity`` attribute holds a direct reference to the canonical object the user saved, which
     allows domain code to navigate without issuing additional lookups. When persistence needs an ID,
-    it can read ``entity.identity``.
+    it can read ``entity.identity``. Persistence stores the canonical type and identifier explicitly
+    (``entity_type`` and ``entity_id``) because there is no single foreign key that can point at
+    every canonical table. The ``entity`` attribute is therefore an optional in-memory
+    convenience—callers may hydrate it when the referenced row is already available, but storage and
+    reloads only rely on the polymorphic ID pair.
     """
 
     user: User
-    entity: CanonicalEntity
+    entity_type: CanonicalEntityType
+    entity_id: UUID
+    entity: CanonicalEntity | None = None
     source: Provider | None = None
     saved_at: datetime | None = None
 
@@ -298,7 +343,7 @@ class ReleaseSetArtist:
 
     release_set: ReleaseSet
     artist: Artist
-    role: str | None = None
+    role: ArtistRole | None = None
     credit_order: int | None = None
 
 
@@ -308,7 +353,7 @@ class RecordingArtist:
 
     recording: Recording
     artist: Artist
-    role: str | None = None
+    role: ArtistRole | None = None
     instrument: str | None = None
     credit_order: int | None = None
 
@@ -327,6 +372,7 @@ class EntityMerge:
 
 __all__ = [
     "Artist",
+    "ArtistRole",
     "Barcode",
     "CanonicalEntity",
     "CanonicalEntityType",
@@ -335,6 +381,7 @@ __all__ = [
     "DurationMs",
     "EntityMerge",
     "ExternalID",
+    "ExternalNamespace",
     "IngestedEntity",
     "Isrc",
     "Label",

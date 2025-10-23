@@ -7,7 +7,7 @@
 Multiple data sources can produce duplicate representations of the same real-world entity (e.g., “The National” from Last.fm and Spotify). We need a deduplication strategy that is repeatable, auditable, and reversible without rewriting foreign keys across the database. The domain already references entities by ID; we want merges to be lightweight yet safe, even as we add automated heuristics.
 
 ## Decision
-Adopt the **canonical pointer** pattern for mergeable entities (Artist, ReleaseSet, Release, Recording, Track, User). Each table gains a nullable `canonical_id` self-foreign key defaulting to its own primary key. Merging duplicate records consists of:
+Adopt the **canonical pointer** pattern for mergeable entities (Artist, ReleaseSet, Release, Recording, Track, User). Each table gains a nullable `canonical_id` self-foreign key defaulting to its own primary key. External identifiers reside in the shared `ExternalID` table, so merge heuristics start by searching for overlapping namespaces/values before falling back to other attributes. Merging duplicate records consists of:
 
 1. Setting the duplicate entity’s `canonical_id = target_id`.
 2. Recording an `EntityMerge` row with `source_id`, `target_id`, reason, actor, and timestamp.
@@ -23,6 +23,7 @@ Consumers resolve the canonical entity by coalescing `canonical_id` with the pri
   - Every query that needs a deduplicated view must resolve `canonical_id`. To avoid mistakes, repositories must expose helper methods or SQL views that always coalesce canonical IDs; indexes on `canonical_id` keep joins efficient.
   - Long-running analytics must factor in canonical resolution; we mitigate by providing canonicalized materialized views for heavy workloads when needed.
   - If an entity is hard-deleted, merges referencing it remain for audit; we must document cleanup procedures or soft-delete policies.
+- External identifier collisions are the primary signal for automated merges. To keep performance predictable, we maintain indexes on `(namespace, value, entity_type)` in the `ExternalID` table and rely on repository helpers to consolidate IDs when two records are merged.
 
 ## Adjacent ADRs
 - ADR 0002 (Domain Model) – the canonical entities that receive these merge pointers.

@@ -11,26 +11,58 @@ from sortipy.domain.data_integration import (
     PlayEventSource,
     PlayEventUnitOfWork,
 )
-from sortipy.domain.types import Album, Artist, PlayEvent, Provider, Track
+from sortipy.domain.types import (
+    Artist,
+    ArtistRole,
+    PlayEvent,
+    Provider,
+    Recording,
+    RecordingArtist,
+    Release,
+    ReleaseSet,
+    ReleaseSetArtist,
+    Track,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-def make_play_event(name: str = "Example Track", *, timestamp: datetime | None = None) -> PlayEvent:
+def make_play_event(
+    name: str = "Example Track",
+    *,
+    timestamp: datetime | None = None,
+) -> PlayEvent:
     """Create a play event with minimal associated domain entities."""
 
     artist = Artist(name="Example Artist")
-    album = Album(name="Example Album", artist=artist)
-    track = Track(name=name, artist=artist, album=album)
+    release_set = ReleaseSet(title="Example Release Set")
+    release = Release(title="Example Release", release_set=release_set)
+    recording = Recording(title=name)
+    track = Track(release=release, recording=recording)
+
+    release_set.releases.append(release)
+    release_set.artists.append(
+        ReleaseSetArtist(release_set=release_set, artist=artist, role=ArtistRole.PRIMARY)
+    )
+    if release_set not in artist.release_sets:
+        artist.release_sets.append(release_set)
+
+    release.tracks.append(track)
+    recording.tracks.append(track)
+    recording.artists.append(
+        RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
+    )
+    if recording not in artist.recordings:
+        artist.recordings.append(recording)
+
     event_time = timestamp or datetime.now(tz=UTC)
-    event = PlayEvent(timestamp=event_time, track=track, provider=Provider.LASTFM)
-    track.add_play_event(event)
-    album.add_track(track)
-    if track not in artist.tracks:
-        artist.tracks.append(track)
-    if album not in artist.albums:
-        artist.albums.append(album)
+    event = PlayEvent(
+        played_at=event_time, source=Provider.LASTFM, recording=recording, track=track
+    )
+
+    recording.play_events.append(event)
+    track.play_events.append(event)
     return event
 
 
@@ -70,9 +102,9 @@ class FakePlayEventSource(PlayEventSource):
         remaining = max_events
         for batch in self._batches:
             for event in batch:
-                if since and event.timestamp <= since:
+                if since and event.played_at <= since:
                     continue
-                if until and event.timestamp > until:
+                if until and event.played_at > until:
                     continue
                 collected.append(event)
                 if remaining is not None:
@@ -99,12 +131,12 @@ class FakePlayEventRepository(PlayEventRepository):
         self.items.append(event)
 
     def exists(self, timestamp: datetime) -> bool:
-        return any(item.timestamp == timestamp for item in self.items)
+        return any(item.played_at == timestamp for item in self.items)
 
     def latest_timestamp(self) -> datetime | None:
         if not self.items:
             return None
-        return max(item.timestamp for item in self.items)
+        return max(item.played_at for item in self.items)
 
 
 class FakePlayEventUnitOfWork(PlayEventUnitOfWork):

@@ -1,49 +1,105 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
-from sortipy.domain.types import Album, AlbumType, Artist, PlayEvent, Provider, Track
+from sortipy.domain.types import (
+    Artist,
+    ArtistRole,
+    CanonicalEntityType,
+    ExternalID,
+    PlayEvent,
+    Provider,
+    Recording,
+    RecordingArtist,
+    Release,
+    ReleaseSet,
+    ReleaseSetArtist,
+    Track,
+)
 
 
-def test_add_track_to_album_is_idempotent() -> None:
+def _make_release_graph() -> tuple[Artist, ReleaseSet, Release, Recording, Track]:
     artist = Artist(name="Test Artist")
-    album = Album(name="Test Album", artist=artist, album_type=AlbumType.ALBUM)
-    track = Track(name="Song", artist=artist, album=album)
+    release_set = ReleaseSet(title="Example Release Set")
+    release = Release(title="Example Release", release_set=release_set)
+    recording = Recording(title="Example Recording")
+    track = Track(release=release, recording=recording, track_number=1)
 
-    album.add_track(track)
-    album.add_track(track)
+    release_set.releases.append(release)
+    release.tracks.append(track)
+    recording.tracks.append(track)
+    release_set.artists.append(
+        ReleaseSetArtist(
+            release_set=release_set,
+            artist=artist,
+            role=ArtistRole.PRIMARY,
+        )
+    )
+    recording.artists.append(
+        RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
+    )
 
-    assert album.tracks == [track]
+    return artist, release_set, release, recording, track
 
 
-def test_track_play_events_are_unique() -> None:
-    artist = Artist(name="Test Artist")
-    album = Album(name="Test Album", artist=artist)
-    track = Track(name="Song", artist=artist, album=album)
-    event = PlayEvent(timestamp=datetime.now(tz=UTC), track=track)
+def test_canonical_identity_prefers_canonical_id() -> None:
+    artist = Artist(name="Identity Test")
 
-    track.add_play_event(event)
-    track.add_play_event(event)
+    assert artist.identity is None
 
-    assert track.play_events == [event]
+    generated_id = uuid.uuid4()
+    artist.id = generated_id
+    assert artist.identity == generated_id
+
+    canonical_id = uuid.uuid4()
+    artist.canonical_id = canonical_id
+    assert artist.identity == canonical_id
+
+
+def test_release_structure_links_entities() -> None:
+    artist, release_set, release, recording, track = _make_release_graph()
+    event = PlayEvent(
+        played_at=datetime(2024, 1, 1, tzinfo=UTC),
+        source=Provider.LASTFM,
+        recording=recording,
+        track=track,
+    )
+    recording.play_events.append(event)
+    track.play_events.append(event)
+
+    assert track in release.tracks
+    assert release in release_set.releases
+    assert track in recording.tracks
+    assert event in recording.play_events
+    assert event in track.play_events
+    assert any(link.artist is artist for link in recording.artists)
+    assert any(link.artist is artist for link in release_set.artists)
 
 
 def test_sources_are_tracked() -> None:
-    artist = Artist(name="Test Artist")
+    artist = Artist(name="Source Test")
     artist.add_source(Provider.LASTFM)
     artist.add_source(Provider.SPOTIFY)
 
     assert artist.sources == {Provider.LASTFM, Provider.SPOTIFY}
 
 
-def test_album_and_track_cross_links() -> None:
-    artist = Artist(name="Test Artist")
-    album = Album(name="Test Album", artist=artist)
-    track = Track(name="Song", artist=artist, album=album)
-    event = PlayEvent(timestamp=datetime(2024, 1, 1, tzinfo=UTC), track=track)
-    track.add_play_event(event)
-    album.add_track(track)
+def test_external_ids_replace_by_namespace() -> None:
+    artist = Artist(name="External ID Test")
+    first = ExternalID(
+        namespace="spotify:artist",
+        value="artist-1",
+        entity_type=CanonicalEntityType.ARTIST,
+    )
+    second = ExternalID(
+        namespace="spotify:artist",
+        value="artist-2",
+        entity_type=CanonicalEntityType.ARTIST,
+    )
 
-    assert track in album.tracks
-    assert track.album is album
-    assert track.play_events[0].track is track
+    artist.add_external_id(first)
+    assert artist.external_ids == [first]
+
+    artist.add_external_id(second, replace=True)
+    assert artist.external_ids == [second]

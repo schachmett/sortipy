@@ -7,3 +7,4 @@
 - [ ] Model user-linked external accounts (Spotify, Last.fm, etc.) instead of storing IDs directly on `User`.
 - [ ] Evaluate automating canonical merges and extend `EntityMerge` with confidence metadata if needed.
 - [ ] Introduce database migrations (e.g. Alembic) so schema changes apply across existing installs.
+- [ ] Investigate SQLAlchemy autoflush warnings emitted during canonical merge tests and decide whether to suppress via `no_autoflush` or refactor merge helpers.

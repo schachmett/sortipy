@@ -10,7 +10,18 @@ from sqlalchemy import create_engine, select
 from sortipy.adapters.lastfm import HttpLastFmPlayEventSource, RecentTracksResponse
 from sortipy.common.unit_of_work import SqlAlchemyUnitOfWork, startup
 from sortipy.domain.data_integration import SyncPlayEvents, SyncRequest
-from sortipy.domain.types import Album, Artist, PlayEvent, Track
+from sortipy.domain.types import (
+    Artist,
+    ArtistRole,
+    PlayEvent,
+    Provider,
+    Recording,
+    RecordingArtist,
+    Release,
+    ReleaseSet,
+    ReleaseSetArtist,
+    Track,
+)
 from tests.support.play_events import FakePlayEventSource
 
 
@@ -64,10 +75,9 @@ def test_sync_play_events_persists_payload(
 
     with sqlite_unit_of_work() as uow:
         persisted = uow.session.execute(select(PlayEvent)).scalars().all()
-        names = sorted(event.track.name for event in persisted)
-    expected_names = sorted(
-        name for payload in responses for name in _extract_names(payload)
-    )
+        names = [event.track.recording.title for event in persisted if event.track is not None]
+        names.sort()
+    expected_names = sorted(name for payload in responses for name in _extract_names(payload))
     assert names == expected_names
 
 
@@ -79,17 +89,40 @@ def _make_play_event(
     *,
     track_name: str,
     artist_name: str,
-    album_name: str,
+    release_title: str,
     timestamp: datetime,
 ) -> PlayEvent:
     artist = Artist(name=artist_name)
-    album = Album(name=album_name, artist=artist)
-    track = Track(name=track_name, artist=artist, album=album)
-    artist.tracks.append(track)
-    artist.albums.append(album)
-    album.add_track(track)
-    play_event = PlayEvent(timestamp=timestamp, track=track)
-    track.add_play_event(play_event)
+    release_set = ReleaseSet(title=f"{artist_name} Collection")
+    release = Release(title=release_title, release_set=release_set)
+    recording = Recording(title=track_name)
+    track = Track(release=release, recording=recording)
+
+    release_set.releases.append(release)
+    release_set.artists.append(
+        ReleaseSetArtist(
+            release_set=release_set,
+            artist=artist,
+            role=ArtistRole.PRIMARY,
+        )
+    )
+    artist.release_sets.append(release_set)
+
+    release.tracks.append(track)
+    recording.tracks.append(track)
+    recording.artists.append(
+        RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
+    )
+    artist.recordings.append(recording)
+
+    play_event = PlayEvent(
+        played_at=timestamp,
+        source=Provider.LASTFM,
+        recording=recording,
+        track=track,
+    )
+    recording.play_events.append(play_event)
+    track.play_events.append(play_event)
     return play_event
 
 
@@ -100,13 +133,13 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
     first = _make_play_event(
         track_name="Common Title",
         artist_name="First Artist",
-        album_name="First Album",
+        release_title="First Release",
         timestamp=base_time,
     )
     second = _make_play_event(
         track_name="Common Title",
         artist_name="Second Artist",
-        album_name="Second Album",
+        release_title="Second Release",
         timestamp=base_time + timedelta(seconds=30),
     )
 
@@ -121,8 +154,13 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
 
     with sqlite_unit_of_work() as uow:
         persisted = uow.session.execute(select(PlayEvent)).scalars().all()
-        artist_names = {event.track.artist.name for event in persisted}
-        track_names = {event.track.name for event in persisted}
+        artist_names = {
+            link.artist.name
+            for event in persisted
+            for link in event.recording.artists
+            if link.role == ArtistRole.PRIMARY
+        }
+        track_names = {event.recording.title for event in persisted}
 
     assert len(persisted) == 2
     assert artist_names == {"First Artist", "Second Artist"}

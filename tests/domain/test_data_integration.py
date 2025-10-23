@@ -25,7 +25,7 @@ def test_sync_play_events_persists_results() -> None:
     assert result.stored == 1
     assert result.fetched == 1
     assert repo.items == [event]
-    assert repo.items[0].timestamp == event.timestamp
+    assert repo.items[0].played_at == event.played_at
 
 
 def test_sync_play_events_skips_commit_when_empty() -> None:
@@ -59,9 +59,9 @@ def test_sync_play_events_skips_existing_timestamps() -> None:
 
 def test_sync_play_events_respects_from_timestamp() -> None:
     older = make_play_event("Old")
-    older.timestamp = older.timestamp.replace(microsecond=0)
+    older.played_at = older.played_at.replace(microsecond=0)
     newer = make_play_event("New")
-    newer.timestamp = older.timestamp + timedelta(seconds=60)
+    newer.played_at = older.played_at + timedelta(seconds=60)
     repo = FakePlayEventRepository([older])
     fake_source = FakePlayEventSource([[older, newer]])
     service = SyncPlayEvents(
@@ -69,11 +69,11 @@ def test_sync_play_events_respects_from_timestamp() -> None:
         unit_of_work=lambda: FakePlayEventUnitOfWork(repo),
     )
 
-    result = service.run(SyncRequest(from_timestamp=older.timestamp))
+    result = service.run(SyncRequest(from_timestamp=older.played_at))
 
     assert result.stored == 1
     assert newer in repo.items
-    assert fake_source.calls[0]["since"] == older.timestamp
+    assert fake_source.calls[0]["since"] == older.played_at
 
 
 def test_sync_play_events_returns_now_playing_without_persisting() -> None:

@@ -41,20 +41,33 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: TrackPayloa
     event = parse_play_event(sample_payload)
 
     track = event.track
-    album = track.album
-    artist = track.artist
+    assert track is not None
+    release = track.release
+    release_set = release.release_set
+    recording = event.recording
+    assert recording.artists
+    artist = recording.artists[0].artist
 
-    assert event.provider is Provider.LASTFM
-    assert track.name == sample_payload["name"]
-    assert album.name == sample_payload["album"]["#text"]
+    assert event.source is Provider.LASTFM
+    assert recording.title == sample_payload["name"]
+    assert release.title == sample_payload["album"]["#text"]
+    assert release_set.title == sample_payload["album"]["#text"]
+    assert artist is not None
     assert artist.name == sample_payload["artist"]["#text"]
-    assert track in album.tracks
-    assert album in artist.albums
-    assert track in artist.tracks
+    assert track in release.tracks
+    assert release in release_set.releases
+    assert track in recording.tracks
     assert event in track.play_events
+    assert event in recording.play_events
     assert Provider.LASTFM in track.sources
-    assert Provider.LASTFM in album.sources
+    assert Provider.LASTFM in release.sources
+    assert Provider.LASTFM in recording.sources
+    assert Provider.LASTFM in release_set.sources
     assert Provider.LASTFM in artist.sources
+    assert {eid.namespace for eid in artist.external_ids} == {"musicbrainz:artist"}
+    assert {eid.namespace for eid in release_set.external_ids} == {"musicbrainz:release-group"}
+    assert {eid.namespace for eid in release.external_ids} == {"musicbrainz:release"}
+    assert {eid.namespace for eid in recording.external_ids} == {"musicbrainz:recording"}
 
 
 def test_parse_play_event_without_date_raises(sample_payload: TrackPayload) -> None:
@@ -104,7 +117,7 @@ def test_http_source_fetches_play_events(sample_payload: TrackPayload) -> None:
     events = list(result.events)
     assert len(events) == 1
     event = events[0]
-    assert event.provider is Provider.LASTFM
+    assert event.source is Provider.LASTFM
     assert result.now_playing is not None
 
 
@@ -178,7 +191,7 @@ def test_http_source_handles_multiple_pages_from_recording(
     finally:
         client.close()
 
-    names = [event.track.name for event in result.events]
+    names = [event.recording.title for event in result.events]
     expected_names: list[str] = []
     for payload in responses:
         expected_names.extend(_extract_names(payload))
@@ -227,7 +240,7 @@ def test_http_source_retries_on_rate_limit_status(sample_payload: TrackPayload) 
     assert len(sleep_calls) == 2
     assert math.isclose(sleep_calls[0], 2.0, rel_tol=1e-6)
     assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
-    assert [event.track.name for event in result.events] == [payload_copy["name"]]
+    assert [event.recording.title for event in result.events] == [payload_copy["name"]]
 
 
 def test_http_source_retries_on_consecutive_rate_limit_errors(
@@ -266,7 +279,7 @@ def test_http_source_retries_on_consecutive_rate_limit_errors(
     assert len(sleep_calls) == 2
     assert math.isclose(sleep_calls[0], 0.1, rel_tol=1e-6)
     assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
-    assert [event.track.name for event in result.events] == [sample_payload["name"]]
+    assert [event.recording.title for event in result.events] == [sample_payload["name"]]
 
 
 def test_http_source_does_not_cache_now_playing(sample_payload: TrackPayload) -> None:
