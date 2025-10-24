@@ -11,8 +11,8 @@ from sortipy.domain.data_integration import (
     PlayEventSource,
     PlayEventUnitOfWork,
     SyncPlayEvents,
+    SyncPlayEventsRequest,
     SyncPlayEventsResult,
-    SyncRequest,
 )
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ log = getLogger(__name__)
 
 
 def sync_lastfm_play_events(
-    request: SyncRequest | None = None,
+    request: SyncPlayEventsRequest | None = None,
     *,
     source: PlayEventSource | None = None,
     unit_of_work_factory: UnitOfWorkFactory | None = None,
@@ -38,7 +38,7 @@ def sync_lastfm_play_events(
     effective_source = source or HttpLastFmPlayEventSource()
     effective_uow = unit_of_work_factory or get_unit_of_work
     service = SyncPlayEvents(source=effective_source, unit_of_work=effective_uow)
-    params = request or SyncRequest()
+    params = request or SyncPlayEventsRequest()
 
     log.info(
         f"Starting Last.fm sync: batch_size={params.batch_size}, max_events={params.max_events}, "

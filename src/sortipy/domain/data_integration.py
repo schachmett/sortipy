@@ -82,7 +82,7 @@ class SyncPlayEventsResult:
 
 
 @dataclass
-class SyncRequest:
+class SyncPlayEventsRequest:
     """Parameters controlling a sync invocation."""
 
     batch_size: int = 200
@@ -98,10 +98,10 @@ class SyncPlayEvents:
     source: PlayEventSource
     unit_of_work: Callable[[], PlayEventUnitOfWork]
 
-    def run(self, request: SyncRequest | None = None) -> SyncPlayEventsResult:
+    def run(self, request: SyncPlayEventsRequest | None = None) -> SyncPlayEventsResult:
         """Fetch play events and persist them, returning a sync summary."""
 
-        params = request or SyncRequest()
+        params = request or SyncPlayEventsRequest()
         fetched = 0
         stored = 0
         latest_seen: datetime | None = None
@@ -154,15 +154,20 @@ class SyncPlayEvents:
     ) -> tuple[list[PlayEvent], datetime | None]:
         newest: datetime | None = None
         fresh: list[PlayEvent] = []
+        seen_timestamps: set[datetime] = set()
         for event in events:
-            if cutoff and event.played_at <= cutoff:
+            played_at = event.played_at
+            if cutoff and played_at <= cutoff:
                 continue
-            if upper and event.played_at > upper:
+            if upper and played_at > upper:
                 continue
-            if repository.exists(event.played_at):
+            if repository.exists(played_at):
+                continue
+            if played_at in seen_timestamps:
                 continue
             fresh.append(event)
-            newest = max(newest or event.played_at, event.played_at)
+            seen_timestamps.add(played_at)
+            newest = max(newest or played_at, played_at)
         return fresh, newest
 
     def _persist_events(self, uow: PlayEventUnitOfWork, events: list[PlayEvent]) -> int:
@@ -180,6 +185,6 @@ __all__ = [
     "PlayEventSource",
     "PlayEventUnitOfWork",
     "SyncPlayEvents",
+    "SyncPlayEventsRequest",
     "SyncPlayEventsResult",
-    "SyncRequest",
 ]

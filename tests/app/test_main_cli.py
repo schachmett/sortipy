@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sortipy.domain.data_integration import SyncRequest
+from sortipy.domain.data_integration import SyncPlayEventsRequest
 
 
 def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -12,7 +12,7 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     captured: dict[str, object] = {}
 
-    def fake_sync(request: SyncRequest, **kwargs: object) -> None:
+    def fake_sync(request: SyncPlayEventsRequest, **kwargs: object) -> None:
         captured["request"] = request
         captured["kwargs"] = kwargs
 
@@ -20,9 +20,9 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main_module.main([])
 
-    assert isinstance(captured["request"], SyncRequest)
+    assert isinstance(captured["request"], SyncPlayEventsRequest)
     request = captured["request"]
-    assert request.batch_size == SyncRequest().batch_size
+    assert request.batch_size == SyncPlayEventsRequest().batch_size
     assert request.max_events is None
     assert captured["kwargs"] == {}
 
@@ -32,7 +32,7 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
     captured: dict[str, object] = {}
 
-    def fake_sync(request: SyncRequest, **kwargs: object) -> None:
+    def fake_sync(request: SyncPlayEventsRequest, **kwargs: object) -> None:
         captured["request"] = request
         captured["kwargs"] = kwargs
 
@@ -54,7 +54,7 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     request = captured["request"]
-    assert isinstance(request, SyncRequest)
+    assert isinstance(request, SyncPlayEventsRequest)
     assert request.batch_size == 50
     assert request.max_events == 3
     assert request.from_timestamp == datetime(2025, 1, 1, 21, 30, tzinfo=UTC)

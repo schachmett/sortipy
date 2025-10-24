@@ -4,8 +4,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from sortipy.app import sync_lastfm_play_events
-from sortipy.domain.data_integration import PlayEventUnitOfWork, SyncPlayEventsResult, SyncRequest
-from tests.support.play_events import (
+from sortipy.domain.data_integration import (
+    PlayEventUnitOfWork,
+    SyncPlayEventsRequest,
+    SyncPlayEventsResult,
+)
+from tests.helpers.play_events import (
     FakePlayEventRepository,
     FakePlayEventSource,
     FakePlayEventUnitOfWork,
@@ -37,7 +41,7 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
         return FakePlayEventUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
-        SyncRequest(batch_size=1),
+        SyncPlayEventsRequest(batch_size=1),
         source=source,
         unit_of_work_factory=factory,
     )
@@ -63,7 +67,7 @@ def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPa
         return FakePlayEventUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
-        SyncRequest(batch_size=2),
+        SyncPlayEventsRequest(batch_size=2),
         source=source,
         unit_of_work_factory=factory,
     )
@@ -87,7 +91,7 @@ def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatc
     def factory() -> PlayEventUnitOfWork:
         return FakePlayEventUnitOfWork(repository)
 
-    request = SyncRequest(
+    request = SyncPlayEventsRequest(
         batch_size=5,
         from_timestamp=now - lookback,
         to_timestamp=now,

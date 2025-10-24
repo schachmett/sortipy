@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, select
 
 from sortipy.adapters.lastfm import HttpLastFmPlayEventSource, RecentTracksResponse
 from sortipy.common.unit_of_work import SqlAlchemyUnitOfWork, startup
-from sortipy.domain.data_integration import SyncPlayEvents, SyncRequest
+from sortipy.domain.data_integration import SyncPlayEvents, SyncPlayEventsRequest
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
@@ -22,7 +22,7 @@ from sortipy.domain.types import (
     ReleaseSetArtist,
     Track,
 )
-from tests.support.play_events import FakePlayEventSource
+from tests.helpers.play_events import FakePlayEventSource
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ def test_sync_play_events_persists_payload(
     try:
         source = HttpLastFmPlayEventSource(api_key="demo", user_name="demo-user", client=client)
         service = SyncPlayEvents(source=source, unit_of_work=sqlite_unit_of_work)
-        result = service.run(SyncRequest(batch_size=5, max_events=total_expected))
+        result = service.run(SyncPlayEventsRequest(batch_size=5, max_events=total_expected))
     finally:
         client.close()
 
@@ -148,7 +148,7 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
         unit_of_work=sqlite_unit_of_work,
     )
 
-    result = service.run(SyncRequest(batch_size=5))
+    result = service.run(SyncPlayEventsRequest(batch_size=5))
 
     assert result.stored == 2
 
