@@ -121,9 +121,3 @@ def _persist_events(
     uow.commit()
     return len(events)
 
-
-__all__ = [
-    "DEFAULT_SYNC_BATCH_SIZE",
-    "SyncPlayEventsResult",
-    "sync_play_events",
-]

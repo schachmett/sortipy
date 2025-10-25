@@ -34,5 +34,3 @@ class PlayEventFetcher(Protocol):
     ) -> PlayEventFetchResult:
         ...
 
-
-__all__ = ["PlayEventFetchResult", "PlayEventFetcher"]

@@ -369,35 +369,3 @@ class EntityMerge:
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     created_by: str | None = None
 
-
-__all__ = [
-    "Artist",
-    "ArtistRole",
-    "Barcode",
-    "CanonicalEntity",
-    "CanonicalEntityType",
-    "CatalogNumber",
-    "CountryCode",
-    "DurationMs",
-    "EntityMerge",
-    "ExternalID",
-    "ExternalNamespace",
-    "IngestedEntity",
-    "Isrc",
-    "Label",
-    "LibraryItem",
-    "Mbid",
-    "MergeReason",
-    "Namespace",
-    "PartialDate",
-    "PlayEvent",
-    "Provider",
-    "Recording",
-    "RecordingArtist",
-    "Release",
-    "ReleaseSet",
-    "ReleaseSetArtist",
-    "ReleaseSetType",
-    "Track",
-    "User",
-]

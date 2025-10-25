@@ -526,25 +526,3 @@ def create_all_tables(engine: Engine) -> None:
     log.info("Creating all tables")
     mapper_registry.metadata.create_all(engine)
 
-
-__all__ = [
-    "CANONICAL_TYPE_BY_CLASS",
-    "CLASS_BY_CANONICAL_TYPE",
-    "artist_table",
-    "create_all_tables",
-    "entity_merge_table",
-    "external_id_table",
-    "label_table",
-    "library_item_table",
-    "mapper_registry",
-    "play_event_table",
-    "recording_artist_table",
-    "recording_table",
-    "release_label_table",
-    "release_set_artist_table",
-    "release_set_table",
-    "release_table",
-    "start_mappers",
-    "track_table",
-    "user_table",
-]

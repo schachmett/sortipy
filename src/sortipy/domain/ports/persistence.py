@@ -25,5 +25,3 @@ class PlayEventRepository(Repository[PlayEvent], Protocol):
 
     def latest_timestamp(self) -> datetime | None: ...
 
-
-__all__ = ["PlayEventRepository", "Repository"]

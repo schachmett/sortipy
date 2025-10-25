@@ -60,5 +60,3 @@ def sync_lastfm_play_events(
 
     return result
 
-
-__all__ = ["sync_lastfm_play_events"]

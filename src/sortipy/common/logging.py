@@ -20,5 +20,3 @@ def configure_logging(*, level: int = logging.INFO, force: bool = False) -> None
         force=force,
     )
 
-
-__all__ = ["configure_logging"]

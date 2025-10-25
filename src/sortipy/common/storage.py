@@ -54,12 +54,3 @@ def get_database_uri() -> str:
     db_path = get_database_path()
     return f"sqlite+pysqlite:///{db_path}"
 
-
-__all__ = [
-    "APP_DIR_NAME",
-    "DEFAULT_DB_FILENAME",
-    "ensure_data_dir",
-    "get_data_dir",
-    "get_database_path",
-    "get_database_uri",
-]

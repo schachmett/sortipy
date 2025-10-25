@@ -57,7 +57,3 @@ if TYPE_CHECKING:
 
     _session_stub = cast(Session, ...)
     _repo_check: PlayEventRepository = SqlAlchemyPlayEventRepository(_session_stub)
-
-__all__ = [
-    "SqlAlchemyPlayEventRepository",
-]
