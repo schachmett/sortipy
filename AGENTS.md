@@ -28,6 +28,7 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 - When you modify imports, run `.venv/bin/ruff check --select I --fix <path>` (or `.venv/bin/ruff check --fix`) to keep ordering consistent; let `ruff` apply safe autofixes before manual edits.
 - After most edits, it’s faster to run `.venv/bin/ruff format` followed by `.venv/bin/ruff check --fix` than to iterate on lint errors manually—treat those commands as the default cleanup pass unless you have a reason not to.
 - Repository configuration (formatter, linter, type-checker settings) lives in `pyproject.toml`; review it before changing defaults.
+- Follow `docs/policies/typing.md` for guidance on how to use protocols, casts, and `TYPE_CHECKING` blocks when adding typed code.
 - Follow `docs/policies/logging.md` when emitting new log statements; avoid `print`.
 - Handle secrets through `.env` files per ADR-0005; never commit secrets.
 
