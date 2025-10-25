@@ -10,15 +10,18 @@ from .mappings import (
     start_mappers,
 )
 from .merger import CanonicalEntityMerger
-from .repositories import SqlAlchemyPlayEventRepository, SQLAlchemyRepository
+from .repositories import SqlAlchemyPlayEventRepository
+from .unit_of_work import SqlAlchemyUnitOfWork, get_unit_of_work, startup
 
 __all__ = [
     "CANONICAL_TYPE_BY_CLASS",
     "CLASS_BY_CANONICAL_TYPE",
     "CanonicalEntityMerger",
-    "SQLAlchemyRepository",
     "SqlAlchemyPlayEventRepository",
+    "SqlAlchemyUnitOfWork",
     "create_all_tables",
+    "get_unit_of_work",
     "mapper_registry",
     "start_mappers",
+    "startup",
 ]

@@ -15,12 +15,11 @@ from dotenv import load_dotenv
 
 from sortipy.app import sync_lastfm_play_events
 from sortipy.common.logging import configure_logging
-from sortipy.domain.data_integration import SyncPlayEventsRequest
+from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from types import FrameType
-
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=SyncPlayEventsRequest().batch_size,
+        default=DEFAULT_SYNC_BATCH_SIZE,
         help="Number of events to request per API call (default: %(default)s)",
     )
     parser.add_argument(
@@ -118,18 +117,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         parsed_args = _parse_args(args_list)
         start, end = _compute_time_bounds(parsed_args)
-        request = SyncPlayEventsRequest(
-            batch_size=parsed_args.batch_size,
-            max_events=parsed_args.max_events,
-            from_timestamp=start,
-            to_timestamp=end,
-        )
     except ValueError:
         log.exception("CLI validation error")
         sys.exit(2)
 
     try:
-        sync_lastfm_play_events(request)
+        sync_lastfm_play_events(
+            batch_size=parsed_args.batch_size,
+            max_events=parsed_args.max_events,
+            from_timestamp=start,
+            to_timestamp=end,
+        )
 
     except Exception:
         log.exception("Fatal error during sync")

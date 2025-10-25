@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sortipy.app import sync_lastfm_play_events
-from sortipy.domain.data_integration import (
-    PlayEventUnitOfWork,
-    SyncPlayEventsRequest,
-    SyncPlayEventsResult,
-)
+from sortipy.domain.data_integration import SyncPlayEventsResult
 from tests.helpers.play_events import (
     FakePlayEventRepository,
     FakePlayEventSource,
     FakePlayEventUnitOfWork,
     make_play_event,
 )
+
+if TYPE_CHECKING:
+    from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
 
 
 class MonkeyPatch(Protocol):
@@ -41,9 +40,9 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
         return FakePlayEventUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
-        SyncPlayEventsRequest(batch_size=1),
         source=source,
         unit_of_work_factory=factory,
+        batch_size=1,
     )
 
     assert startup_called is True
@@ -67,9 +66,9 @@ def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPa
         return FakePlayEventUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
-        SyncPlayEventsRequest(batch_size=2),
         source=source,
         unit_of_work_factory=factory,
+        batch_size=2,
     )
 
     assert result.stored == 1
@@ -91,16 +90,12 @@ def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatc
     def factory() -> PlayEventUnitOfWork:
         return FakePlayEventUnitOfWork(repository)
 
-    request = SyncPlayEventsRequest(
+    result = sync_lastfm_play_events(
+        source=source,
+        unit_of_work_factory=factory,
         batch_size=5,
         from_timestamp=now - lookback,
         to_timestamp=now,
-    )
-
-    result = sync_lastfm_play_events(
-        request,
-        source=source,
-        unit_of_work_factory=factory,
     )
 
     assert result.stored == 1

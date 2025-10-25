@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import select
 
 from sortipy.adapters.sqlalchemy.merger import CanonicalEntityMerger
-from sortipy.common.repository import Repository
-from sortipy.domain.data_integration import PlayEventRepository
 from sortipy.domain.types import PlayEvent
 
 if TYPE_CHECKING:
@@ -16,33 +14,19 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-T = TypeVar("T")
+    from sortipy.domain.ports.persistence import PlayEventRepository
 
 
-class SQLAlchemyRepository(Repository[T]):
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def add(self, item: T) -> None:
-        self.session.add(item)
-
-    def remove(self, item: T) -> None:
-        self.session.delete(item)
-
-    def update(self, item: T) -> None:
-        self.session.merge(item)
-
-
-class SqlAlchemyPlayEventRepository(PlayEventRepository):
+class SqlAlchemyPlayEventRepository:
     _merger: CanonicalEntityMerger
 
     def __init__(self, session: Session) -> None:
         self.session = session
         self._merger = CanonicalEntityMerger(session)
 
-    def add(self, event: PlayEvent) -> None:
-        self._prepare_event(event)
-        self.session.add(event)
+    def add(self, entity: PlayEvent) -> None:
+        self._prepare_event(entity)
+        self.session.add(entity)
 
     def exists(self, timestamp: datetime) -> bool:
         played_at_column = cast(Any, PlayEvent.played_at)
@@ -68,7 +52,12 @@ class SqlAlchemyPlayEventRepository(PlayEventRepository):
             event.user = self._merger.merge_user(event.user)
 
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    _session_stub = cast(Session, ...)
+    _repo_check: PlayEventRepository = SqlAlchemyPlayEventRepository(_session_stub)
+
 __all__ = [
-    "SQLAlchemyRepository",
     "SqlAlchemyPlayEventRepository",
 ]

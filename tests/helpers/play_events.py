@@ -5,12 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sortipy.domain.data_integration import (
-    FetchPlayEventsResult,
-    PlayEventRepository,
-    PlayEventSource,
-    PlayEventUnitOfWork,
-)
+from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
+from sortipy.domain.ports.unit_of_work import PlayEventRepositories
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
@@ -66,7 +62,7 @@ def make_play_event(
     return event
 
 
-class FakePlayEventSource(PlayEventSource):
+class FakePlayEventSource(PlayEventFetcher):
     """In-memory implementation of the play-event source port for testing."""
 
     def __init__(
@@ -81,14 +77,14 @@ class FakePlayEventSource(PlayEventSource):
         self._now_playing = now_playing
         self.calls: list[dict[str, object]] = []
 
-    def fetch_recent(
+    def __call__(
         self,
         *,
         batch_size: int = 200,
         since: datetime | None = None,
         until: datetime | None = None,
         max_events: int | None = None,
-    ) -> FetchPlayEventsResult:
+    ) -> PlayEventFetchResult:
         self.calls.append(
             {
                 "batch_size": batch_size,
@@ -110,25 +106,21 @@ class FakePlayEventSource(PlayEventSource):
                 if remaining is not None:
                     remaining -= 1
                     if remaining <= 0:
-                        return FetchPlayEventsResult(
+                        return PlayEventFetchResult(
                             events=list(collected),
                             now_playing=self._now_playing,
                         )
-
-        return FetchPlayEventsResult(
-            events=list(collected),
-            now_playing=self._now_playing,
-        )
+        return PlayEventFetchResult(events=list(collected), now_playing=self._now_playing)
 
 
-class FakePlayEventRepository(PlayEventRepository):
+class FakePlayEventRepository:
     """Simple in-memory repository for play events."""
 
     def __init__(self, initial: Iterable[PlayEvent] | None = None) -> None:
         self.items: list[PlayEvent] = list(initial or [])
 
-    def add(self, event: PlayEvent) -> None:
-        self.items.append(event)
+    def add(self, entity: PlayEvent) -> None:
+        self.items.append(entity)
 
     def exists(self, timestamp: datetime) -> bool:
         return any(item.played_at == timestamp for item in self.items)
@@ -139,11 +131,17 @@ class FakePlayEventRepository(PlayEventRepository):
         return max(item.played_at for item in self.items)
 
 
-class FakePlayEventUnitOfWork(PlayEventUnitOfWork):
+if TYPE_CHECKING:
+    from sortipy.domain.ports.persistence import PlayEventRepository
+
+    _check_repo: PlayEventRepository = FakePlayEventRepository()
+
+
+class FakePlayEventUnitOfWork:
     """Unit of work capturing play-event persistence interactions."""
 
     def __init__(self, repository: FakePlayEventRepository) -> None:
-        self.play_events: PlayEventRepository = repository
+        self.repositories = PlayEventRepositories(play_events=repository)
         self.committed = False
         self.rollback_called = False
 
@@ -165,6 +163,12 @@ class FakePlayEventUnitOfWork(PlayEventUnitOfWork):
 
     def rollback(self) -> None:
         self.rollback_called = True
+
+
+if TYPE_CHECKING:
+    from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
+
+    _uow_check: PlayEventUnitOfWork = FakePlayEventUnitOfWork(_check_repo)
 
 
 __all__ = [

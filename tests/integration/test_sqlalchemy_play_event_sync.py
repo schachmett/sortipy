@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import create_engine, select
 
 from sortipy.adapters.lastfm import HttpLastFmPlayEventSource, RecentTracksResponse
-from sortipy.common.unit_of_work import SqlAlchemyUnitOfWork, startup
-from sortipy.domain.data_integration import SyncPlayEvents, SyncPlayEventsRequest
+from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, startup
+from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
@@ -29,7 +29,7 @@ from tests.helpers.play_events import FakePlayEventSource
 def sqlite_unit_of_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Callable[[], SqlAlchemyUnitOfWork]]:
-    import sortipy.common.unit_of_work as uow_module
+    import sortipy.adapters.sqlalchemy.unit_of_work as uow_module
 
     test_uri = "sqlite+pysqlite:///:memory:"
     engine = create_engine(test_uri, future=True)
@@ -64,8 +64,12 @@ def test_sync_play_events_persists_payload(
     client = httpx.Client(transport=httpx.MockTransport(handler))
     try:
         source = HttpLastFmPlayEventSource(api_key="demo", user_name="demo-user", client=client)
-        service = SyncPlayEvents(source=source, unit_of_work=sqlite_unit_of_work)
-        result = service.run(SyncPlayEventsRequest(batch_size=5, max_events=total_expected))
+        result = sync_play_events(
+            fetcher=source,
+            unit_of_work_factory=sqlite_unit_of_work,
+            batch_size=5,
+            max_events=total_expected,
+        )
     finally:
         client.close()
 
@@ -143,12 +147,11 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
         timestamp=base_time + timedelta(seconds=30),
     )
 
-    service = SyncPlayEvents(
-        source=FakePlayEventSource([[first, second]]),
-        unit_of_work=sqlite_unit_of_work,
+    result = sync_play_events(
+        fetcher=FakePlayEventSource([[first, second]]),
+        unit_of_work_factory=sqlite_unit_of_work,
+        batch_size=5,
     )
-
-    result = service.run(SyncPlayEventsRequest(batch_size=5))
 
     assert result.stored == 2
 

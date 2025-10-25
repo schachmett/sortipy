@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sortipy.domain.data_integration import SyncPlayEventsRequest
+from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
 
 
 def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -12,19 +12,17 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     captured: dict[str, object] = {}
 
-    def fake_sync(request: SyncPlayEventsRequest, **kwargs: object) -> None:
-        captured["request"] = request
-        captured["kwargs"] = kwargs
+    def fake_sync(**kwargs: object) -> None:
+        captured.update(kwargs)
 
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
 
     main_module.main([])
 
-    assert isinstance(captured["request"], SyncPlayEventsRequest)
-    request = captured["request"]
-    assert request.batch_size == SyncPlayEventsRequest().batch_size
-    assert request.max_events is None
-    assert captured["kwargs"] == {}
+    assert captured["batch_size"] == DEFAULT_SYNC_BATCH_SIZE
+    assert captured["max_events"] is None
+    assert captured["from_timestamp"] is None
+    assert captured["to_timestamp"] is None
 
 
 def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,9 +30,8 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
     captured: dict[str, object] = {}
 
-    def fake_sync(request: SyncPlayEventsRequest, **kwargs: object) -> None:
-        captured["request"] = request
-        captured["kwargs"] = kwargs
+    def fake_sync(**kwargs: object) -> None:
+        captured.update(kwargs)
 
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
 
@@ -53,13 +50,10 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
         ]
     )
 
-    request = captured["request"]
-    assert isinstance(request, SyncPlayEventsRequest)
-    assert request.batch_size == 50
-    assert request.max_events == 3
-    assert request.from_timestamp == datetime(2025, 1, 1, 21, 30, tzinfo=UTC)
-    assert request.to_timestamp == datetime(2025, 1, 2, 0, 0, tzinfo=UTC)
-    assert captured["kwargs"] == {}
+    assert captured["batch_size"] == 50
+    assert captured["max_events"] == 3
+    assert captured["from_timestamp"] == datetime(2025, 1, 1, 21, 30, tzinfo=UTC)
+    assert captured["to_timestamp"] == datetime(2025, 1, 2, 0, 0, tzinfo=UTC)
 
 
 def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -20,7 +20,7 @@ else:  # pragma: no cover - imported for runtime type hint resolution
     Callable = _Callable
 
 from sortipy.common import MissingConfigurationError, require_env_var
-from sortipy.domain.data_integration import FetchPlayEventsResult, PlayEventSource
+from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
@@ -150,7 +150,7 @@ class LastFmAPIError(RuntimeError):
         self.code = code
 
 
-class HttpLastFmPlayEventSource(PlayEventSource):
+class HttpLastFmPlayEventSource(PlayEventFetcher):
     """HTTP implementation of the Last.fm play-event source port."""
 
     def __init__(
@@ -178,6 +178,21 @@ class HttpLastFmPlayEventSource(PlayEventSource):
         self._cache_max_entries = max(cache_config.max_entries, 1) if self._cache_enabled else 0
         self._cache: OrderedDict[CacheKey, CacheEntry] = OrderedDict()
 
+    def __call__(
+        self,
+        *,
+        batch_size: int = 200,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        max_events: int | None = None,
+    ) -> PlayEventFetchResult:
+        return self.fetch_recent(
+            batch_size=batch_size,
+            since=since,
+            until=until,
+            max_events=max_events,
+        )
+
     def fetch_recent(
         self,
         *,
@@ -185,7 +200,7 @@ class HttpLastFmPlayEventSource(PlayEventSource):
         since: datetime | None = None,
         until: datetime | None = None,
         max_events: int | None = None,
-    ) -> FetchPlayEventsResult:
+    ) -> PlayEventFetchResult:
         from_ts = _datetime_to_epoch_seconds(since) + 1 if since else None
         to_ts = _datetime_to_epoch_seconds(until) if until else None
 
@@ -212,7 +227,7 @@ class HttpLastFmPlayEventSource(PlayEventSource):
                 if remaining is not None:
                     remaining -= 1
                     if remaining <= 0:
-                        return FetchPlayEventsResult(events=events, now_playing=now_playing)
+                        return PlayEventFetchResult(events=events, now_playing=now_playing)
 
             total_pages = int(attrs["totalPages"])
             if page >= total_pages:
@@ -221,7 +236,7 @@ class HttpLastFmPlayEventSource(PlayEventSource):
             # Once we move past the initial page, the from bound is no longer required.
             from_ts = None
 
-        return FetchPlayEventsResult(events=events, now_playing=now_playing)
+        return PlayEventFetchResult(events=events, now_playing=now_playing)
 
     def _request_recent_scrobbles(
         self,

@@ -2,50 +2,56 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.lastfm import HttpLastFmPlayEventSource
-from sortipy.common.unit_of_work import get_unit_of_work, startup
-from sortipy.domain.data_integration import (
-    PlayEventSource,
-    PlayEventUnitOfWork,
-    SyncPlayEvents,
-    SyncPlayEventsRequest,
-    SyncPlayEventsResult,
-)
+from sortipy.adapters.sqlalchemy.unit_of_work import get_unit_of_work, startup
+from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
+from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from datetime import datetime
 
-    UnitOfWorkFactory = Callable[[], PlayEventUnitOfWork]
-else:  # pragma: no cover - runtime placeholder for type checking
-    UnitOfWorkFactory = object
+    from sortipy.domain.ports.fetching import PlayEventFetcher
+
+UnitOfWorkFactory = Callable[[], PlayEventUnitOfWork]
 
 
 log = getLogger(__name__)
 
 
 def sync_lastfm_play_events(
-    request: SyncPlayEventsRequest | None = None,
     *,
-    source: PlayEventSource | None = None,
+    source: PlayEventFetcher | None = None,
     unit_of_work_factory: UnitOfWorkFactory | None = None,
+    batch_size: int = 200,
+    max_events: int | None = None,
+    from_timestamp: datetime | None = None,
+    to_timestamp: datetime | None = None,
 ) -> SyncPlayEventsResult:
     """Synchronise Last.fm play events using the configured adapters."""
 
     startup()
     effective_source = source or HttpLastFmPlayEventSource()
     effective_uow = unit_of_work_factory or get_unit_of_work
-    service = SyncPlayEvents(source=effective_source, unit_of_work=effective_uow)
-    params = request or SyncPlayEventsRequest()
-
     log.info(
-        f"Starting Last.fm sync: batch_size={params.batch_size}, max_events={params.max_events}, "
-        f"from={params.from_timestamp}, to={params.to_timestamp}"
+        "Starting Last.fm sync: batch_size=%s, max_events=%s, from=%s, to=%s",
+        batch_size,
+        max_events,
+        from_timestamp,
+        to_timestamp,
     )
 
-    result = service.run(params)
+    result = sync_play_events(
+        fetcher=effective_source,
+        unit_of_work_factory=effective_uow,
+        batch_size=batch_size,
+        max_events=max_events,
+        from_timestamp=from_timestamp,
+        to_timestamp=to_timestamp,
+    )
 
     log.info(
         f"Finished Last.fm sync: stored={result.stored}, fetched={result.fetched}, "
