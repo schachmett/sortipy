@@ -33,10 +33,10 @@ def sqlite_unit_of_work(
 
     test_uri = "sqlite+pysqlite:///:memory:"
     engine = create_engine(test_uri, future=True)
-    old_engine = uow_module.ENGINE
+    was_started = uow_module.is_started()
+    old_engine = uow_module.configured_engine()
     monkeypatch.setenv("DATABASE_URI", test_uri)
-    uow_module.ENGINE = engine
-    startup()
+    startup(engine=engine, database_uri=test_uri, force=True)
 
     def factory() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork()
@@ -44,7 +44,10 @@ def sqlite_unit_of_work(
     yield factory
 
     engine.dispose()
-    uow_module.ENGINE = old_engine
+    if was_started and old_engine is not None:
+        startup(engine=old_engine, force=True)
+    else:
+        uow_module.shutdown()
 
 
 def test_sync_play_events_persists_payload(
