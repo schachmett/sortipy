@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Callable, Iterator, Sequence  # noqa: UP035
+from typing import TYPE_CHECKING, Callable, Sequence  # noqa: UP035
 
 import httpx
-import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 
 from sortipy.adapters.lastfm import HttpLastFmPlayEventSource, RecentTracksResponse
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, startup
 from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.types import (
     Artist,
@@ -24,31 +22,8 @@ from sortipy.domain.types import (
 )
 from tests.helpers.play_events import FakePlayEventSource
 
-
-@pytest.fixture
-def sqlite_unit_of_work(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[Callable[[], SqlAlchemyUnitOfWork]]:
-    import sortipy.adapters.sqlalchemy.unit_of_work as uow_module
-
-    test_uri = "sqlite+pysqlite:///:memory:"
-    engine = create_engine(test_uri, future=True)
-    was_started = uow_module.is_started()
-    old_engine = uow_module.configured_engine()
-    monkeypatch.setenv("DATABASE_URI", test_uri)
-    startup(engine=engine, database_uri=test_uri, force=True)
-
-    def factory() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork()
-
-    yield factory
-
-    engine.dispose()
-    if was_started and old_engine is not None:
-        startup(engine=old_engine, force=True)
-    else:
-        uow_module.shutdown()
-
+if TYPE_CHECKING:
+    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
 
 def test_sync_play_events_persists_payload(
     sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],

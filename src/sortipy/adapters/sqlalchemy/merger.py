@@ -39,82 +39,90 @@ class CanonicalEntityMerger:
         return cast(Artist, self._merge_canonical(artist, ()))
 
     def merge_release_set(self, release_set: ReleaseSet) -> ReleaseSet:
-        for link in release_set.artists:
-            link.artist = self.merge_artist(link.artist)
-        merged = cast(ReleaseSet, self._merge_canonical(release_set, ()))
-        existing_keys: set[tuple[uuid.UUID, str | None, int | None]] = set()
-        for existing in merged.artists:
-            artist = existing.artist
-            if artist.id is not None:
-                existing_keys.add((artist.id, existing.role, existing.credit_order))
-        for link in release_set.artists:
-            link.release_set = merged
-            artist = link.artist
-            if artist.id is not None:
-                key = (artist.id, link.role, link.credit_order)
-                if key in existing_keys:
-                    continue
-                existing_keys.add(key)
-            merged.artists.append(link)
-        return merged
+        with self.session.no_autoflush:
+            for link in release_set.artists:
+                link.artist = self.merge_artist(link.artist)
+            merged = cast(ReleaseSet, self._merge_canonical(release_set, ()))
+            existing_keys: set[tuple[uuid.UUID, str | None, int | None]] = set()
+            for existing in merged.artists:
+                artist = existing.artist
+                if artist.id is not None:
+                    existing_keys.add((artist.id, existing.role, existing.credit_order))
+            for link in release_set.artists:
+                link.release_set = merged
+                artist = link.artist
+                if artist.id is not None:
+                    key = (artist.id, link.role, link.credit_order)
+                    if key in existing_keys:
+                        continue
+                    existing_keys.add(key)
+                merged.artists.append(link)
+            return merged
 
     def merge_label(self, label: Label) -> Label:
         return cast(Label, self._merge_canonical(label, ()))
 
     def merge_release(self, release: Release) -> Release:
-        release_set = self.merge_release_set(release.release_set)
-        release.release_set = release_set
-        release.labels[:] = [self.merge_label(label) for label in release.labels]
-        merged = cast(Release, self._merge_canonical(release, ()))
-        merged.release_set = release_set
-        return merged
+        with self.session.no_autoflush:
+            release_set = self.merge_release_set(release.release_set)
+            release.release_set = release_set
+            release.labels[:] = [self.merge_label(label) for label in release.labels]
+            merged = cast(Release, self._merge_canonical(release, ()))
+            merged.release_set = release_set
+            return merged
 
     def merge_recording(self, recording: Recording) -> Recording:
-        for link in recording.artists:
-            link.artist = self.merge_artist(link.artist)
-        merged = cast(Recording, self._merge_canonical(recording, ()))
-        existing_keys: set[tuple[uuid.UUID, str | None, str | None, int | None]] = set()
-        for existing in merged.artists:
-            artist = existing.artist
-            if artist.id is not None:
-                existing_keys.add(
-                    (artist.id, existing.role, existing.instrument, existing.credit_order)
-                )
-        for link in recording.artists:
-            link.recording = merged
-            artist = link.artist
-            if artist.id is not None:
-                key = (artist.id, link.role, link.instrument, link.credit_order)
-                if key in existing_keys:
-                    continue
-                existing_keys.add(key)
-            merged.artists.append(link)
-        return merged
+        with self.session.no_autoflush:
+            for link in recording.artists:
+                link.artist = self.merge_artist(link.artist)
+            merged = cast(Recording, self._merge_canonical(recording, ()))
+            existing_keys: set[tuple[uuid.UUID, str | None, str | None, int | None]] = set()
+            for existing in merged.artists:
+                artist = existing.artist
+                if artist.id is not None:
+                    existing_keys.add(
+                        (artist.id, existing.role, existing.instrument, existing.credit_order)
+                    )
+            for link in recording.artists:
+                link.recording = merged
+                artist = link.artist
+                if artist.id is not None:
+                    key = (artist.id, link.role, link.instrument, link.credit_order)
+                    if key in existing_keys:
+                        continue
+                    existing_keys.add(key)
+                merged.artists.append(link)
+            return merged
 
     def merge_track(self, track: Track) -> Track:
-        existing = None
-        if track.id is not None:
-            existing = self.session.get(Track, track.id)
-        if existing is None and track.canonical_id is not None:
-            existing = self.session.get(Track, track.canonical_id)
-        if existing is None and track.release.id is not None and track.recording.id is not None:
-            release_id_column = track_table.c.release_id
-            recording_id_column = track_table.c.recording_id
-            criteria = [
-                release_id_column == track.release.id,
-                recording_id_column == track.recording.id,
-            ]
-            if track.track_number is not None:
-                criteria.append(track_table.c.track_number == track.track_number)
-            stmt = select(Track).where(and_(*criteria))
-            existing = self.session.execute(stmt).scalar_one_or_none()
-        if existing is not None:
-            return existing
+        with self.session.no_autoflush:
+            existing = None
+            if track.id is not None:
+                existing = self.session.get(Track, track.id)
+            if existing is None and track.canonical_id is not None:
+                existing = self.session.get(Track, track.canonical_id)
+            if (
+                existing is None
+                and track.release.id is not None
+                and track.recording.id is not None
+            ):
+                release_id_column = track_table.c.release_id
+                recording_id_column = track_table.c.recording_id
+                criteria = [
+                    release_id_column == track.release.id,
+                    recording_id_column == track.recording.id,
+                ]
+                if track.track_number is not None:
+                    criteria.append(track_table.c.track_number == track.track_number)
+                stmt = select(Track).where(and_(*criteria))
+                existing = self.session.execute(stmt).scalar_one_or_none()
+            if existing is not None:
+                return existing
 
-        if track.id is None:
-            track.id = uuid.uuid4()
-        self.session.add(track)
-        return track
+            if track.id is None:
+                track.id = uuid.uuid4()
+            self.session.add(track)
+            return track
 
     def merge_user(self, user: User) -> User:
         if user.id is not None:

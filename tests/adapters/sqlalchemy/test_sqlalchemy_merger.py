@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session  # noqa: TC002
 
-from sortipy.adapters.sqlalchemy import CanonicalEntityMerger, create_all_tables, start_mappers
+from sortipy.adapters.sqlalchemy import CanonicalEntityMerger
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
@@ -23,23 +21,6 @@ from sortipy.domain.types import (
     ReleaseSetArtist,
     Track,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-
-@pytest.fixture(scope="module")
-def sqlite_session() -> Iterator[Session]:
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    start_mappers()
-    create_all_tables(engine)
-    session_factory = sessionmaker(bind=engine, future=True)
-    session = session_factory()
-    try:
-        yield session
-    finally:
-        session.close()
-        engine.dispose()
 
 
 @pytest.fixture
