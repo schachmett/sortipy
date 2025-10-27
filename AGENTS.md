@@ -49,6 +49,7 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 
 ## Process Reminders
 - Keep worktrees clean: do not create commits without user direction, stage only what belongs to the current proposal, and surface staged files when requesting review.
+- Before running `git commit` (including `git commit --amend`), pause and ask the user for explicit approval in this session—even if the staged changes were discussed earlier.
 - When drafting commit messages, use conventional scope keywords (`feat`, `bugfix`, `docs`, `test`, `tooling`, `refactor`, `chore`, etc.) followed by a concise summary so history stays scannable.
 - Seek guidance instead of forcing changes past failing quality gates.
 - When a feature or fix feels release-ready, suggest a semantic-version git tag and explain the milestone’s value.
