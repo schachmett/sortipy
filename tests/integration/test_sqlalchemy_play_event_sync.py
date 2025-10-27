@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, Sequence  # noqa: UP035
 import httpx
 from sqlalchemy import select
 
-from sortipy.adapters.lastfm import HttpLastFmPlayEventSource, RecentTracksResponse
+from sortipy.adapters.lastfm import RecentTracksResponse, build_http_lastfm_fetcher
 from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.types import (
     Artist,
@@ -40,16 +40,18 @@ def test_sync_play_events_persists_payload(
     total_expected = sum(len(_extract_names(payload)) for payload in responses)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(api_key="demo", user_name="demo-user", client=client)
-        result = sync_play_events(
-            fetcher=source,
-            unit_of_work_factory=sqlite_unit_of_work,
-            batch_size=5,
-            max_events=total_expected,
-        )
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(
+        api_key="demo",
+        user_name="demo-user",
+        client=client,
+    )
+    result = sync_play_events(
+        fetcher=fetcher,
+        unit_of_work_factory=sqlite_unit_of_work,
+        batch_size=5,
+        max_events=total_expected,
+    )
+    client.close()
 
     assert result.stored == total_expected
     assert result.fetched >= total_expected

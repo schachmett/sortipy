@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 
 
-class MissingConfigurationError(RuntimeError):
+class ConfigurationError(RuntimeError):
+    """Raised when configuration values are invalid."""
+
+
+class MissingConfigurationError(ConfigurationError):
     """Raised when required configuration values are absent or blank."""
 
 
@@ -32,4 +36,3 @@ def require_env_var(name: str) -> str:
     """Return a required environment variable by name."""
 
     return require_env_vars([name])[name]
-

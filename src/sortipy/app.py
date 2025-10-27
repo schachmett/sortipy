@@ -6,7 +6,7 @@ from collections.abc import Callable
 from logging import getLogger
 from typing import TYPE_CHECKING
 
-from sortipy.adapters.lastfm import HttpLastFmPlayEventSource
+from sortipy.adapters.lastfm import build_http_lastfm_fetcher
 from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, startup
 from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
 from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
@@ -34,7 +34,7 @@ def sync_lastfm_play_events(
     """Synchronise Last.fm play events using the configured adapters."""
 
     startup()
-    effective_source = source or HttpLastFmPlayEventSource()
+    effective_source = source or build_http_lastfm_fetcher()
     effective_uow = unit_of_work_factory or SqlAlchemyUnitOfWork
     log.info(
         "Starting Last.fm sync: batch_size=%s, max_events=%s, from=%s, to=%s",

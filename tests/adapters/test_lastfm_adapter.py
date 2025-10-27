@@ -9,14 +9,14 @@ import pytest
 
 from sortipy.adapters.lastfm import (
     CacheConfiguration,
-    HttpLastFmPlayEventSource,
     LastFmRuntimeOptions,
     RecentTracksResponse,
     RetryConfiguration,
     TrackPayload,
+    build_http_lastfm_fetcher,
     parse_play_event,
 )
-from sortipy.common.config import MissingConfigurationError
+from sortipy.common.config import ConfigurationError, MissingConfigurationError
 from sortipy.domain.types import Provider
 
 
@@ -104,15 +104,17 @@ def test_http_source_fetches_play_events(sample_payload: TrackPayload) -> None:
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(api_key="demo", user_name="demo-user", client=client)
-        result = source.fetch_recent(
-            batch_size=5,
-            since=datetime.fromtimestamp(1700000000, tz=UTC),
-            until=datetime.fromtimestamp(1800000000, tz=UTC),
-        )
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(
+        api_key="demo",
+        user_name="demo-user",
+        client=client,
+    )
+    result = fetcher(
+        batch_size=5,
+        since=datetime.fromtimestamp(1700000000, tz=UTC),
+        until=datetime.fromtimestamp(1800000000, tz=UTC),
+    )
+    client.close()
 
     events = list(result.events)
     assert len(events) == 1
@@ -126,7 +128,7 @@ def test_http_source_raises_when_credentials_missing(monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("LASTFM_USER_NAME", raising=False)
 
     with pytest.raises(MissingConfigurationError):
-        HttpLastFmPlayEventSource()
+        build_http_lastfm_fetcher()
 
 
 def test_http_source_raises_when_credentials_blank(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,7 +136,7 @@ def test_http_source_raises_when_credentials_blank(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("LASTFM_USER_NAME", "   ")
 
     with pytest.raises(MissingConfigurationError):
-        HttpLastFmPlayEventSource()
+        build_http_lastfm_fetcher()
 
 
 def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,11 +165,9 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(client=client)
-        source.fetch_recent()
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(client=client)
+    fetcher()
+    client.close()
 
     assert captured["api_key"] == "env-key"
     assert captured["user"] == "env-user"
@@ -185,11 +185,13 @@ def test_http_source_handles_multiple_pages_from_recording(
         return httpx.Response(status_code=200, json=payload)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(api_key="demo", user_name="demo-user", client=client)
-        result = source.fetch_recent(batch_size=5, max_events=10)
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(
+        api_key="demo",
+        user_name="demo-user",
+        client=client,
+    )
+    result = fetcher(batch_size=5, max_events=10)
+    client.close()
 
     names = [event.recording.title for event in result.events]
     expected_names: list[str] = []
@@ -222,19 +224,17 @@ def test_http_source_retries_on_rate_limit_status(sample_payload: TrackPayload) 
         sleep_calls.append(duration)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(
-            api_key="demo",
-            user_name="demo-user",
-            client=client,
-            options=LastFmRuntimeOptions(
-                retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1),
-                sleep=fake_sleep,
-            ),
-        )
-        result = source.fetch_recent(batch_size=1)
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(
+        api_key="demo",
+        user_name="demo-user",
+        client=client,
+        options=LastFmRuntimeOptions(
+            retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1),
+            sleep=fake_sleep,
+        ),
+    )
+    result = fetcher(batch_size=1)
+    client.close()
 
     assert attempts == 3
     assert len(sleep_calls) == 2
@@ -261,25 +261,34 @@ def test_http_source_retries_on_consecutive_rate_limit_errors(
         sleep_calls.append(duration)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(
-            api_key="demo",
-            user_name="demo-user",
-            client=client,
-            options=LastFmRuntimeOptions(
-                retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1, backoff_factor=2.0),
-                sleep=fake_sleep,
-            ),
-        )
-        result = source.fetch_recent(batch_size=1)
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(
+        api_key="demo",
+        user_name="demo-user",
+        client=client,
+        options=LastFmRuntimeOptions(
+            retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1, backoff_factor=2.0),
+            sleep=fake_sleep,
+        ),
+    )
+    result = fetcher(batch_size=1)
+    client.close()
 
     assert attempts == 3
     assert len(sleep_calls) == 2
     assert math.isclose(sleep_calls[0], 0.1, rel_tol=1e-6)
     assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
     assert [event.recording.title for event in result.events] == [sample_payload["name"]]
+
+
+def test_retry_configuration_rejects_invalid_values() -> None:
+    with pytest.raises(ConfigurationError, match="max_attempts"):
+        RetryConfiguration(max_attempts=0)
+    with pytest.raises(ConfigurationError, match="backoff_initial"):
+        RetryConfiguration(backoff_initial=-1.0)
+    with pytest.raises(ConfigurationError, match="backoff_factor"):
+        RetryConfiguration(backoff_factor=0.5)
+    with pytest.raises(ConfigurationError, match="backoff_max"):
+        RetryConfiguration(backoff_initial=2.0, backoff_max=1.0)
 
 
 def test_http_source_does_not_cache_now_playing(sample_payload: TrackPayload) -> None:
@@ -298,19 +307,17 @@ def test_http_source_does_not_cache_now_playing(sample_payload: TrackPayload) ->
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    try:
-        source = HttpLastFmPlayEventSource(
-            api_key="demo",
-            user_name="demo-user",
-            client=client,
-            options=LastFmRuntimeOptions(
-                cache=CacheConfiguration(ttl_seconds=60.0, max_entries=16),
-            ),
-        )
-        first = source.fetch_recent(batch_size=2)
-        second = source.fetch_recent(batch_size=2)
-    finally:
-        client.close()
+    fetcher = build_http_lastfm_fetcher(
+        api_key="demo",
+        user_name="demo-user",
+        client=client,
+        options=LastFmRuntimeOptions(
+            cache=CacheConfiguration(ttl_seconds=60.0, max_entries=16),
+        ),
+    )
+    first = fetcher(batch_size=2)
+    second = fetcher(batch_size=2)
+    client.close()
 
     assert attempts == 2
     assert first.now_playing is not None

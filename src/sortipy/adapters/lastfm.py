@@ -8,18 +8,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from logging import getLogger
-from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Callable, Literal, NotRequired, TypedDict, cast  # noqa: UP035
 
 import httpx
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-else:  # pragma: no cover - imported for runtime type hint resolution
-    from collections.abc import Callable as _Callable
-
-    Callable = _Callable
-
-from sortipy.common import MissingConfigurationError, require_env_var
+from sortipy.common import ConfigurationError, MissingConfigurationError, require_env_var
 from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
 from sortipy.domain.types import (
     Artist,
@@ -114,6 +107,16 @@ class RetryConfiguration:
     backoff_factor: float = DEFAULT_BACKOFF_FACTOR
     backoff_max: float = DEFAULT_BACKOFF_MAX
 
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ConfigurationError("RetryConfiguration.max_attempts must be >= 1")
+        if self.backoff_initial < 0:
+            raise ConfigurationError("RetryConfiguration.backoff_initial must be >= 0")
+        if self.backoff_factor < 1:
+            raise ConfigurationError("RetryConfiguration.backoff_factor must be >= 1")
+        if self.backoff_max < self.backoff_initial:
+            raise ConfigurationError("RetryConfiguration.backoff_max must be >= backoff_initial")
+
 
 @dataclass(frozen=True)
 class CacheConfiguration:
@@ -130,6 +133,44 @@ CacheKey = tuple[tuple[str, str], ...]
 class CacheEntry:
     response: RecentTracksResponse
     expires_at: float
+
+
+class ResponseCache:
+    def __init__(self, config: CacheConfiguration, now: Callable[[], float]) -> None:
+        self._enabled = config.ttl_seconds > 0 and config.max_entries > 0
+        self._ttl = max(config.ttl_seconds, 0.0)
+        self._max_entries = max(config.max_entries, 1) if self._enabled else 0
+        self._now = now
+        self._entries: OrderedDict[CacheKey, CacheEntry] = OrderedDict()
+
+    def get(self, key: CacheKey) -> RecentTracksResponse | None:
+        if not self._enabled:
+            return None
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if self._now() >= entry.expires_at:
+            self._entries.pop(key, None)
+            return None
+        self._entries.move_to_end(key)
+        return entry.response
+
+    def store(self, key: CacheKey, response: RecentTracksResponse) -> None:
+        if not self._enabled:
+            return
+        self._entries[key] = CacheEntry(response=response, expires_at=self._now() + self._ttl)
+        self._entries.move_to_end(key)
+        while len(self._entries) > self._max_entries:
+            self._entries.popitem(last=False)
+
+    def should_cache(self, response: RecentTracksResponse) -> bool:
+        if not self._enabled:
+            return False
+        for track in response["recenttracks"]["track"]:
+            attrs = track.get("@attr")
+            if attrs and attrs.get("nowplaying") == "true":
+                return False
+        return True
 
 
 @dataclass(frozen=True)
@@ -150,238 +191,245 @@ class LastFmAPIError(RuntimeError):
         self.code = code
 
 
-class HttpLastFmPlayEventSource(PlayEventFetcher):
-    """HTTP implementation of the Last.fm play-event source port."""
+@dataclass(frozen=True)
+class _ClientContext:
+    api_key: str
+    user_name: str
+    client: httpx.Client
+    retry_config: RetryConfiguration
+    cache_config: CacheConfiguration
+    sleep: Callable[[float], None]
+    now: Callable[[], float]
 
-    def __init__(
-        self,
-        *,
-        api_key: str | None = None,
-        user_name: str | None = None,
-        client: httpx.Client | None = None,
-        options: LastFmRuntimeOptions | None = None,
-    ) -> None:
-        self._api_key = _coalesce_credential("LASTFM_API_KEY", api_key)
-        self._user_name = _coalesce_credential("LASTFM_USER_NAME", user_name)
-        self._client = client or httpx.Client()
-        runtime = options or LastFmRuntimeOptions()
-        self._sleep = runtime.sleep or time.sleep
-        self._time = runtime.time_provider or time.time
-        retry_config = runtime.retry or RetryConfiguration()
-        self._max_attempts = max(1, retry_config.max_attempts)
-        self._backoff_initial = max(retry_config.backoff_initial, 0.0)
-        self._backoff_factor = max(retry_config.backoff_factor, 1.0)
-        self._backoff_max = max(retry_config.backoff_max, self._backoff_initial)
-        cache_config = runtime.cache or CacheConfiguration()
-        self._cache_enabled = cache_config.ttl_seconds > 0 and cache_config.max_entries > 0
-        self._cache_ttl = max(cache_config.ttl_seconds, 0.0)
-        self._cache_max_entries = max(cache_config.max_entries, 1) if self._cache_enabled else 0
-        self._cache: OrderedDict[CacheKey, CacheEntry] = OrderedDict()
 
-    def __call__(
-        self,
+def build_http_lastfm_fetcher(
+    *,
+    api_key: str | None = None,
+    user_name: str | None = None,
+    client: httpx.Client | None = None,
+    options: LastFmRuntimeOptions | None = None,
+) -> PlayEventFetcher:
+    runtime = options or LastFmRuntimeOptions()
+    retry_config = runtime.retry or RetryConfiguration()
+    context = _ClientContext(
+        api_key=_coalesce_credential("LASTFM_API_KEY", api_key),
+        user_name=_coalesce_credential("LASTFM_USER_NAME", user_name),
+        client=client or httpx.Client(),
+        retry_config=retry_config,
+        cache_config=runtime.cache or CacheConfiguration(),
+        sleep=runtime.sleep or time.sleep,
+        now=runtime.time_provider or time.time,
+    )
+    cache = ResponseCache(context.cache_config, context.now)
+
+    def fetcher(
         *,
         batch_size: int = 200,
         since: datetime | None = None,
         until: datetime | None = None,
         max_events: int | None = None,
     ) -> PlayEventFetchResult:
-        return self.fetch_recent(
+        return _fetch_play_events(
+            context,
+            cache,
             batch_size=batch_size,
             since=since,
             until=until,
             max_events=max_events,
         )
 
-    def fetch_recent(
-        self,
-        *,
-        batch_size: int = 200,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        max_events: int | None = None,
-    ) -> PlayEventFetchResult:
-        from_ts = _datetime_to_epoch_seconds(since) + 1 if since else None
-        to_ts = _datetime_to_epoch_seconds(until) if until else None
+    return fetcher
 
-        events: list[PlayEvent] = []
-        now_playing: PlayEvent | None = None
-        page = 1
-        remaining = max_events
 
-        while True:
-            payloads, attrs = self._request_recent_scrobbles(
-                page=page,
-                limit=batch_size,
-                from_ts=from_ts,
-                to_ts=to_ts,
-                extended=True,
-            )
+if TYPE_CHECKING:
+    _fetcher_check: PlayEventFetcher = build_http_lastfm_fetcher(
+        api_key="",
+        user_name="",
+        client=httpx.Client(),
+    )
 
-            for payload in payloads:
-                if payload.get("@attr", {}).get("nowplaying") == "true":
-                    now_playing = parse_play_event(payload)
-                    continue
-                event = parse_play_event(payload)
-                events.append(event)
-                if remaining is not None:
-                    remaining -= 1
-                    if remaining <= 0:
-                        return PlayEventFetchResult(events=events, now_playing=now_playing)
 
-            total_pages = int(attrs["totalPages"])
-            if page >= total_pages:
-                break
-            page += 1
-            # Once we move past the initial page, the from bound is no longer required.
-            from_ts = None
+def _fetch_play_events(
+    context: _ClientContext,
+    cache: ResponseCache,
+    *,
+    batch_size: int,
+    since: datetime | None,
+    until: datetime | None,
+    max_events: int | None,
+) -> PlayEventFetchResult:
+    from_ts = _datetime_to_epoch_seconds(since) + 1 if since else None
+    to_ts = _datetime_to_epoch_seconds(until) if until else None
 
-        return PlayEventFetchResult(events=events, now_playing=now_playing)
+    events: list[PlayEvent] = []
+    now_playing: PlayEvent | None = None
+    page = 1
+    remaining = max_events
 
-    def _request_recent_scrobbles(
-        self,
-        *,
-        page: int,
-        limit: int,
-        from_ts: int | None,
-        to_ts: int | None,
-        extended: bool,
-    ) -> tuple[list[TrackPayload], ResponseAttr]:
-        params = {
-            "method": "user.getrecenttracks",
-            "user": self._user_name,
-            "limit": limit,
-            "page": page,
-            "api_key": self._api_key,
-            "format": "json",
-        }
-        if from_ts is not None:
-            params["from"] = from_ts
-        if to_ts is not None:
-            params["to"] = to_ts
-        if extended:
-            params["extended"] = 1
+    while True:
+        payloads, attrs = _request_recent_scrobbles(
+            context,
+            cache,
+            page=page,
+            limit=batch_size,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            extended=True,
+        )
 
-        query_params = httpx.QueryParams(params)
-        cache_key = self._build_cache_key(query_params)
-        cached_response = self._cache_get(cache_key)
-        if cached_response is not None:
-            recent = cached_response["recenttracks"]
-            return recent["track"], recent["@attr"]
+        for payload in payloads:
+            if payload.get("@attr", {}).get("nowplaying") == "true":
+                now_playing = parse_play_event(payload)
+                continue
+            event = parse_play_event(payload)
+            events.append(event)
+            if remaining is not None:
+                remaining -= 1
+                if remaining <= 0:
+                    return PlayEventFetchResult(events=events, now_playing=now_playing)
 
-        response_json = self._perform_request_with_retry(query_params)
-        if self._should_cache_response(response_json):
-            self._cache_store(cache_key, response_json)
-        recent = response_json["recenttracks"]
+        total_pages = int(attrs["totalPages"])
+        if page >= total_pages:
+            break
+        page += 1
+        from_ts = None
+
+    return PlayEventFetchResult(events=events, now_playing=now_playing)
+
+
+def _request_recent_scrobbles(
+    context: _ClientContext,
+    cache: ResponseCache,
+    *,
+    page: int,
+    limit: int,
+    from_ts: int | None,
+    to_ts: int | None,
+    extended: bool,
+) -> tuple[list[TrackPayload], ResponseAttr]:
+    params: dict[str, str | int] = {
+        "method": "user.getrecenttracks",
+        "user": context.user_name,
+        "limit": limit,
+        "page": page,
+        "api_key": context.api_key,
+        "format": "json",
+    }
+    if from_ts is not None:
+        params["from"] = from_ts
+    if to_ts is not None:
+        params["to"] = to_ts
+    if extended:
+        params["extended"] = 1
+
+    query_params = httpx.QueryParams(params)
+    cache_key: CacheKey = tuple(query_params.multi_items())
+    cached = cache.get(cache_key)
+    if cached is not None:
+        recent = cached["recenttracks"]
         return recent["track"], recent["@attr"]
 
-    def _perform_request_with_retry(self, params: httpx.QueryParams) -> RecentTracksResponse:
-        for attempt in range(1, self._max_attempts + 1):
-            response: httpx.Response | None = None
-            try:
-                response = self._client.get(LASTFM_BASE_URL, params=params)
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                status_code = exc.response.status_code
-                if not self._should_retry_status(status_code) or attempt == self._max_attempts:
-                    raise
-                delay = self._compute_backoff(attempt, exc.response.headers.get("Retry-After"))
-                log.warning(
-                    f"Last.fm request failed with status {status_code}; retrying in "
-                    f"{delay:.2f}s (attempt {attempt}/{self._max_attempts})"
-                )
-                self._sleep(delay)
-                continue
-            except httpx.RequestError as exc:
-                if attempt == self._max_attempts:
-                    raise
-                delay = self._compute_backoff(attempt, None)
-                log.warning(
-                    f"Last.fm transport error {exc!r}; retrying in {delay:.2f}s "
-                    f"(attempt {attempt}/{self._max_attempts})"
-                )
-                self._sleep(delay)
-                continue
+    response_json = _perform_request_with_retry(context, query_params)
+    if cache.should_cache(response_json):
+        cache.store(cache_key, response_json)
+    recent = response_json["recenttracks"]
+    return recent["track"], recent["@attr"]
 
-            payload = response.json()
-            if isinstance(payload, dict) and "error" in payload:
-                error_payload = cast(LastFmErrorResponse, payload)
-                error_code = error_payload.get("error")
-                message = error_payload.get("message", "Last.fm API error")
-                if (
-                    isinstance(error_code, int)
-                    and self._should_retry_error(error_code)
-                    and attempt < self._max_attempts
-                ):
-                    delay = self._compute_backoff(attempt, None)
-                    log.warning(
-                        f"Last.fm API error {error_code} ({message}); retrying in {delay:.2f}s "
-                        f"(attempt {attempt}/{self._max_attempts})"
-                    )
-                    self._sleep(delay)
-                    continue
-                if isinstance(error_code, int):
-                    log.error(f"Last.fm API error {error_code}: {message}")
-                else:
-                    log.error(f"Last.fm API error: {message}")
-                raise LastFmAPIError(
+
+def _perform_request_with_retry(
+    context: _ClientContext,
+    params: httpx.QueryParams,
+) -> RecentTracksResponse:
+    attempts = context.retry_config.max_attempts
+    for attempt in range(1, attempts + 1):
+        response: httpx.Response | None = None
+        try:
+            response = context.client.get(LASTFM_BASE_URL, params=params)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if not _should_retry_status(status_code) or attempt == attempts:
+                raise
+            delay = _compute_backoff(context, attempt, exc.response.headers.get("Retry-After"))
+            log.warning(
+                "Last.fm request failed with status %s; retrying in %.2fs (attempt %s/%s)",
+                status_code,
+                delay,
+                attempt,
+                attempts,
+            )
+            context.sleep(delay)
+            continue
+        except httpx.RequestError as exc:
+            if attempt == attempts:
+                raise
+            delay = _compute_backoff(context, attempt, None)
+            log.warning(
+                "Last.fm transport error %r; retrying in %.2fs (attempt %s/%s)",
+                exc,
+                delay,
+                attempt,
+                attempts,
+            )
+            context.sleep(delay)
+            continue
+
+        payload = response.json()
+        if isinstance(payload, dict) and "error" in payload:
+            error_payload = cast(LastFmErrorResponse, payload)
+            error_code = error_payload.get("error")
+            message = error_payload.get("message", "Last.fm API error")
+            if (
+                isinstance(error_code, int)
+                and _should_retry_error(error_code)
+                and attempt < attempts
+            ):
+                delay = _compute_backoff(context, attempt, None)
+                log.warning(
+                    "Last.fm API error %s (%s); retrying in %.2fs (attempt %s/%s)",
+                    error_code,
                     message,
-                    code=error_code if isinstance(error_code, int) else None,
+                    delay,
+                    attempt,
+                    attempts,
                 )
+                context.sleep(delay)
+                continue
+            detail = f"{error_code}: {message}" if isinstance(error_code, int) else message
+            log.error("Last.fm API error %s", detail)
+            raise LastFmAPIError(
+                message,
+                code=error_code if isinstance(error_code, int) else None,
+            ) from None
 
-            if not isinstance(payload, dict) or "recenttracks" not in payload:
-                raise LastFmAPIError("Unexpected Last.fm response payload")
+        if not isinstance(payload, dict) or "recenttracks" not in payload:
+            raise LastFmAPIError("Unexpected Last.fm response payload")
 
-            return cast(RecentTracksResponse, payload)
+        return cast(RecentTracksResponse, payload)
 
-        raise LastFmAPIError("Exceeded retry attempts for Last.fm request")
+    raise LastFmAPIError("Exceeded retry attempts for Last.fm request")
 
-    def _should_retry_status(self, status_code: int) -> bool:
-        return status_code in RETRYABLE_STATUS_CODES
 
-    def _should_retry_error(self, error_code: int) -> bool:
-        return error_code in RETRYABLE_ERROR_CODES
+def _should_retry_status(status_code: int) -> bool:
+    return status_code in RETRYABLE_STATUS_CODES
 
-    def _compute_backoff(self, attempt: int, retry_after_header: str | None) -> float:
-        retry_after = _parse_retry_after(retry_after_header)
-        if retry_after is not None:
-            return min(retry_after, self._backoff_max)
-        base = self._backoff_initial * (self._backoff_factor ** (attempt - 1))
-        return min(base, self._backoff_max)
 
-    def _build_cache_key(self, query_params: httpx.QueryParams) -> CacheKey:
-        return tuple(query_params.multi_items())
+def _should_retry_error(error_code: int) -> bool:
+    return error_code in RETRYABLE_ERROR_CODES
 
-    def _cache_get(self, key: CacheKey) -> RecentTracksResponse | None:
-        if not self._cache_enabled:
-            return None
-        entry = self._cache.get(key)
-        if entry is None:
-            return None
-        if self._time() >= entry.expires_at:
-            self._cache.pop(key, None)
-            return None
-        self._cache.move_to_end(key)
-        return entry.response
 
-    def _cache_store(self, key: CacheKey, response: RecentTracksResponse) -> None:
-        if not self._cache_enabled:
-            return
-        expires_at = self._time() + self._cache_ttl
-        self._cache[key] = CacheEntry(response=response, expires_at=expires_at)
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._cache_max_entries:
-            self._cache.popitem(last=False)
-
-    def _should_cache_response(self, response: RecentTracksResponse) -> bool:
-        if not self._cache_enabled:
-            return False
-        tracks = response["recenttracks"]["track"]
-        for track in tracks:
-            attrs = track.get("@attr")
-            if attrs and attrs.get("nowplaying") == "true":
-                return False
-        return True
+def _compute_backoff(
+    context: _ClientContext,
+    attempt: int,
+    retry_after_header: str | None,
+) -> float:
+    retry_after = _parse_retry_after(retry_after_header)
+    if retry_after is not None:
+        return min(retry_after, context.retry_config.backoff_max)
+    base = context.retry_config.backoff_initial * (
+        context.retry_config.backoff_factor ** (attempt - 1)
+    )
+    return min(base, context.retry_config.backoff_max)
 
 
 def _parse_retry_after(value: str | None) -> float | None:
