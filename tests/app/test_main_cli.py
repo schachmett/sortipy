@@ -4,12 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 
+from sortipy import main as main_module
 from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
 
 
 def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    from sortipy import main as main_module
-
     captured: dict[str, object] = {}
 
     def fake_sync(**kwargs: object) -> None:
@@ -26,8 +25,6 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
-    from sortipy import main as main_module
-
     captured: dict[str, object] = {}
 
     def fake_sync(**kwargs: object) -> None:
@@ -57,8 +54,6 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
-    from sortipy import main as main_module
-
     def fake_sync(*_: object, **__: object) -> None:
         return None
 

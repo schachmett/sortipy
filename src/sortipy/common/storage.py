@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Final
 
@@ -11,8 +12,6 @@ DEFAULT_DB_FILENAME: Final[str] = "sortipy.db"
 
 def get_data_dir() -> Path:
     """Return the directory where Sortipy stores persistent data."""
-
-    import os
 
     env_dir = os.getenv("SORTIPY_DATA_DIR")
     if env_dir:
@@ -46,11 +45,8 @@ def get_database_path() -> Path:
 def get_database_uri() -> str:
     """Compute the database URI, respecting overrides."""
 
-    import os
-
     env_uri = os.getenv("DATABASE_URI")
     if env_uri:
         return env_uri
     db_path = get_database_path()
     return f"sqlite+pysqlite:///{db_path}"
-

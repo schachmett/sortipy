@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# ruff: noqa: T201
-
 from __future__ import annotations
 
 import argparse

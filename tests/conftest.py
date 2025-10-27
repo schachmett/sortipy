@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from sortipy.adapters.lastfm import RecentTracksResponse
 from sortipy.adapters.sqlalchemy import create_all_tables, start_mappers
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
+from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, shutdown, startup
 
 os.environ.setdefault("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
@@ -52,9 +52,7 @@ def sqlite_session(sqlite_engine: Engine) -> Iterator[Session]:
 def sqlite_unit_of_work(
     sqlite_engine: Engine,
 ) -> Iterator[Callable[[], SqlAlchemyUnitOfWork]]:
-    import sortipy.adapters.sqlalchemy.unit_of_work as uow_module
-
-    uow_module.startup(engine=sqlite_engine, force=True)
+    startup(engine=sqlite_engine, force=True)
 
     def factory() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork()
@@ -62,4 +60,4 @@ def sqlite_unit_of_work(
     try:
         yield factory
     finally:
-        uow_module.shutdown()
+        shutdown()
