@@ -10,6 +10,7 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 - If a required tool/command is missing or blocked, stop and ask the user rather than guessing.
 - Do not introduce new runtime or development dependencies without explicit user approval; confirm intent before touching `pyproject.toml`.
 - Escalate blockers instead of weakening domain invariants or bypassing documented policies.
+- **Before attempting manual lint fixes, run `.venv/bin/ruff format` followed by `.venv/bin/ruff check --fix`. Do not hand-edit import order or other lint output until those commands succeed.**
 
 ## Key References
 - [ADR-0001](docs/adr/0001-architecture-style.md) ports-and-adapters boundaries.
