@@ -8,6 +8,7 @@ from typing import Final
 
 APP_DIR_NAME: Final[str] = "sortipy"
 DEFAULT_DB_FILENAME: Final[str] = "sortipy.db"
+HTTP_CACHE_FILENAME: Final[str] = "http_cache.db"
 
 
 def get_data_dir() -> Path:
@@ -40,6 +41,13 @@ def get_database_path() -> Path:
 
     data_dir = ensure_data_dir()
     return data_dir / DEFAULT_DB_FILENAME
+
+
+def get_http_cache_path() -> Path:
+    """Return the default path for the shared HTTP cache database."""
+
+    data_dir = ensure_data_dir()
+    return data_dir / HTTP_CACHE_FILENAME
 
 
 def get_database_uri() -> str:

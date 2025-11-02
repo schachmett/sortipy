@@ -19,6 +19,8 @@ from hishel._policies import BaseFilter
 from hishel.httpx import AsyncCacheClient
 from httpx_retries import Retry, RetryTransport
 
+from sortipy.common.storage import get_http_cache_path
+
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -93,7 +95,7 @@ class RateLimit:
 class CacheConfig:
     enabled: bool = True
     backend: Literal["sqlite", "memory"] = "sqlite"
-    sqlite_path: str = "http_cache.db"
+    sqlite_path: str | None = None
     default_ttl_seconds: float | None = None
     refresh_ttl_on_access: bool = True
     should_cache: ShouldCacheHook | None = None
@@ -240,7 +242,10 @@ def _build_cache_components(
         msg = f"Unsupported cache backend: {config.backend}"
         raise ValueError(msg)
 
-    database_path = config.sqlite_path if config.backend == "sqlite" else ":memory:"
+    if config.backend == "sqlite":
+        database_path = config.sqlite_path or str(get_http_cache_path())
+    else:
+        database_path = ":memory:"
     storage = AsyncSqliteStorage(
         database_path=database_path,
         default_ttl=config.default_ttl_seconds,
