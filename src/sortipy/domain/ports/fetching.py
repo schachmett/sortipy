@@ -31,6 +31,4 @@ class PlayEventFetcher(Protocol):
         since: datetime | None = None,
         until: datetime | None = None,
         max_events: int | None = None,
-    ) -> PlayEventFetchResult:
-        ...
-
+    ) -> PlayEventFetchResult: ...

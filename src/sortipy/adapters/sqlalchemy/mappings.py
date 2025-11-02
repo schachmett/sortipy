@@ -525,4 +525,3 @@ def create_all_tables(engine: Engine) -> None:
 
     log.info("Creating all tables")
     mapper_registry.metadata.create_all(engine)
-

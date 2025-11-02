@@ -120,4 +120,3 @@ def _persist_events(
         repository.add(event)
     uow.commit()
     return len(events)
-

@@ -101,11 +101,7 @@ class CanonicalEntityMerger:
                 existing = self.session.get(Track, track.id)
             if existing is None and track.canonical_id is not None:
                 existing = self.session.get(Track, track.canonical_id)
-            if (
-                existing is None
-                and track.release.id is not None
-                and track.recording.id is not None
-            ):
+            if existing is None and track.release.id is not None and track.recording.id is not None:
                 release_id_column = track_table.c.release_id
                 recording_id_column = track_table.c.recording_id
                 criteria = [

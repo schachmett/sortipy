@@ -19,4 +19,3 @@ def configure_logging(*, level: int = logging.INFO, force: bool = False) -> None
         datefmt="%H:%M:%S",
         force=force,
     )
-

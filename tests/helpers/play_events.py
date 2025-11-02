@@ -169,4 +169,3 @@ if TYPE_CHECKING:
     from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
 
     _uow_check: PlayEventUnitOfWork = FakePlayEventUnitOfWork(_check_repo)
-

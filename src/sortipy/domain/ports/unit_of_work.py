@@ -44,4 +44,3 @@ class PlayEventRepositories(RepositoryCollection):
 
 
 type PlayEventUnitOfWork = UnitOfWork[PlayEventRepositories]
-
