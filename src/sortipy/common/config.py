@@ -3,6 +3,20 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class LastFmConfig:
+    """Holds Last.fm API configuration values."""
+
+    api_key: str
+    user_name: str
+
+    @classmethod
+    def from_environment(cls) -> LastFmConfig:
+        values = require_env_vars(("LASTFM_API_KEY", "LASTFM_USER_NAME"))
+        return cls(api_key=values["LASTFM_API_KEY"], user_name=values["LASTFM_USER_NAME"])
 
 
 class ConfigurationError(RuntimeError):

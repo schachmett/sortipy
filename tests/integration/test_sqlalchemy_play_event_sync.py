@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Callable, Sequence  # noqa: UP035
 import httpx
 from sqlalchemy import select
 
-from sortipy.adapters.lastfm import RecentTracksResponse, build_http_lastfm_fetcher
+from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
+from sortipy.adapters.lastfm import LastFmFetcher, RecentTracksResponse
+from sortipy.common.config import LastFmConfig
 from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.types import (
     Artist,
@@ -25,6 +27,21 @@ from tests.helpers.play_events import FakePlayEventSource
 if TYPE_CHECKING:
     from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
 
+
+def _make_client_factory(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> Callable[[ResilienceConfig], ResilientClient]:
+    async def async_handler(request: httpx.Request) -> httpx.Response:
+        return handler(request)
+
+    def factory(resilience: ResilienceConfig) -> ResilientClient:
+        client = ResilientClient(resilience)
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(async_handler))  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+        return client
+
+    return factory
+
+
 def test_sync_play_events_persists_payload(
     sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
     recent_tracks_payloads: Sequence[RecentTracksResponse],
@@ -39,11 +56,9 @@ def test_sync_play_events_persists_payload(
 
     total_expected = sum(len(_extract_names(payload)) for payload in responses)
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(
-        api_key="demo",
-        user_name="demo-user",
-        client=client,
+    fetcher = LastFmFetcher(
+        config=LastFmConfig(api_key="demo", user_name="demo-user"),
+        client_factory=_make_client_factory(handler),
     )
     result = sync_play_events(
         fetcher=fetcher,
@@ -51,7 +66,6 @@ def test_sync_play_events_persists_payload(
         batch_size=5,
         max_events=total_expected,
     )
-    client.close()
 
     assert result.stored == total_expected
     assert result.fetched >= total_expected

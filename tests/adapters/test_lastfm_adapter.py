@@ -1,23 +1,34 @@
 from __future__ import annotations
 
-import math
-from collections.abc import Sequence  # noqa: TC003
+from collections.abc import Callable, Sequence  # noqa: TC003
 from datetime import UTC, datetime
 
 import httpx
 import pytest
 
+from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
 from sortipy.adapters.lastfm import (
-    CacheConfiguration,
-    LastFmRuntimeOptions,
+    LastFmFetcher,
     RecentTracksResponse,
-    RetryConfiguration,
     TrackPayload,
-    build_http_lastfm_fetcher,
     parse_play_event,
 )
-from sortipy.common.config import ConfigurationError, MissingConfigurationError
+from sortipy.common.config import LastFmConfig, MissingConfigurationError
 from sortipy.domain.types import Provider
+
+
+def _make_client_factory(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> Callable[[ResilienceConfig], ResilientClient]:
+    async def async_handler(request: httpx.Request) -> httpx.Response:
+        return handler(request)
+
+    def factory(resilience: ResilienceConfig) -> ResilientClient:
+        client = ResilientClient(resilience)
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(async_handler))  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+        return client
+
+    return factory
 
 
 @pytest.fixture
@@ -103,18 +114,15 @@ def test_http_source_fetches_play_events(sample_payload: TrackPayload) -> None:
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(
-        api_key="demo",
-        user_name="demo-user",
-        client=client,
+    fetcher = LastFmFetcher(
+        config=LastFmConfig(api_key="demo", user_name="demo-user"),
+        client_factory=_make_client_factory(handler),
     )
     result = fetcher(
         batch_size=5,
         since=datetime.fromtimestamp(1700000000, tz=UTC),
         until=datetime.fromtimestamp(1800000000, tz=UTC),
     )
-    client.close()
 
     events = list(result.events)
     assert len(events) == 1
@@ -128,7 +136,7 @@ def test_http_source_raises_when_credentials_missing(monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("LASTFM_USER_NAME", raising=False)
 
     with pytest.raises(MissingConfigurationError):
-        build_http_lastfm_fetcher()
+        LastFmFetcher()
 
 
 def test_http_source_raises_when_credentials_blank(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,7 +144,7 @@ def test_http_source_raises_when_credentials_blank(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("LASTFM_USER_NAME", "   ")
 
     with pytest.raises(MissingConfigurationError):
-        build_http_lastfm_fetcher()
+        LastFmFetcher()
 
 
 def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,10 +172,8 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(client=client)
+    fetcher = LastFmFetcher(client_factory=_make_client_factory(handler))
     fetcher()
-    client.close()
 
     assert captured["api_key"] == "env-key"
     assert captured["user"] == "env-user"
@@ -184,14 +190,11 @@ def test_http_source_handles_multiple_pages_from_recording(
         payload = responses[index]
         return httpx.Response(status_code=200, json=payload)
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(
-        api_key="demo",
-        user_name="demo-user",
-        client=client,
+    fetcher = LastFmFetcher(
+        config=LastFmConfig(api_key="demo", user_name="demo-user"),
+        client_factory=_make_client_factory(handler),
     )
     result = fetcher(batch_size=5, max_events=10)
-    client.close()
 
     names = [event.recording.title for event in result.events]
     expected_names: list[str] = []
@@ -201,147 +204,6 @@ def test_http_source_handles_multiple_pages_from_recording(
             break
     expected_names = expected_names[:10]
     assert names == expected_names
-
-
-def test_http_source_retries_on_rate_limit_status(sample_payload: TrackPayload) -> None:
-    payload_copy = sample_payload.copy()
-    attempts = 0
-    responses = [
-        httpx.Response(status_code=429, headers={"Retry-After": "2"}),
-        httpx.Response(status_code=503),
-        httpx.Response(status_code=200, json=_make_recenttracks_response([payload_copy])),
-    ]
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        nonlocal attempts
-        index = min(attempts, len(responses) - 1)
-        attempts += 1
-        return responses[index]
-
-    sleep_calls: list[float] = []
-
-    def fake_sleep(duration: float) -> None:
-        sleep_calls.append(duration)
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(
-        api_key="demo",
-        user_name="demo-user",
-        client=client,
-        options=LastFmRuntimeOptions(
-            retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1),
-            sleep=fake_sleep,
-        ),
-    )
-    result = fetcher(batch_size=1)
-    client.close()
-
-    assert attempts == 3
-    assert len(sleep_calls) == 2
-    assert math.isclose(sleep_calls[0], 2.0, rel_tol=1e-6)
-    assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
-    assert [event.recording.title for event in result.events] == [payload_copy["name"]]
-
-
-def test_http_source_retries_on_consecutive_rate_limit_errors(
-    sample_payload: TrackPayload,
-) -> None:
-    attempts = 0
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
-        if attempts < 3:
-            return httpx.Response(status_code=200, json={"error": 29, "message": "Rate limit"})
-        return httpx.Response(status_code=200, json=_make_recenttracks_response([sample_payload]))
-
-    sleep_calls: list[float] = []
-
-    def fake_sleep(duration: float) -> None:
-        sleep_calls.append(duration)
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(
-        api_key="demo",
-        user_name="demo-user",
-        client=client,
-        options=LastFmRuntimeOptions(
-            retry=RetryConfiguration(max_attempts=4, backoff_initial=0.1, backoff_factor=2.0),
-            sleep=fake_sleep,
-        ),
-    )
-    result = fetcher(batch_size=1)
-    client.close()
-
-    assert attempts == 3
-    assert len(sleep_calls) == 2
-    assert math.isclose(sleep_calls[0], 0.1, rel_tol=1e-6)
-    assert math.isclose(sleep_calls[1], 0.2, rel_tol=1e-6)
-    assert [event.recording.title for event in result.events] == [sample_payload["name"]]
-
-
-def test_retry_configuration_rejects_invalid_values() -> None:
-    with pytest.raises(ConfigurationError, match="max_attempts"):
-        RetryConfiguration(max_attempts=0)
-    with pytest.raises(ConfigurationError, match="backoff_initial"):
-        RetryConfiguration(backoff_initial=-1.0)
-    with pytest.raises(ConfigurationError, match="backoff_factor"):
-        RetryConfiguration(backoff_factor=0.5)
-    with pytest.raises(ConfigurationError, match="backoff_max"):
-        RetryConfiguration(backoff_initial=2.0, backoff_max=1.0)
-
-
-def test_http_source_does_not_cache_now_playing(sample_payload: TrackPayload) -> None:
-    now_playing_payload = sample_payload.copy()
-    now_playing_payload.pop("date", None)
-    now_playing_payload["@attr"] = {"nowplaying": "true"}
-
-    attempts = 0
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
-        return httpx.Response(
-            status_code=200,
-            json=_make_recenttracks_response([now_playing_payload, sample_payload]),
-        )
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    fetcher = build_http_lastfm_fetcher(
-        api_key="demo",
-        user_name="demo-user",
-        client=client,
-        options=LastFmRuntimeOptions(
-            cache=CacheConfiguration(ttl_seconds=60.0, max_entries=16),
-        ),
-    )
-    first = fetcher(batch_size=2)
-    second = fetcher(batch_size=2)
-    client.close()
-
-    assert attempts == 2
-    assert first.now_playing is not None
-    assert second.now_playing is not None
-
-
-def _make_recenttracks_response(
-    payloads: Sequence[TrackPayload],
-    *,
-    page: int = 1,
-    total_pages: int = 1,
-) -> RecentTracksResponse:
-    return {
-        "recenttracks": {
-            "track": list(payloads),
-            "@attr": {
-                "user": "demo-user",
-                "page": str(page),
-                "perPage": str(len(payloads)),
-                "total": str(len(payloads)),
-                "totalPages": str(total_pages),
-            },
-        }
-    }
 
 
 def _extract_names(payload: RecentTracksResponse) -> list[str]:

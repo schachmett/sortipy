@@ -9,3 +9,4 @@
 - [ ] Introduce database migrations (e.g. Alembic) so schema changes apply across existing installs.
 - [ ] Investigate SQLAlchemy autoflush warnings emitted during canonical merge tests and decide whether to suppress via `no_autoflush` or refactor merge helpers.
 - [ ] Introduce helper utilities for wiring domain object graphs (e.g., ensure play events, releases, and recordings attach to collections symmetrically).
+- [ ] Evaluate adopting schema validation for adapter responses (Pydantic v2 or alternative) and replace TypedDict casts when feasible.
