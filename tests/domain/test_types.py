@@ -7,7 +7,6 @@ from sortipy.domain.types import (
     Artist,
     ArtistRole,
     CanonicalEntityType,
-    ExternalID,
     ExternalNamespace,
     Label,
     PartialDate,
@@ -90,42 +89,37 @@ def test_sources_are_tracked() -> None:
 
 def test_external_ids_replace_by_namespace() -> None:
     artist = Artist(name="External ID Test")
-    first = ExternalID(
-        namespace=ExternalNamespace.SPOTIFY_ARTIST,
-        value="artist-1",
-        entity_type=CanonicalEntityType.ARTIST,
-    )
-    second = ExternalID(
-        namespace=ExternalNamespace.SPOTIFY_ARTIST,
-        value="artist-2",
-        entity_type=CanonicalEntityType.ARTIST,
-    )
+    artist.add_external_id(ExternalNamespace.SPOTIFY_ARTIST, "artist-1")
+    assert len(artist.external_ids) == 1
+    assert artist.external_ids[0].value == "artist-1"
+    assert artist.external_ids[0].provider is Provider.SPOTIFY
 
-    artist.add_external_id(first)
-    assert artist.external_ids == [first]
-
-    artist.add_external_id(second, replace=True)
-    assert artist.external_ids == [second]
+    artist.add_external_id(ExternalNamespace.SPOTIFY_ARTIST, "artist-2", replace=True)
+    assert len(artist.external_ids) == 1
+    assert artist.external_ids[0].value == "artist-2"
 
 
 def test_external_ids_by_namespace_property() -> None:
     artist = Artist(name="Mapping Test")
-    spotify = ExternalID(
-        namespace=ExternalNamespace.SPOTIFY_ARTIST,
-        value="artist-spotify",
-        entity_type=CanonicalEntityType.ARTIST,
-    )
-    mb = ExternalID(
-        namespace=ExternalNamespace.MUSICBRAINZ_ARTIST,
-        value="artist-mbid",
-        entity_type=CanonicalEntityType.ARTIST,
-    )
-    artist.add_external_id(spotify)
-    artist.add_external_id(mb)
+    artist.add_external_id(ExternalNamespace.SPOTIFY_ARTIST, "artist-spotify")
+    artist.add_external_id(ExternalNamespace.MUSICBRAINZ_ARTIST, "artist-mbid")
 
     mapping = artist.external_ids_by_namespace
     assert mapping[ExternalNamespace.SPOTIFY_ARTIST].value == "artist-spotify"
     assert mapping[ExternalNamespace.MUSICBRAINZ_ARTIST].value == "artist-mbid"
+
+
+def test_add_external_id_allows_custom_provider() -> None:
+    artist = Artist(name="Custom Provider")
+    artist.add_external_id(
+        namespace="custom:catalogue",
+        value="identifier",
+        provider=Provider.LASTFM,
+    )
+
+    external_id = artist.external_ids[0]
+    assert external_id.namespace == "custom:catalogue"
+    assert external_id.provider is Provider.LASTFM
 
 
 def test_partial_date_helpers() -> None:

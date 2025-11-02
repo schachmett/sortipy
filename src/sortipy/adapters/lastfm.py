@@ -22,8 +22,6 @@ from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
-    CanonicalEntityType,
-    ExternalID,
     ExternalNamespace,
     PlayEvent,
     Provider,
@@ -305,14 +303,7 @@ def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release,
     artist_mbid = payload["artist"]["mbid"] or None
     artist = Artist(name=artist_name)
     if artist_mbid:
-        artist.add_external_id(
-            ExternalID(
-                namespace=ExternalNamespace.MUSICBRAINZ_ARTIST,
-                value=artist_mbid,
-                entity_type=CanonicalEntityType.ARTIST,
-                provider=Provider.MUSICBRAINZ,
-            )
-        )
+        artist.add_external_id(ExternalNamespace.MUSICBRAINZ_ARTIST, artist_mbid)
     artist.sources.add(Provider.LASTFM)
 
     album_name = payload["album"]["#text"]
@@ -320,39 +311,18 @@ def _parse_entities(payload: TrackPayload) -> tuple[Artist, ReleaseSet, Release,
     release_set = ReleaseSet(title=album_name)
     release_set.sources.add(Provider.LASTFM)
     if album_mbid:
-        release_set.add_external_id(
-            ExternalID(
-                namespace=ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
-                value=album_mbid,
-                entity_type=CanonicalEntityType.RELEASE_SET,
-                provider=Provider.MUSICBRAINZ,
-            )
-        )
+        release_set.add_external_id(ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP, album_mbid)
 
     release = Release(title=album_name or payload["name"], release_set=release_set)
     release.sources.add(Provider.LASTFM)
     if album_mbid:
-        release.add_external_id(
-            ExternalID(
-                namespace=ExternalNamespace.MUSICBRAINZ_RELEASE,
-                value=album_mbid,
-                entity_type=CanonicalEntityType.RELEASE,
-                provider=Provider.MUSICBRAINZ,
-            )
-        )
+        release.add_external_id(ExternalNamespace.MUSICBRAINZ_RELEASE, album_mbid)
 
     track_mbid = payload.get("mbid") or None
     recording = Recording(title=payload["name"])
     recording.sources.add(Provider.LASTFM)
     if track_mbid:
-        recording.add_external_id(
-            ExternalID(
-                namespace=ExternalNamespace.MUSICBRAINZ_RECORDING,
-                value=track_mbid,
-                entity_type=CanonicalEntityType.RECORDING,
-                provider=Provider.MUSICBRAINZ,
-            )
-        )
+        recording.add_external_id(ExternalNamespace.MUSICBRAINZ_RECORDING, track_mbid)
 
     track = Track(
         release=release,

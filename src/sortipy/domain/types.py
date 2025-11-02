@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from typing import Final
 from uuid import UUID  # noqa: TC003 # UUID is needed at runtime (SQLAlchemy)
 
 # Basic aliases (PEP 695) so we can upgrade to value objects later.
@@ -41,6 +42,21 @@ class ExternalNamespace(StrEnum):
 
 
 type Namespace = str | ExternalNamespace  # identifies external system for an ExternalID
+
+
+_NAMESPACE_PROVIDERS: Final[dict[Namespace, Provider]] = {
+    ExternalNamespace.MUSICBRAINZ_ARTIST: Provider.MUSICBRAINZ,
+    ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP: Provider.MUSICBRAINZ,
+    ExternalNamespace.MUSICBRAINZ_RELEASE: Provider.MUSICBRAINZ,
+    ExternalNamespace.MUSICBRAINZ_RECORDING: Provider.MUSICBRAINZ,
+    ExternalNamespace.MUSICBRAINZ_LABEL: Provider.MUSICBRAINZ,
+    ExternalNamespace.SPOTIFY_ARTIST: Provider.SPOTIFY,
+    ExternalNamespace.USER_SPOTIFY: Provider.SPOTIFY,
+    ExternalNamespace.USER_LASTFM: Provider.LASTFM,
+    ExternalNamespace.RECORDING_ISRC: Provider.MUSICBRAINZ,
+    ExternalNamespace.LABEL_CATALOG_NUMBER: Provider.MUSICBRAINZ,
+    ExternalNamespace.LABEL_BARCODE: Provider.MUSICBRAINZ,
+}
 
 
 class ArtistRole(StrEnum):
@@ -160,7 +176,24 @@ class CanonicalEntity(IngestedEntity):
     def entity_type(self) -> CanonicalEntityType:
         raise NotImplementedError
 
-    def add_external_id(self, external_id: ExternalID, *, replace: bool = False) -> None:
+    def add_external_id(
+        self,
+        namespace: Namespace,
+        value: str,
+        *,
+        provider: Provider | None = None,
+        replace: bool = False,
+    ) -> None:
+        resolved_provider = (
+            provider if provider is not None else _NAMESPACE_PROVIDERS.get(namespace)
+        )
+        external_id = ExternalID(
+            namespace=namespace,
+            value=value,
+            entity_type=self.entity_type,
+            provider=resolved_provider,
+        )
+
         if replace:
             self.external_ids = [
                 existing
@@ -368,4 +401,3 @@ class EntityMerge:
     reason: MergeReason = MergeReason.MANUAL
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     created_by: str | None = None
-
