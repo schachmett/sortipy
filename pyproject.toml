@@ -9,7 +9,7 @@ license = { file = "LICENSE" }
 requires-python = ">= 3.12"
 readme = "README.md"
 dependencies = ["spotipy", "python-dotenv", "httpx", "httpx-retries", "sqlalchemy", "aiolimiter", "hishel", "hishel[async]"]
-optional-dependencies = { dev = ["pytest", "pytest-cov", "pytest-asyncio", "ruff", "pyright"] }
+optional-dependencies = { dev = ["pytest", "pytest-cov", "pytest-asyncio", "ruff", "pyright", "alembic"] }
 
 [build-system]
 requires = ["setuptools>=71", "setuptools-scm>=8", "wheel"]
@@ -120,6 +120,8 @@ lint.ignore = [
 lint.per-file-ignores = { "tests/**/*.py" = [
     "S101",    # allow assert
     "PLR2004", # allow magic values
+], "src/sortipy/adapters/sqlalchemy/migrations/versions/*.py" = [
+    "I001", # generated migration import ordering
 ] }
 lint.isort.required-imports = ["from __future__ import annotations"]
 lint.pylint.max-args = 7
@@ -132,3 +134,8 @@ pythonVersion = "3.12"
 pythonPlatform = "Linux"
 venvPath = "."
 venv = ".venv"
+
+[tool.alembic]
+script_location = "%(here)s/src/sortipy/adapters/sqlalchemy/migrations"
+prepend_sys_path = ["%(here)s/src"]   # statt "."
+# path_separator = "os"

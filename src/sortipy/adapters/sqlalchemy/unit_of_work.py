@@ -8,11 +8,8 @@ from typing import TYPE_CHECKING, Literal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from sortipy.adapters.sqlalchemy import (
-    SqlAlchemyPlayEventRepository,
-    create_all_tables,
-    start_mappers,
-)
+from sortipy.adapters.sqlalchemy import SqlAlchemyPlayEventRepository, start_mappers
+from sortipy.adapters.sqlalchemy.migrations import upgrade_head
 from sortipy.common.storage import get_database_uri
 from sortipy.domain.ports.unit_of_work import PlayEventRepositories, PlayEventUnitOfWork
 
@@ -70,7 +67,7 @@ def startup(
 
     resolved_engine = engine or create_engine(database_uri or get_database_uri(), future=True)
     start_mappers()
-    create_all_tables(resolved_engine)
+    upgrade_head(engine=resolved_engine)
     _STATE.engine = resolved_engine
 
 
