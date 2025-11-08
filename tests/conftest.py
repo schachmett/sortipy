@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import create_engine
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
 def recent_tracks_payloads() -> tuple[RecentTracksResponse, ...]:
     path = Path(__file__).resolve().parent / "data" / "lastfm_recent_tracks.jsonl"
     with path.open() as handle:
-        return tuple(cast(RecentTracksResponse, json.loads(line)) for line in handle)
+        return tuple(RecentTracksResponse.model_validate_json(line) for line in handle)
 
 
 @pytest.fixture

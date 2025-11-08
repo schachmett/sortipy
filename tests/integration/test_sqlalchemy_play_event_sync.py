@@ -52,7 +52,7 @@ def test_sync_play_events_persists_payload(
         page = int(request.url.params.get("page", "1"))
         index = min(max(page - 1, 0), len(responses) - 1)
         payload = responses[index]
-        return httpx.Response(status_code=200, json=payload)
+        return httpx.Response(status_code=200, json=payload.model_dump(by_alias=True))
 
     total_expected = sum(len(_extract_names(payload)) for payload in responses)
 
@@ -80,7 +80,7 @@ def test_sync_play_events_persists_payload(
 
 
 def _extract_names(payload: RecentTracksResponse) -> list[str]:
-    return [item["name"] for item in payload["recenttracks"]["track"] if "date" in item]
+    return [track.name for track in payload.recenttracks.track if track.date is not None]
 
 
 def _make_play_event(

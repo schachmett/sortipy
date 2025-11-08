@@ -8,7 +8,17 @@ description = "Spotify stuff"
 license = { file = "LICENSE" }
 requires-python = ">= 3.12"
 readme = "README.md"
-dependencies = ["spotipy", "python-dotenv", "httpx", "httpx-retries", "sqlalchemy", "aiolimiter", "hishel", "hishel[async]"]
+dependencies = [
+    "spotipy",
+    "python-dotenv",
+    "httpx",
+    "httpx-retries",
+    "sqlalchemy",
+    "aiolimiter",
+    "hishel",
+    "hishel[async]",
+    "pydantic>=2.8,<3",
+]
 optional-dependencies = { dev = ["pytest", "pytest-cov", "pytest-asyncio", "ruff", "pyright", "alembic"] }
 
 [build-system]

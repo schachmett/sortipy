@@ -32,7 +32,7 @@ def _make_client_factory(
 
 
 @pytest.fixture
-def sample_payload() -> TrackPayload:
+def sample_payload() -> dict[str, object]:
     return {
         "artist": {"mbid": "artist-mbid", "#text": "Sample Artist"},
         "streamable": "0",
@@ -48,8 +48,9 @@ def sample_payload() -> TrackPayload:
     }
 
 
-def test_parse_play_event_creates_canonical_entities(sample_payload: TrackPayload) -> None:
+def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, object]) -> None:
     event = parse_play_event(sample_payload)
+    validated = TrackPayload.model_validate(sample_payload)
 
     track = event.track
     assert track is not None
@@ -60,11 +61,11 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: TrackPayloa
     artist = recording.artists[0].artist
 
     assert event.source is Provider.LASTFM
-    assert recording.title == sample_payload["name"]
-    assert release.title == sample_payload["album"]["#text"]
-    assert release_set.title == sample_payload["album"]["#text"]
+    assert recording.title == validated.name
+    assert release.title == validated.album.title
+    assert release_set.title == validated.album.title
     assert artist is not None
-    assert artist.name == sample_payload["artist"]["#text"]
+    assert artist.name == validated.artist.name
     assert track in release.tracks
     assert release in release_set.releases
     assert track in recording.tracks
@@ -81,18 +82,18 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: TrackPayloa
     assert {eid.namespace for eid in recording.external_ids} == {"musicbrainz:recording"}
 
 
-def test_parse_play_event_without_date_raises(sample_payload: TrackPayload) -> None:
+def test_parse_play_event_without_date_raises(sample_payload: dict[str, object]) -> None:
     payload = sample_payload.copy()
-    payload.pop("date")
+    payload.pop("date", None)
 
     with pytest.raises(ValueError, match="Invalid scrobble"):
         parse_play_event(payload)
 
 
-def test_http_source_fetches_play_events(sample_payload: TrackPayload) -> None:
+def test_http_source_fetches_play_events(sample_payload: dict[str, object]) -> None:
     payload = sample_payload.copy()
     now_playing_payload = sample_payload.copy()
-    now_playing_payload.pop("date")
+    now_playing_payload.pop("date", None)
     now_playing_payload["@attr"] = {"nowplaying": "true"}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -188,7 +189,7 @@ def test_http_source_handles_multiple_pages_from_recording(
         page = int(request.url.params.get("page", "1"))
         index = min(max(page - 1, 0), len(responses) - 1)
         payload = responses[index]
-        return httpx.Response(status_code=200, json=payload)
+        return httpx.Response(status_code=200, json=payload.model_dump(by_alias=True))
 
     fetcher = LastFmFetcher(
         config=LastFmConfig(api_key="demo", user_name="demo-user"),
@@ -207,4 +208,4 @@ def test_http_source_handles_multiple_pages_from_recording(
 
 
 def _extract_names(payload: RecentTracksResponse) -> list[str]:
-    return [item["name"] for item in payload["recenttracks"]["track"] if "date" in item]
+    return [item.name for item in payload.recenttracks.track if item.date is not None]
