@@ -10,6 +10,7 @@ from sortipy.domain.ports.unit_of_work import PlayEventRepositories
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
+    Namespace,
     PlayEvent,
     Provider,
     Recording,
@@ -137,11 +138,27 @@ if TYPE_CHECKING:
     _check_repo: PlayEventRepository = FakePlayEventRepository()
 
 
+class _NullCanonicalRepository[TCanonical]:
+    def add(self, entity: TCanonical) -> None:
+        _ = entity
+
+    def get_by_external_id(self, namespace: Namespace, value: str) -> TCanonical | None:
+        _ = (namespace, value)
+        return None
+
+
 class FakePlayEventUnitOfWork:
     """Unit of work capturing play-event persistence interactions."""
 
     def __init__(self, repository: FakePlayEventRepository) -> None:
-        self.repositories = PlayEventRepositories(play_events=repository)
+        self.repositories = PlayEventRepositories(
+            play_events=repository,
+            artists=_NullCanonicalRepository[Artist](),
+            release_sets=_NullCanonicalRepository[ReleaseSet](),
+            releases=_NullCanonicalRepository[Release](),
+            recordings=_NullCanonicalRepository[Recording](),
+            tracks=_NullCanonicalRepository[Track](),
+        )
         self.committed = False
         self.rollback_called = False
 

@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from .fetching import PlayEventFetcher, PlayEventFetchResult
-from .persistence import PlayEventRepository, Repository
+from .persistence import (
+    ArtistRepository,
+    PlayEventRepository,
+    RecordingRepository,
+    ReleaseRepository,
+    ReleaseSetRepository,
+    Repository,
+    TrackRepository,
+)
 from .unit_of_work import (
     PlayEventRepositories,
     PlayEventUnitOfWork,
@@ -12,12 +20,17 @@ from .unit_of_work import (
 )
 
 __all__ = [
+    "ArtistRepository",
     "PlayEventFetchResult",
     "PlayEventFetcher",
     "PlayEventRepositories",
     "PlayEventRepository",
     "PlayEventUnitOfWork",
+    "RecordingRepository",
+    "ReleaseRepository",
+    "ReleaseSetRepository",
     "Repository",
     "RepositoryCollection",
+    "TrackRepository",
     "UnitOfWork",
 ]

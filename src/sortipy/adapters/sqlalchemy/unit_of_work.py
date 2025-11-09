@@ -8,7 +8,15 @@ from typing import TYPE_CHECKING, Literal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from sortipy.adapters.sqlalchemy import SqlAlchemyPlayEventRepository, start_mappers
+from sortipy.adapters.sqlalchemy import (
+    SqlAlchemyArtistRepository,
+    SqlAlchemyPlayEventRepository,
+    SqlAlchemyRecordingRepository,
+    SqlAlchemyReleaseRepository,
+    SqlAlchemyReleaseSetRepository,
+    SqlAlchemyTrackRepository,
+    start_mappers,
+)
 from sortipy.adapters.sqlalchemy.migrations import upgrade_head
 from sortipy.common.storage import get_database_uri
 from sortipy.domain.ports.unit_of_work import PlayEventRepositories, PlayEventUnitOfWork
@@ -101,7 +109,12 @@ class SqlAlchemyUnitOfWork:
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self._session = self.session_factory()
         self.repositories = PlayEventRepositories(
-            play_events=SqlAlchemyPlayEventRepository(self._session)
+            play_events=SqlAlchemyPlayEventRepository(self._session),
+            artists=SqlAlchemyArtistRepository(self._session),
+            release_sets=SqlAlchemyReleaseSetRepository(self._session),
+            releases=SqlAlchemyReleaseRepository(self._session),
+            recordings=SqlAlchemyRecordingRepository(self._session),
+            tracks=SqlAlchemyTrackRepository(self._session),
         )
         return self
 

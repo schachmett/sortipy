@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from sortipy.domain.ports.persistence import PlayEventRepository
+    from sortipy.domain.ports.persistence import (
+        ArtistRepository,
+        PlayEventRepository,
+        RecordingRepository,
+        ReleaseRepository,
+        ReleaseSetRepository,
+        TrackRepository,
+    )
 
 
 @runtime_checkable
@@ -41,6 +48,11 @@ class PlayEventRepositories(RepositoryCollection):
     """Repositories required to persist play events."""
 
     play_events: PlayEventRepository
+    artists: ArtistRepository
+    release_sets: ReleaseSetRepository
+    releases: ReleaseRepository
+    recordings: RecordingRepository
+    tracks: TrackRepository
 
 
 type PlayEventUnitOfWork = UnitOfWork[PlayEventRepositories]
