@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sortipy.domain.canonicalization import canonicalize_play_event
+
 DEFAULT_SYNC_BATCH_SIZE = 200
 
 if TYPE_CHECKING:
@@ -117,6 +119,7 @@ def _persist_events(
     if not events:
         return 0
     for event in events:
+        canonicalize_play_event(event, uow.repositories)
         repository.add(event)
     uow.commit()
     return len(events)
