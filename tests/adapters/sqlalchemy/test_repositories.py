@@ -4,18 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy.orm import Session  # noqa: TC002
 
-from sortipy.adapters.sqlalchemy import CanonicalEntityMerger
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyPlayEventRepository
 from tests.helpers.play_events import make_play_event
-
-
-@pytest.fixture
-def merger(sqlite_session: Session) -> CanonicalEntityMerger:
-    sqlite_session.expire_all()
-    return CanonicalEntityMerger(sqlite_session)
 
 
 def test_play_event_repository_tracks_latest_timestamp(sqlite_session: Session) -> None:

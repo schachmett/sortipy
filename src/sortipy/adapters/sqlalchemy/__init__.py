@@ -9,7 +9,6 @@ from .mappings import (
     mapper_registry,
     start_mappers,
 )
-from .merger import CanonicalEntityMerger
 from .repositories import (
     SqlAlchemyArtistRepository,
     SqlAlchemyPlayEventRepository,
@@ -23,7 +22,6 @@ from .unit_of_work import SqlAlchemyUnitOfWork, startup
 __all__ = [
     "CANONICAL_TYPE_BY_CLASS",
     "CLASS_BY_CANONICAL_TYPE",
-    "CanonicalEntityMerger",
     "SqlAlchemyArtistRepository",
     "SqlAlchemyPlayEventRepository",
     "SqlAlchemyRecordingRepository",
