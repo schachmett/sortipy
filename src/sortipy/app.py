@@ -7,16 +7,16 @@ from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.lastfm import LastFmFetcher
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, startup
+from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyIngestUnitOfWork, startup
 from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
-from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
+from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
 
 if TYPE_CHECKING:
     from datetime import datetime
 
     from sortipy.domain.ports.fetching import PlayEventFetcher
 
-UnitOfWorkFactory = Callable[[], PlayEventUnitOfWork]
+UnitOfWorkFactory = Callable[[], IngestUnitOfWork]
 
 
 log = getLogger(__name__)
@@ -35,7 +35,7 @@ def sync_lastfm_play_events(
 
     startup()
     effective_source = source or LastFmFetcher()
-    effective_uow = unit_of_work_factory or SqlAlchemyUnitOfWork
+    effective_uow = unit_of_work_factory or SqlAlchemyIngestUnitOfWork
     log.info(
         "Starting Last.fm sync: batch_size=%s, max_events=%s, from=%s, to=%s",
         batch_size,

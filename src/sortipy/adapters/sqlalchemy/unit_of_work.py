@@ -1,7 +1,8 @@
-"""SQLAlchemy-backed unit of work for play-event persistence."""
+"""SQLAlchemy-backed units of work for play events and ingest pipeline."""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -18,8 +19,13 @@ from sortipy.adapters.sqlalchemy import (
     start_mappers,
 )
 from sortipy.adapters.sqlalchemy.migrations import upgrade_head
+from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
 from sortipy.common.storage import get_database_uri
-from sortipy.domain.ports.unit_of_work import PlayEventRepositories, PlayEventUnitOfWork
+from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
+from sortipy.domain.ports.unit_of_work import (
+    PlayEventRepositories,
+    RepositoryCollection,
+)
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -53,7 +59,7 @@ class _AdapterState:
                 "unit_of_work.startup() before requesting a unit of work."
             )
         if self._session_factory is None:
-            self._session_factory = sessionmaker(bind=self._engine)
+            self._session_factory = sessionmaker(bind=self._engine, expire_on_commit=False)
         return self._session_factory
 
 
@@ -76,6 +82,16 @@ def startup(
     resolved_engine = engine or create_engine(database_uri or get_database_uri(), future=True)
     start_mappers()
     upgrade_head(engine=resolved_engine)
+
+    # temporary fix
+    from sortipy.adapters.sqlalchemy.mappings import canonical_source_table  # noqa: PLC0415
+    from sortipy.adapters.sqlalchemy.sidecar_mappings import (  # noqa: PLC0415
+        normalization_sidecar_table,
+    )
+
+    canonical_source_table.create(resolved_engine, checkfirst=True)
+    normalization_sidecar_table.create(resolved_engine, checkfirst=True)
+
     _STATE.engine = resolved_engine
 
 
@@ -99,23 +115,19 @@ def shutdown() -> None:
     _STATE.engine = None
 
 
-class SqlAlchemyUnitOfWork:
-    """Unit of work managing SQLAlchemy sessions for play events."""
+class BaseSqlAlchemyUnitOfWork[TRepositories: RepositoryCollection](ABC):
+    """Generic SQLAlchemy unit of work with pluggable repository collections."""
 
     def __init__(self) -> None:
         self.session_factory: sessionmaker[Session] = _STATE.session_factory
         self._session: Session | None = None
 
-    def __enter__(self) -> SqlAlchemyUnitOfWork:
-        self._session = self.session_factory()
-        self.repositories = PlayEventRepositories(
-            play_events=SqlAlchemyPlayEventRepository(self._session),
-            artists=SqlAlchemyArtistRepository(self._session),
-            release_sets=SqlAlchemyReleaseSetRepository(self._session),
-            releases=SqlAlchemyReleaseRepository(self._session),
-            recordings=SqlAlchemyRecordingRepository(self._session),
-            tracks=SqlAlchemyTrackRepository(self._session),
-        )
+    @abstractmethod
+    def _build_repositories(self, session: Session) -> TRepositories: ...
+
+    def __enter__(self) -> BaseSqlAlchemyUnitOfWork[TRepositories]:
+        self.session = self.session_factory()
+        self._repositories = self._build_repositories(self.session)
         return self
 
     def __exit__(
@@ -126,9 +138,8 @@ class SqlAlchemyUnitOfWork:
     ) -> Literal[False]:
         if exc_type is not None:
             self.rollback()
-        if self._session is not None:
-            self._session.close()
-            self._session = None
+        self.session.close()
+        self.session = None
         return False
 
     def commit(self) -> None:
@@ -138,17 +149,56 @@ class SqlAlchemyUnitOfWork:
         self.session.rollback()
 
     @property
+    def repositories(self) -> TRepositories:
+        if self._session is None:
+            raise StartupError("Unit of work session not initialised")
+        return self._repositories
+
+    @property
     def session(self) -> Session:
         if self._session is None:
             raise StartupError("Unit of work session not initialised")
         return self._session
 
-    @property
-    def is_open(self) -> bool:
-        return self._session is not None
+    @session.setter
+    def session(self, session: Session | None) -> None:
+        if self._session is not None and session is not None:
+            raise StartupError("Unit of work session already initialised")
+        self._session = session
+
+
+class SqlAlchemyPlayEventUnitOfWork(BaseSqlAlchemyUnitOfWork[PlayEventRepositories]):
+    """Unit of work managing SQLAlchemy sessions for play events."""
+
+    def _build_repositories(self, session: Session) -> PlayEventRepositories:
+        return PlayEventRepositories(
+            play_events=SqlAlchemyPlayEventRepository(session),
+            artists=SqlAlchemyArtistRepository(session),
+            release_sets=SqlAlchemyReleaseSetRepository(session),
+            releases=SqlAlchemyReleaseRepository(session),
+            recordings=SqlAlchemyRecordingRepository(session),
+            tracks=SqlAlchemyTrackRepository(session),
+        )
+
+
+class SqlAlchemyIngestUnitOfWork(BaseSqlAlchemyUnitOfWork[IngestRepositories]):
+    """Unit of work for ingest pipeline phases."""
+
+    def _build_repositories(self, session: Session) -> IngestRepositories:
+        return IngestRepositories(
+            play_events=SqlAlchemyPlayEventRepository(session),
+            artists=SqlAlchemyArtistRepository(session),
+            release_sets=SqlAlchemyReleaseSetRepository(session),
+            releases=SqlAlchemyReleaseRepository(session),
+            recordings=SqlAlchemyRecordingRepository(session),
+            tracks=SqlAlchemyTrackRepository(session),
+            normalization_sidecars=SqlAlchemyNormalizationSidecarRepository(session),
+        )
 
 
 if TYPE_CHECKING:
+    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
     from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
 
-    _uow_check: PlayEventUnitOfWork = SqlAlchemyUnitOfWork()
+    _uow_pe_check: PlayEventUnitOfWork = SqlAlchemyPlayEventUnitOfWork()
+    _uow_ig_check: IngestUnitOfWork = SqlAlchemyIngestUnitOfWork()

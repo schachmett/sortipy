@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from sortipy.domain.ingest_pipeline.state import (
     NormalizationData,
     NormalizationState,
+    deterministic_key,
 )
 from sortipy.domain.types import (
     Artist,
@@ -29,14 +30,14 @@ from sortipy.domain.types import (
 
 @dataclass(slots=True)
 class BaseNormalizationData[TEntity: CanonicalEntity](NormalizationData[TEntity]):
-    priority_keys: tuple[tuple[object, ...], ...] = field(init=False)
+    priority_keys: tuple[deterministic_key, ...] = field(init=False)
 
     @property
-    def _keys(self) -> tuple[tuple[object, ...], ...]: ...
+    def _keys(self) -> tuple[deterministic_key, ...]: ...
 
     def __post_init__(self) -> None:
-        seen: set[tuple[object, ...]] = set()
-        deduped: list[tuple[object, ...]] = []
+        seen: set[deterministic_key] = set()
+        deduped: list[deterministic_key] = []
         for key in self._keys:
             if not all(key) or key in seen:
                 continue
@@ -52,9 +53,10 @@ class ArtistNormalizationData(BaseNormalizationData[Artist]):
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[tuple[object, ...], ...]:
+    def _keys(self) -> tuple[deterministic_key, ...]:
         return (
             ("artist:mbid", self.musicbrainz_id),
+            ("artist:source-name", _primary_source(self.sources), self.normalized_name),
             ("artist:name", self.normalized_name),
         )
 
@@ -63,18 +65,24 @@ class ArtistNormalizationData(BaseNormalizationData[Artist]):
 class ReleaseSetNormalizationData(BaseNormalizationData[ReleaseSet]):
     normalized_title: str | None
     normalized_primary_artist_name: str | None
+    sources: tuple[str, ...]
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[tuple[object, ...], ...]:
+    def _keys(self) -> tuple[deterministic_key, ...]:
         return (
             ("release_set:mbid", self.musicbrainz_id),
+            (
+                "release_set:source-artist-title",
+                _primary_source(self.sources),
+                self.normalized_primary_artist_name,
+                self.normalized_title,
+            ),
             (
                 "release_set:artist-title",
                 self.normalized_primary_artist_name,
                 self.normalized_title,
             ),
-            ("release_set:title", self.normalized_title),
         )
 
 
@@ -82,14 +90,20 @@ class ReleaseSetNormalizationData(BaseNormalizationData[ReleaseSet]):
 class ReleaseNormalizationData(BaseNormalizationData[Release]):
     normalized_title: str | None
     normalized_artist_name: str | None
+    sources: tuple[str, ...]
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[tuple[object, ...], ...]:
+    def _keys(self) -> tuple[deterministic_key, ...]:
         return (
             ("release:mbid", self.musicbrainz_id),
+            (
+                "release:source-artist-title",
+                _primary_source(self.sources),
+                self.normalized_artist_name,
+                self.normalized_title,
+            ),
             ("release:artist-title", self.normalized_artist_name, self.normalized_title),
-            ("release:title", self.normalized_title),
         )
 
 
@@ -98,10 +112,11 @@ class RecordingNormalizationData(BaseNormalizationData[Recording]):
     normalized_title: str | None
     duration_bin: int | None
     normalized_primary_artist_name: str | None
+    sources: tuple[str, ...]
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[tuple[object, ...], ...]:
+    def _keys(self) -> tuple[deterministic_key, ...]:
         return (
             ("recording:mbid", self.musicbrainz_id),
             (
@@ -110,22 +125,27 @@ class RecordingNormalizationData(BaseNormalizationData[Recording]):
                 self.normalized_title,
                 self.duration_bin,
             ),
+            (
+                "recording:source-artist-title",
+                _primary_source(self.sources),
+                self.normalized_primary_artist_name,
+                self.normalized_title,
+            ),
             ("recording:artist-title", self.normalized_primary_artist_name, self.normalized_title),
-            ("recording:title-duration", self.normalized_title, self.duration_bin),
-            ("recording:title", self.normalized_title),
         )
 
 
 @dataclass(slots=True)
 class TrackNormalizationData(BaseNormalizationData[Track]):
     normalized_title: str | None
-    release_keys: tuple[tuple[object, ...], ...]
-    recording_keys: tuple[tuple[object, ...], ...]
+    release_keys: tuple[deterministic_key, ...]
+    recording_keys: tuple[deterministic_key, ...]
     disc_number: int | None
     track_number: int | None
+    sources: tuple[str, ...]
 
     @property
-    def _keys(self) -> tuple[tuple[object, ...], ...]:
+    def _keys(self) -> tuple[deterministic_key, ...]:
         return (
             *(
                 (
@@ -149,13 +169,6 @@ class TrackNormalizationData(BaseNormalizationData[Track]):
                 for release_key in self.release_keys
                 for recording_key in self.recording_keys
             ),
-            (
-                "track:title-position",
-                self.normalized_title,
-                self.disc_number,
-                self.track_number,
-            ),
-            ("track:title", self.normalized_title),
         )
 
 
@@ -189,6 +202,12 @@ def _normalize_sources(entity: object) -> tuple[str, ...]:
     return tuple(sorted(provider.value for provider in sources))
 
 
+def _primary_source(sources: tuple[str, ...]) -> str | None:
+    if not sources:
+        return None
+    return sources[0]
+
+
 def _external_id_value(entity: CanonicalEntity, namespace: ExternalNamespace | str) -> str | None:
     target_namespace = str(namespace)
     for external_id in entity.external_ids:
@@ -201,10 +220,10 @@ def _release_set_primary_artist_name(
     release_set: ReleaseSet,
     state: NormalizationState,
 ) -> str | None:
-    if not release_set.artists:
+    if not release_set.artist_links:
         return None
     ordered = sorted(
-        release_set.artists,
+        release_set.artist_links,
         key=lambda link: (
             _ROLE_PRIORITY.get(link.role, 10),
             link.credit_order if link.credit_order is not None else 10_000,
@@ -235,10 +254,10 @@ def _release_artist_name(release: Release, state: NormalizationState) -> str | N
 
 
 def _recording_primary_artist_name(recording: Recording, state: NormalizationState) -> str | None:
-    if not recording.artists:
+    if not recording.artist_links:
         return None
     ordered = sorted(
-        recording.artists,
+        recording.artist_links,
         key=lambda link: (
             _ROLE_PRIORITY.get(link.role, 10),
             link.credit_order if link.credit_order is not None else 10_000,
@@ -285,6 +304,7 @@ def normalize_release_set(
     return ReleaseSetNormalizationData(
         normalized_title=normalized_title,
         normalized_primary_artist_name=normalized_primary_artist,
+        sources=_normalize_sources(release_set),
         musicbrainz_id=_external_id_value(
             release_set,
             ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
@@ -301,6 +321,7 @@ def normalize_release(
     return ReleaseNormalizationData(
         normalized_title=normalized_title,
         normalized_artist_name=normalized_artist_name,
+        sources=_normalize_sources(release),
         musicbrainz_id=_external_id_value(release, ExternalNamespace.MUSICBRAINZ_RELEASE),
     )
 
@@ -316,6 +337,7 @@ def normalize_recording(
         normalized_title=normalized_title,
         duration_bin=duration_bin,
         normalized_primary_artist_name=normalized_primary_artist,
+        sources=_normalize_sources(recording),
         musicbrainz_id=_external_id_value(recording, ExternalNamespace.MUSICBRAINZ_RECORDING),
     )
 
@@ -338,6 +360,7 @@ def normalize_track(
         recording_keys=recording_data.priority_keys,
         disc_number=track.disc_number or 1,
         track_number=track.track_number,
+        sources=_normalize_sources(track),
     )
 
 
@@ -394,19 +417,17 @@ def merge_track(primary: Track, duplicate: Track) -> None:
 
 
 def rewire_artist(primary: Artist, duplicate: Artist) -> None:
-    for release_set in list(duplicate.release_sets):
-        _ensure_item(primary.release_sets, release_set)
-        for link in release_set.artists:
-            if link.artist is duplicate:
-                link.artist = primary
-        duplicate.release_sets.clear()
+    for release_set_link in list(duplicate.release_set_links):
+        if release_set_link.artist is duplicate:
+            release_set_link.artist = primary
+        _ensure_item(primary.release_set_links, release_set_link)
+    duplicate.release_set_links.clear()
 
-    for recording in list(duplicate.recordings):
-        _ensure_item(primary.recordings, recording)
-        for link in recording.artists:
-            if link.artist is duplicate:
-                link.artist = primary
-        duplicate.recordings.clear()
+    for recording_link in list(duplicate.recording_links):
+        if recording_link.artist is duplicate:
+            recording_link.artist = primary
+        _ensure_item(primary.recording_links, recording_link)
+    duplicate.recording_links.clear()
 
 
 def rewire_release_set(primary: ReleaseSet, duplicate: ReleaseSet) -> None:
@@ -415,11 +436,10 @@ def rewire_release_set(primary: ReleaseSet, duplicate: ReleaseSet) -> None:
         _ensure_item(primary.releases, release)
     duplicate.releases.clear()
 
-    for link in list(duplicate.artists):
+    for link in list(duplicate.artist_links):
         link.release_set = primary
-        _replace_item(link.artist.release_sets, duplicate, primary)
-        _ensure_item(primary.artists, link)
-    duplicate.artists.clear()
+        _ensure_item(primary.artist_links, link)
+    duplicate.artist_links.clear()
 
 
 def rewire_release(primary: Release, duplicate: Release) -> None:
@@ -445,11 +465,10 @@ def rewire_recording(primary: Recording, duplicate: Recording) -> None:
         _ensure_item(primary.play_events, play_event)
     duplicate.play_events.clear()
 
-    for link in list(duplicate.artists):
+    for link in list(duplicate.artist_links):
         link.recording = primary
-        _replace_item(link.artist.recordings, duplicate, primary)
-        _ensure_item(primary.artists, link)
-    duplicate.artists.clear()
+        _ensure_item(primary.artist_links, link)
+    duplicate.artist_links.clear()
 
 
 def rewire_track(primary: Track, duplicate: Track) -> None:
@@ -521,14 +540,14 @@ def _replace_item[T](sequence: list[T], old: T, new: T | None) -> None:
 
 
 @dataclass(slots=True)
-class EntityOps[TEntity: CanonicalEntity, TData: NormalizationData[Any]]:
-    data_type: type[TData]
-    normalize: Callable[[TEntity, NormalizationState], TData]
+class EntityOps[TEntity: CanonicalEntity]:
+    data_type: type[NormalizationData[TEntity]]
+    normalize: Callable[[TEntity, NormalizationState], NormalizationData[TEntity]]
     merge: Callable[[TEntity, TEntity], None]
     rewire: Callable[[TEntity, TEntity], None]
 
 
-_REGISTRY: dict[CanonicalEntityType, EntityOps[Any, Any]] = {
+_REGISTRY: dict[CanonicalEntityType, EntityOps[Any]] = {
     CanonicalEntityType.ARTIST: EntityOps(
         data_type=ArtistNormalizationData,
         normalize=normalize_artist,
@@ -562,7 +581,7 @@ _REGISTRY: dict[CanonicalEntityType, EntityOps[Any, Any]] = {
 }
 
 
-def ops_for(entity: CanonicalEntity) -> EntityOps[Any, Any]:
+def ops_for[TEntity: CanonicalEntity](entity: TEntity) -> EntityOps[TEntity]:
     try:
         return _REGISTRY[entity.entity_type]
     except KeyError as exc:

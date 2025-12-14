@@ -34,7 +34,11 @@ def _make_client_factory(
 @pytest.fixture
 def sample_payload() -> dict[str, object]:
     return {
-        "artist": {"mbid": "artist-mbid", "#text": "Sample Artist"},
+        "artist": {
+            "mbid": "artist-mbid",
+            "#text": "Sample Artist",
+            "url": "https://last.fm/artist",
+        },
         "streamable": "0",
         "image": [],
         "mbid": "track-mbid",
@@ -57,8 +61,8 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
     release = track.release
     release_set = release.release_set
     recording = event.recording
-    assert recording.artists
-    artist = recording.artists[0].artist
+    assert recording.artist_links
+    artist = recording.artist_links[0].artist
 
     assert event.source is Provider.LASTFM
     assert recording.title == validated.name
@@ -76,10 +80,13 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
     assert Provider.LASTFM in recording.sources
     assert Provider.LASTFM in release_set.sources
     assert Provider.LASTFM in artist.sources
-    assert {eid.namespace for eid in artist.external_ids} == {"musicbrainz:artist"}
+    assert {eid.namespace for eid in artist.external_ids} == {"musicbrainz:artist", "lastfm:artist"}
     assert {eid.namespace for eid in release_set.external_ids} == {"musicbrainz:release-group"}
     assert {eid.namespace for eid in release.external_ids} == {"musicbrainz:release"}
-    assert {eid.namespace for eid in recording.external_ids} == {"musicbrainz:recording"}
+    assert {eid.namespace for eid in recording.external_ids} == {
+        "musicbrainz:recording",
+        "lastfm:recording",
+    }
 
 
 def test_parse_play_event_without_date_raises(sample_payload: dict[str, object]) -> None:

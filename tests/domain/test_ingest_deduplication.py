@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from sortipy.domain.ingest_pipeline import (
-    DefaultDeduplicationPhase,
-    DefaultNormalizationPhase,
+    DeduplicationPhase,
+    NormalizationPhase,
 )
 from sortipy.domain.ingest_pipeline.orchestrator import IngestGraph, PipelineContext
 from sortipy.domain.types import (
@@ -29,28 +29,26 @@ def test_artist_dedup_prefers_musicbrainz_id_and_merges_metadata() -> None:
     track = Track(release=release, recording=recording)
 
     release_set.releases.append(release)
-    release_set.artists.extend(
-        [
-            ReleaseSetArtist(
-                release_set=release_set, artist=artist_primary, role=ArtistRole.PRIMARY
-            ),
-            ReleaseSetArtist(
-                release_set=release_set, artist=artist_duplicate, role=ArtistRole.PRIMARY
-            ),
-        ]
+    release_set_artist_primary = ReleaseSetArtist(
+        release_set=release_set, artist=artist_primary, role=ArtistRole.PRIMARY
     )
-    artist_primary.release_sets.append(release_set)
-    artist_duplicate.release_sets.append(release_set)
+    release_set_artist_duplicate = ReleaseSetArtist(
+        release_set=release_set, artist=artist_duplicate, role=ArtistRole.PRIMARY
+    )
+    release_set.artist_links.extend([release_set_artist_primary, release_set_artist_duplicate])
+    artist_primary.release_set_links.append(release_set_artist_primary)
+    artist_duplicate.release_set_links.append(release_set_artist_duplicate)
 
     recording.tracks.append(track)
-    recording.artists.extend(
-        [
-            RecordingArtist(recording=recording, artist=artist_primary, role=ArtistRole.PRIMARY),
-            RecordingArtist(recording=recording, artist=artist_duplicate, role=ArtistRole.PRIMARY),
-        ]
+    recording_artist_primary = RecordingArtist(
+        recording=recording, artist=artist_primary, role=ArtistRole.PRIMARY
     )
-    artist_primary.recordings.append(recording)
-    artist_duplicate.recordings.append(recording)
+    recording_artist_duplicate = RecordingArtist(
+        recording=recording, artist=artist_duplicate, role=ArtistRole.PRIMARY
+    )
+    recording.artist_links.extend([recording_artist_primary, recording_artist_duplicate])
+    artist_primary.recording_links.append(recording_artist_primary)
+    artist_duplicate.recording_links.append(recording_artist_duplicate)
     release.tracks.append(track)
 
     graph = IngestGraph(
@@ -63,8 +61,8 @@ def test_artist_dedup_prefers_musicbrainz_id_and_merges_metadata() -> None:
     )
 
     context = PipelineContext()
-    DefaultNormalizationPhase().run(graph, context=context)
-    DefaultDeduplicationPhase().run(graph, context=context)
+    NormalizationPhase().run(graph, context=context)
+    DeduplicationPhase().run(graph, context=context)
 
     assert len(graph.artists) == 1
     surviving_artist = graph.artists[0]
@@ -75,7 +73,7 @@ def test_artist_dedup_prefers_musicbrainz_id_and_merges_metadata() -> None:
         for ext in surviving_artist.external_ids
     )
 
-    assert all(link.artist is surviving_artist for link in release_set.artists)
-    assert all(link.artist is surviving_artist for link in recording.artists)
+    assert all(link.artist is surviving_artist for link in release_set.artist_links)
+    assert all(link.artist is surviving_artist for link in recording.artist_links)
 
     assert context.dedup_collapsed == 1

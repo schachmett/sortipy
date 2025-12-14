@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from sqlalchemy import create_engine
@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from sortipy.adapters.lastfm import RecentTracksResponse
 from sortipy.adapters.sqlalchemy import start_mappers
 from sortipy.adapters.sqlalchemy.migrations import upgrade_head
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, shutdown, startup
+from sortipy.adapters.sqlalchemy.unit_of_work import (
+    SqlAlchemyIngestUnitOfWork,
+    shutdown,
+    startup,
+)
 
 os.environ.setdefault("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
@@ -27,11 +31,25 @@ def recent_tracks_payloads() -> tuple[RecentTracksResponse, ...]:
         return tuple(RecentTracksResponse.model_validate_json(line) for line in handle)
 
 
+@pytest.fixture(scope="session")
+def recent_tracks_payload(
+    request: pytest.FixtureRequest, recent_tracks_payloads: tuple[RecentTracksResponse, ...]
+) -> RecentTracksResponse:
+    return recent_tracks_payloads[cast(int, request.param)]
+
+
 @pytest.fixture
 def sqlite_engine() -> Iterator[Engine]:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     start_mappers()
     upgrade_head(engine=engine)
+    from sortipy.adapters.sqlalchemy.mappings import canonical_source_table  # noqa: PLC0415
+    from sortipy.adapters.sqlalchemy.sidecar_mappings import (  # noqa: PLC0415
+        normalization_sidecar_table,
+    )
+
+    normalization_sidecar_table.create(engine, checkfirst=True)
+    canonical_source_table.create(engine, checkfirst=True)
     try:
         yield engine
     finally:
@@ -51,11 +69,11 @@ def sqlite_session(sqlite_engine: Engine) -> Iterator[Session]:
 @pytest.fixture
 def sqlite_unit_of_work(
     sqlite_engine: Engine,
-) -> Iterator[Callable[[], SqlAlchemyUnitOfWork]]:
+) -> Iterator[Callable[[], SqlAlchemyIngestUnitOfWork]]:
     startup(engine=sqlite_engine, force=True)
 
-    def factory() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork()
+    def factory() -> SqlAlchemyIngestUnitOfWork:
+        return SqlAlchemyIngestUnitOfWork()
 
     try:
         yield factory

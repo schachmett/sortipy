@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Callable, Sequence  # noqa: UP035
+from typing import TYPE_CHECKING, Callable  # noqa: UP035
 
 import httpx
+import pytest
 from sqlalchemy import select
 
 from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
@@ -25,7 +26,7 @@ from sortipy.domain.types import (
 from tests.helpers.play_events import FakePlayEventSource
 
 if TYPE_CHECKING:
-    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
+    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyIngestUnitOfWork
 
 
 def _make_client_factory(
@@ -42,19 +43,16 @@ def _make_client_factory(
     return factory
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("recent_tracks_payload", range(4), indirect=True)
 def test_sync_play_events_persists_payload(
-    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
-    recent_tracks_payloads: Sequence[RecentTracksResponse],
+    sqlite_unit_of_work: Callable[[], SqlAlchemyIngestUnitOfWork],
+    recent_tracks_payload: RecentTracksResponse,
 ) -> None:
-    responses = list(recent_tracks_payloads[:2])
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, json=recent_tracks_payload.model_dump(by_alias=True))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        page = int(request.url.params.get("page", "1"))
-        index = min(max(page - 1, 0), len(responses) - 1)
-        payload = responses[index]
-        return httpx.Response(status_code=200, json=payload.model_dump(by_alias=True))
-
-    total_expected = sum(len(_extract_names(payload)) for payload in responses)
+    total_expected = len(_extract_names(recent_tracks_payload))
 
     fetcher = LastFmFetcher(
         config=LastFmConfig(api_key="demo", user_name="demo-user"),
@@ -75,7 +73,7 @@ def test_sync_play_events_persists_payload(
         persisted = uow.session.execute(select(PlayEvent)).scalars().all()
         names = [event.track.recording.title for event in persisted if event.track is not None]
         names.sort()
-    expected_names = sorted(name for payload in responses for name in _extract_names(payload))
+    expected_names = sorted(_extract_names(recent_tracks_payload))
     assert names == expected_names
 
 
@@ -97,21 +95,19 @@ def _make_play_event(
     track = Track(release=release, recording=recording)
 
     release_set.releases.append(release)
-    release_set.artists.append(
-        ReleaseSetArtist(
-            release_set=release_set,
-            artist=artist,
-            role=ArtistRole.PRIMARY,
-        )
+    release_set_artist = ReleaseSetArtist(
+        release_set=release_set,
+        artist=artist,
+        role=ArtistRole.PRIMARY,
     )
-    artist.release_sets.append(release_set)
+    release_set.artist_links.append(release_set_artist)
+    artist.release_set_links.append(release_set_artist)
 
     release.tracks.append(track)
     recording.tracks.append(track)
-    recording.artists.append(
-        RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
-    )
-    artist.recordings.append(recording)
+    recording_artist = RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
+    recording.artist_links.append(recording_artist)
+    artist.recording_links.append(recording_artist)
 
     play_event = PlayEvent(
         played_at=timestamp,
@@ -124,8 +120,9 @@ def _make_play_event(
     return play_event
 
 
+@pytest.mark.integration
 def test_sync_play_events_stores_tracks_with_same_name_different_artists(
-    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
+    sqlite_unit_of_work: Callable[[], SqlAlchemyIngestUnitOfWork],
 ) -> None:
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
     first = _make_play_event(
@@ -154,7 +151,7 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
         artist_names = {
             link.artist.name
             for event in persisted
-            for link in event.recording.artists
+            for link in event.recording.artist_links
             if link.role == ArtistRole.PRIMARY
         }
         track_names = {event.recording.title for event in persisted}

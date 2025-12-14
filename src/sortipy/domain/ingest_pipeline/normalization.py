@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from sortipy.domain.types import CanonicalEntity
 
 
-class DefaultNormalizationPhase(PipelinePhase):
+class NormalizationPhase(PipelinePhase):
     """Coordinates normalization across all entity types in the ingest graph."""
 
     name: str = "normalization"

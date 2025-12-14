@@ -17,11 +17,13 @@ if TYPE_CHECKING:
     )
     from sortipy.domain.types import Artist, Recording, Release, ReleaseSet, Track
 
+type deterministic_key = tuple[object, ...]
+
 
 class NormalizationData[TEntity: CanonicalEntity](Protocol):
     """Structured normalization metadata with deterministic keys."""
 
-    priority_keys: tuple[tuple[object, ...], ...]
+    priority_keys: tuple[deterministic_key, ...]
 
 
 @dataclass(slots=True)
@@ -31,8 +33,8 @@ class NormalizationState:
     storage: dict[CanonicalEntityType, dict[int, NormalizationData[Any]]] = field(
         default_factory=dict[CanonicalEntityType, dict[int, NormalizationData[Any]]]
     )
-    priority_key_map: dict[int, tuple[tuple[object, ...], ...]] = field(
-        default_factory=dict[int, tuple[tuple[object, ...], ...]]
+    priority_key_map: dict[int, tuple[deterministic_key, ...]] = field(
+        default_factory=dict[int, tuple[deterministic_key, ...]]
     )
 
     def store[TEntity: CanonicalEntity](
@@ -54,6 +56,10 @@ class NormalizationState:
     def fetch(self, entity: Recording) -> RecordingNormalizationData | None: ...
     @overload
     def fetch(self, entity: Track) -> TrackNormalizationData | None: ...
+    @overload
+    def fetch[TEntity: CanonicalEntity](
+        self, entity: TEntity
+    ) -> NormalizationData[TEntity] | None: ...
     def fetch[TEntity: CanonicalEntity](self, entity: TEntity) -> NormalizationData[TEntity] | None:
         bucket = self._bucket(entity.entity_type)
         data = bucket.get(id(entity))
@@ -72,10 +78,10 @@ class NormalizationState:
             self.storage[entity_type] = {}
         return self.storage[entity_type]
 
-    def priority_keys_for(self, entity: object) -> tuple[tuple[object, ...], ...] | None:
+    def priority_keys_for(self, entity: object) -> tuple[deterministic_key, ...] | None:
         return self.priority_key_map.get(id(entity))
 
-    def primary_key_for(self, entity: object) -> tuple[object, ...] | None:
+    def primary_key_for(self, entity: object) -> deterministic_key | None:
         keys = self.priority_keys_for(entity)
         if not keys:
             return None

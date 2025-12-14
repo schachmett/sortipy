@@ -8,16 +8,20 @@ rules remain explicit and adapter-free.
 
 from __future__ import annotations
 
-from .deduplication import DefaultDeduplicationPhase
-from .normalization import DefaultNormalizationPhase
+from .canonicalization import CanonicalizationPhase
+from .deduplication import DeduplicationPhase
+from .ingest_ports import NormalizationSidecarRepository
+from .normalization import NormalizationPhase
 from .orchestrator import IngestGraph, IngestionPipeline, PipelineContext, PipelinePhase
 from .state import NormalizationState
 
 __all__ = [
-    "DefaultDeduplicationPhase",
-    "DefaultNormalizationPhase",
+    "CanonicalizationPhase",
+    "DeduplicationPhase",
     "IngestGraph",
     "IngestionPipeline",
+    "NormalizationPhase",
+    "NormalizationSidecarRepository",
     "NormalizationState",
     "PipelineContext",
     "PipelinePhase",

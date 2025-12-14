@@ -27,7 +27,8 @@ class RepositoryCollection(Protocol):
 class UnitOfWork[TRepositories: RepositoryCollection](Protocol):
     """Generic unit-of-work boundary around a repository collection."""
 
-    repositories: TRepositories
+    @property
+    def repositories(self) -> TRepositories: ...  # the repo list itself should be immutable
 
     def __enter__(self) -> UnitOfWork[TRepositories]: ...
 

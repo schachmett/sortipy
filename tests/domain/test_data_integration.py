@@ -4,9 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
 from tests.helpers.play_events import (
+    FakeIngestUnitOfWork,
     FakePlayEventRepository,
     FakePlayEventSource,
-    FakePlayEventUnitOfWork,
     make_play_event,
 )
 
@@ -16,7 +16,7 @@ def test_sync_play_events_persists_results() -> None:
     repo = FakePlayEventRepository()
     result = sync_play_events(
         fetcher=FakePlayEventSource([[event]]),
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
         batch_size=5,
     )
 
@@ -29,7 +29,7 @@ def test_sync_play_events_persists_results() -> None:
 
 def test_sync_play_events_skips_commit_when_empty() -> None:
     repo = FakePlayEventRepository()
-    uow = FakePlayEventUnitOfWork(repo)
+    uow = FakeIngestUnitOfWork(repo)
     result = sync_play_events(
         fetcher=FakePlayEventSource([[]]),
         unit_of_work_factory=lambda: uow,
@@ -45,7 +45,7 @@ def test_sync_play_events_skips_existing_timestamps() -> None:
     repo = FakePlayEventRepository([event])
     result = sync_play_events(
         fetcher=FakePlayEventSource([[event]]),
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
     )
 
     assert result.stored == 0
@@ -61,7 +61,7 @@ def test_sync_play_events_respects_from_timestamp() -> None:
     fake_source = FakePlayEventSource([[older, newer]])
     result = sync_play_events(
         fetcher=fake_source,
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
         from_timestamp=older.played_at,
     )
 
@@ -77,7 +77,7 @@ def test_sync_play_events_returns_now_playing_without_persisting() -> None:
     fake_source = FakePlayEventSource([[logged]], now_playing=in_progress)
     result = sync_play_events(
         fetcher=fake_source,
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
     )
 
     assert result.now_playing is in_progress
@@ -94,7 +94,7 @@ def test_sync_play_events_respects_to_timestamp_upper_bound() -> None:
     window_end = base_time + timedelta(seconds=10)
     result = sync_play_events(
         fetcher=fake_source,
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
         to_timestamp=window_end,
     )
 
@@ -110,7 +110,7 @@ def test_sync_play_events_reports_latest_timestamp_from_new_data() -> None:
     repo = FakePlayEventRepository()
     result = sync_play_events(
         fetcher=FakePlayEventSource([[first, second]]),
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
     )
 
     assert result.latest_timestamp == second.played_at
@@ -124,7 +124,7 @@ def test_sync_play_events_uses_repository_latest_timestamp_when_request_missing_
     fake_source = FakePlayEventSource([[next_event]])
     result = sync_play_events(
         fetcher=fake_source,
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
     )
 
     assert result.stored == 1
@@ -142,7 +142,7 @@ def test_sync_play_events_honours_max_events_limit() -> None:
     fake_source = FakePlayEventSource([events])
     result = sync_play_events(
         fetcher=fake_source,
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
         max_events=2,
     )
 
@@ -155,7 +155,7 @@ def test_sync_play_events_skips_commit_when_upper_bound_filters_all_events() -> 
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
     out_of_range = make_play_event("Too Late", timestamp=base_time + timedelta(seconds=60))
     repo = FakePlayEventRepository()
-    uow = FakePlayEventUnitOfWork(repo)
+    uow = FakeIngestUnitOfWork(repo)
     window_end = base_time
     result = sync_play_events(
         fetcher=FakePlayEventSource([[out_of_range]]),
@@ -175,7 +175,7 @@ def test_sync_play_events_deduplicates_events_with_same_timestamp_in_batch() -> 
     repo = FakePlayEventRepository()
     result = sync_play_events(
         fetcher=FakePlayEventSource([[duplicate_a, duplicate_b]]),
-        unit_of_work_factory=lambda: FakePlayEventUnitOfWork(repo),
+        unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
     )
 
     assert result.stored == 1

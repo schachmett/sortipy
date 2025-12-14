@@ -34,6 +34,8 @@ class ExternalNamespace(StrEnum):
     MUSICBRAINZ_RECORDING = "musicbrainz:recording"
     MUSICBRAINZ_LABEL = "musicbrainz:label"
     SPOTIFY_ARTIST = "spotify:artist"
+    LASTFM_ARTIST = "lastfm:artist"
+    LASTFM_RECORDING = "lastfm:recording"
     RECORDING_ISRC = "recording:isrc"
     LABEL_CATALOG_NUMBER = "label:catalog_number"
     LABEL_BARCODE = "label:barcode"
@@ -51,6 +53,8 @@ _NAMESPACE_PROVIDERS: Final[dict[Namespace, Provider]] = {
     ExternalNamespace.MUSICBRAINZ_RECORDING: Provider.MUSICBRAINZ,
     ExternalNamespace.MUSICBRAINZ_LABEL: Provider.MUSICBRAINZ,
     ExternalNamespace.SPOTIFY_ARTIST: Provider.SPOTIFY,
+    ExternalNamespace.LASTFM_ARTIST: Provider.LASTFM,
+    ExternalNamespace.LASTFM_RECORDING: Provider.LASTFM,
     ExternalNamespace.USER_SPOTIFY: Provider.SPOTIFY,
     ExternalNamespace.USER_LASTFM: Provider.LASTFM,
     ExternalNamespace.RECORDING_ISRC: Provider.MUSICBRAINZ,
@@ -224,8 +228,16 @@ class Artist(CanonicalEntity):
     formed_year: int | None = None
     disbanded_year: int | None = None
     # list[T] remains callable on Python >= 3.12, which keeps pyright happy about the element type.
-    release_sets: list[ReleaseSet] = field(default_factory=list["ReleaseSet"])
-    recordings: list[Recording] = field(default_factory=list["Recording"])
+    release_set_links: list[ReleaseSetArtist] = field(default_factory=list["ReleaseSetArtist"])
+    recording_links: list[RecordingArtist] = field(default_factory=list["RecordingArtist"])
+
+    @property
+    def release_sets(self) -> list[ReleaseSet]:
+        return [link.release_set for link in self.release_set_links]
+
+    @property
+    def recordings(self) -> list[Recording]:
+        return [link.recording for link in self.recording_links]
 
     @property
     def entity_type(self) -> CanonicalEntityType:
@@ -243,7 +255,11 @@ class ReleaseSet(CanonicalEntity):
     primary_type: ReleaseSetType | None = None
     first_release: PartialDate | None = None
     releases: list[Release] = field(default_factory=list["Release"])
-    artists: list[ReleaseSetArtist] = field(default_factory=list["ReleaseSetArtist"])
+    artist_links: list[ReleaseSetArtist] = field(default_factory=list["ReleaseSetArtist"])
+
+    @property
+    def artists(self) -> list[Artist]:
+        return [link.artist for link in self.artist_links]
 
     @property
     def entity_type(self) -> CanonicalEntityType:
@@ -299,7 +315,11 @@ class Recording(CanonicalEntity):
     version: str | None = None
     tracks: list[Track] = field(default_factory=list["Track"])
     play_events: list[PlayEvent] = field(default_factory=list["PlayEvent"])
-    artists: list[RecordingArtist] = field(default_factory=list["RecordingArtist"])
+    artist_links: list[RecordingArtist] = field(default_factory=list["RecordingArtist"])
+
+    @property
+    def artists(self) -> list[Artist]:
+        return [link.artist for link in self.artist_links]
 
     @property
     def entity_type(self) -> CanonicalEntityType:

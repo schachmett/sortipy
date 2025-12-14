@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
 from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
-from sortipy.domain.ports.unit_of_work import PlayEventRepositories
 from sortipy.domain.types import (
     Artist,
     ArtistRole,
+    CanonicalEntity,
+    CanonicalEntityType,
     Namespace,
     PlayEvent,
     Provider,
@@ -39,19 +41,17 @@ def make_play_event(
     track = Track(release=release, recording=recording)
 
     release_set.releases.append(release)
-    release_set.artists.append(
-        ReleaseSetArtist(release_set=release_set, artist=artist, role=ArtistRole.PRIMARY)
+    release_set_artist = ReleaseSetArtist(
+        release_set=release_set, artist=artist, role=ArtistRole.PRIMARY
     )
-    if release_set not in artist.release_sets:
-        artist.release_sets.append(release_set)
+    release_set.artist_links.append(release_set_artist)
+    artist.release_set_links.append(release_set_artist)
 
     release.tracks.append(track)
     recording.tracks.append(track)
-    recording.artists.append(
-        RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
-    )
-    if recording not in artist.recordings:
-        artist.recordings.append(recording)
+    recording_artist = RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
+    recording.artist_links.append(recording_artist)
+    artist.recording_links.append(recording_artist)
 
     event_time = timestamp or datetime.now(tz=UTC)
     event = PlayEvent(
@@ -147,22 +147,36 @@ class _NullCanonicalRepository[TCanonical]:
         return None
 
 
-class FakePlayEventUnitOfWork:
+class _NullSidecarRepository:
+    def save(self, entity: CanonicalEntity, data: object) -> None:  # pragma: no cover - trivial
+        _ = (entity, data)
+
+    def find_by_keys(
+        self,
+        entity_type: CanonicalEntityType,
+        keys: tuple[tuple[object, ...], ...],
+    ) -> dict[tuple[object, ...], CanonicalEntity]:
+        _ = (entity_type, keys)
+        return {}
+
+
+class FakeIngestUnitOfWork:
     """Unit of work capturing play-event persistence interactions."""
 
     def __init__(self, repository: FakePlayEventRepository) -> None:
-        self.repositories = PlayEventRepositories(
+        self.repositories = IngestRepositories(
             play_events=repository,
             artists=_NullCanonicalRepository[Artist](),
             release_sets=_NullCanonicalRepository[ReleaseSet](),
             releases=_NullCanonicalRepository[Release](),
             recordings=_NullCanonicalRepository[Recording](),
             tracks=_NullCanonicalRepository[Track](),
+            normalization_sidecars=_NullSidecarRepository(),
         )
         self.committed = False
         self.rollback_called = False
 
-    def __enter__(self) -> FakePlayEventUnitOfWork:
+    def __enter__(self) -> FakeIngestUnitOfWork:
         return self
 
     def __exit__(
@@ -183,6 +197,6 @@ class FakePlayEventUnitOfWork:
 
 
 if TYPE_CHECKING:
-    from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
+    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
 
-    _uow_check: PlayEventUnitOfWork = FakePlayEventUnitOfWork(_check_repo)
+    _uow_check: IngestUnitOfWork = FakeIngestUnitOfWork(_check_repo)

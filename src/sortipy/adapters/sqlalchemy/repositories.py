@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import TYPE_CHECKING, cast
 
@@ -9,11 +10,15 @@ from sqlalchemy import select
 
 from sortipy.adapters.sqlalchemy.mappings import (
     CANONICAL_TYPE_BY_CLASS,
+    CLASS_BY_CANONICAL_TYPE,
     external_id_table,
 )
+from sortipy.adapters.sqlalchemy.sidecar_mappings import normalization_sidecar_table
+from sortipy.domain.ingest_pipeline.ingest_ports import NormalizationSidecarRepository
 from sortipy.domain.types import (
     Artist,
     CanonicalEntity,
+    CanonicalEntityType,
     Label,
     Namespace,
     PlayEvent,
@@ -27,6 +32,8 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sqlalchemy.orm import InstrumentedAttribute, Session
+
+    from sortipy.domain.ingest_pipeline.state import NormalizationData
 
 
 class SqlAlchemyPlayEventRepository:
@@ -104,6 +111,78 @@ class SqlAlchemyTrackRepository(SqlAlchemyCanonicalRepository[Track]):
 class SqlAlchemyLabelRepository(SqlAlchemyCanonicalRepository[Label]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, Label)
+
+
+class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
+    """Persist and query normalization sidecars for canonicalization."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def save(self, entity: CanonicalEntity, data: NormalizationData[CanonicalEntity]) -> None:
+        if not data.priority_keys:
+            return
+        if entity.id is None:
+            entity.id = uuid.uuid4()
+        for key in data.priority_keys:
+            self._insert(entity.entity_type, entity.id, key)
+
+    def find_by_keys(
+        self,
+        entity_type: CanonicalEntityType,
+        keys: tuple[tuple[object, ...], ...],
+    ) -> dict[tuple[object, ...], CanonicalEntity]:
+        if not keys:
+            return {}
+        key_strings = [self._serialize_key(key) for key in keys]
+        stmt = (
+            select(normalization_sidecar_table.c.key, normalization_sidecar_table.c.entity_id)
+            .where(normalization_sidecar_table.c.entity_type == entity_type)
+            .where(normalization_sidecar_table.c.key.in_(key_strings))
+        )
+        rows = self.session.execute(stmt).all()
+        entity_cls = CLASS_BY_CANONICAL_TYPE[entity_type]
+        results: dict[tuple[object, ...], CanonicalEntity] = {}
+        for key_str, entity_id in rows:
+            entity_obj = self.session.get(entity_cls, entity_id)
+            if entity_obj is None:
+                continue
+            try:
+                key_tuple = self._deserialize_key(key_str)
+            except ValueError:
+                continue
+            results[key_tuple] = entity_obj
+        return results
+
+    def _insert(
+        self,
+        entity_type: CanonicalEntityType,
+        entity_id: uuid.UUID,
+        key: tuple[object, ...],
+    ) -> None:
+        key_str = self._serialize_key(key)
+        stmt = (
+            normalization_sidecar_table.insert()
+            .prefix_with("OR IGNORE")
+            .values(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                key=key_str,
+            )
+        )
+        self.session.execute(stmt)
+
+    @staticmethod
+    def _serialize_key(key: tuple[object, ...]) -> str:
+        return json.dumps(key, default=str, separators=(",", ":"))
+
+    @staticmethod
+    def _deserialize_key(value: str) -> tuple[object, ...]:
+        loaded_raw = json.loads(value)
+        if not isinstance(loaded_raw, list):
+            raise TypeError("Invalid key format")
+        loaded = cast(list[object], loaded_raw)
+        return tuple(loaded)
 
 
 if TYPE_CHECKING:

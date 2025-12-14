@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING, Protocol
 from sortipy.app import sync_lastfm_play_events
 from sortipy.domain.data_integration import SyncPlayEventsResult
 from tests.helpers.play_events import (
+    FakeIngestUnitOfWork,
     FakePlayEventRepository,
     FakePlayEventSource,
-    FakePlayEventUnitOfWork,
     make_play_event,
 )
 
 if TYPE_CHECKING:
-    from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
+    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
 
 
 class MonkeyPatch(Protocol):
@@ -36,8 +36,8 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
     source = FakePlayEventSource([[play_event]])
     repository = FakePlayEventRepository()
 
-    def factory() -> PlayEventUnitOfWork:
-        return FakePlayEventUnitOfWork(repository)
+    def factory() -> IngestUnitOfWork:
+        return FakeIngestUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
         source=source,
@@ -62,8 +62,8 @@ def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPa
     repository = FakePlayEventRepository([existing])
     source = FakePlayEventSource([[existing, newer]])
 
-    def factory() -> PlayEventUnitOfWork:
-        return FakePlayEventUnitOfWork(repository)
+    def factory() -> IngestUnitOfWork:
+        return FakeIngestUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
         source=source,
@@ -87,8 +87,8 @@ def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatc
     repository = FakePlayEventRepository()
     source = FakePlayEventSource([[older, recent]])
 
-    def factory() -> PlayEventUnitOfWork:
-        return FakePlayEventUnitOfWork(repository)
+    def factory() -> IngestUnitOfWork:
+        return FakeIngestUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
         source=source,

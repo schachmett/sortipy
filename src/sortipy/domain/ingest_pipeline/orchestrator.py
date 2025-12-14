@@ -18,6 +18,7 @@ from sortipy.domain.types import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
     from sortipy.domain.ingest_pipeline.state import NormalizationState
 
 
@@ -27,6 +28,7 @@ class PipelineContext:
 
     batch_id: str | None = None
     normalization_state: NormalizationState | None = None
+    ingest_uow: IngestUnitOfWork | None = None
     normalized_entities_count: int = 0
     dedup_collapsed: int = 0
 
@@ -119,7 +121,7 @@ def ingest_graph_from_events(events: Iterable[PlayEvent]) -> IngestGraph:
             graph.tracks.append(event.track)
         if event.recording not in graph.recordings:
             graph.recordings.append(event.recording)
-        for artist_link in event.recording.artists:
+        for artist_link in event.recording.artist_links:
             artist = artist_link.artist
             if artist not in graph.artists:
                 graph.artists.append(artist)

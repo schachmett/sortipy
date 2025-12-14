@@ -31,14 +31,14 @@ def _make_release_graph() -> tuple[Artist, ReleaseSet, Release, Recording, Track
     release_set.releases.append(release)
     release.tracks.append(track)
     recording.tracks.append(track)
-    release_set.artists.append(
+    release_set.artist_links.append(
         ReleaseSetArtist(
             release_set=release_set,
             artist=artist,
             role=ArtistRole.PRIMARY,
         )
     )
-    recording.artists.append(
+    recording.artist_links.append(
         RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
     )
 
@@ -75,8 +75,8 @@ def test_release_structure_links_entities() -> None:
     assert track in recording.tracks
     assert event in recording.play_events
     assert event in track.play_events
-    assert any(link.artist is artist for link in recording.artists)
-    assert any(link.artist is artist for link in release_set.artists)
+    assert any(link.artist is artist for link in recording.artist_links)
+    assert any(link.artist is artist for link in release_set.artist_links)
 
 
 def test_sources_are_tracked() -> None:
