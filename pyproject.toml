@@ -39,9 +39,14 @@ ini_options.asyncio_default_fixture_loop_scope = "function"
 ini_options.addopts = "--log-level DEBUG --cov --cov-report=lcov:lcov.info"
 ini_options.testpaths = ["tests"]
 ini_options.pythonpath = ["src"]
+ini_options.markers = ["integration: test is an integration test"]
 
 [tool.coverage]
 run.source = ["src"]
+report.exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:"
+]
 
 [tool.ruff]
 line-length = 100
