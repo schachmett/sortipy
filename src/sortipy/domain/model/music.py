@@ -16,9 +16,10 @@ from sortipy.domain.model.associations import (
     ReleaseSetContribution,
     ReleaseTrack,
 )
-from sortipy.domain.model.base import CanonicalEntity
+from sortipy.domain.model.entity import CanonicalizableMixin
 from sortipy.domain.model.enums import ArtistRole, EntityType
-from sortipy.domain.model.external_ids import ExternallyIdentifiableEntity
+from sortipy.domain.model.external_ids import ExternallyIdentifiableMixin
+from sortipy.domain.model.provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
     from sortipy.domain.model.enums import ReleaseSetType
@@ -26,8 +27,13 @@ if TYPE_CHECKING:
     from sortipy.domain.model.user import PlayEvent
 
 
+class CanonicalEntity(
+    CanonicalizableMixin, ProvenanceTrackedMixin, ExternallyIdentifiableMixin
+): ...
+
+
 @dataclass(eq=False, kw_only=True)
-class Artist(CanonicalEntity, ExternallyIdentifiableEntity):
+class Artist(CanonicalEntity):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.ARTIST
 
     name: str
@@ -75,7 +81,7 @@ class Artist(CanonicalEntity, ExternallyIdentifiableEntity):
 
 
 @dataclass(eq=False, kw_only=True)
-class ReleaseSet(CanonicalEntity, ExternallyIdentifiableEntity):
+class ReleaseSet(CanonicalEntity):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RELEASE_SET
 
     title: str
@@ -138,7 +144,7 @@ class ReleaseSet(CanonicalEntity, ExternallyIdentifiableEntity):
 
 
 @dataclass(eq=False, kw_only=True)
-class Label(CanonicalEntity, ExternallyIdentifiableEntity):
+class Label(CanonicalEntity):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.LABEL
 
     name: str
@@ -146,7 +152,7 @@ class Label(CanonicalEntity, ExternallyIdentifiableEntity):
 
 
 @dataclass(eq=False, kw_only=True)
-class Release(CanonicalEntity, ExternallyIdentifiableEntity):
+class Release(CanonicalEntity):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RELEASE
 
     title: str
@@ -215,7 +221,7 @@ class Release(CanonicalEntity, ExternallyIdentifiableEntity):
 
 
 @dataclass(eq=False, kw_only=True)
-class Recording(CanonicalEntity, ExternallyIdentifiableEntity):
+class Recording(CanonicalEntity):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RECORDING
 
     title: str

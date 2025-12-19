@@ -5,20 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from sortipy.domain.model.base import Entity, IngestedEntity
 from sortipy.domain.model.enums import EntityType, Provider
+from sortipy.domain.model.provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
     from sortipy.domain.model.associations import ReleaseTrack
-    from sortipy.domain.model.base import CanonicalEntity
+    from sortipy.domain.model.entity import EntityRef
     from sortipy.domain.model.music import Recording, Release
 
 
 @dataclass(eq=False, kw_only=True)
-class User(Entity, IngestedEntity):
+class User(ProvenanceTrackedMixin):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.USER
 
     display_name: str
@@ -28,24 +28,103 @@ class User(Entity, IngestedEntity):
     spotify_user_id: str | None = None
     lastfm_user: str | None = None
 
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
     _library_items: list[LibraryItem] = field(default_factory=list["LibraryItem"], repr=False)
+    _play_events: list[PlayEvent] = field(default_factory=list["PlayEvent"], repr=False)
 
     @property
     def library_items(self) -> tuple[LibraryItem, ...]:
         return tuple(self._library_items)
 
-    def _attach_library_item(self, item: LibraryItem) -> None:
-        self._library_items.append(item)
+    @property
+    def play_events(self) -> tuple[PlayEvent, ...]:
+        return tuple(self._play_events)
 
-    def _detach_library_item(self, item: LibraryItem) -> None:
+    def save_entity(
+        self,
+        entity: EntityRef,
+        *,
+        source: Provider | None = None,
+        saved_at: datetime | None = None,
+    ) -> LibraryItem:
+        return self.save_reference(
+            target_type=entity.entity_type,
+            target_id=entity.resolved_id,
+            target=entity,
+            source=source,
+            saved_at=saved_at,
+        )
+
+    def save_reference(
+        self,
+        *,
+        target_type: EntityType,
+        target_id: UUID,
+        target: EntityRef | None = None,
+        source: Provider | None = None,
+        saved_at: datetime | None = None,
+    ) -> LibraryItem:
+        item = LibraryItem(
+            _user=self,
+            _target_type=target_type,
+            _target_id=target_id,
+            _target=target,
+            source=source,
+            saved_at=saved_at,
+        )
+        self._library_items.append(item)
+        return item
+
+    def remove_library_item(self, item: LibraryItem) -> None:
+        if item.user is not self:
+            raise ValueError("library item not owned by this user")
         self._library_items.remove(item)
+
+    def log_play(
+        self,
+        *,
+        played_at: datetime,
+        source: Provider,
+        recording: Recording,
+        track: ReleaseTrack | None = None,
+        duration_ms: int | None = None,
+    ) -> PlayEvent:
+        if track is not None and track.recording is not recording:
+            raise ValueError("track.recording must match recording")
+        event = PlayEvent(
+            played_at=played_at,
+            source=source,
+            _user=self,
+            _track=track,
+            _recording_ref=None if track is not None else recording,
+            duration_ms=duration_ms,
+        )
+        self._play_events.append(event)
+        recording._attach_play_event(event)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        return event
+
+    def remove_play_event(self, event: PlayEvent) -> None:
+        if event.user is not self:
+            raise ValueError("play event not owned by this user")
+        self._play_events.remove(event)
+        event.recording._detach_play_event(event)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+
+    def link_play_to_track(self, event: PlayEvent, track: ReleaseTrack) -> None:
+        if event.user is not self:
+            raise ValueError("play event not owned by this user")
+        if event.track is track:
+            return
+        if event.track is not None:
+            raise ValueError("play event already linked to a track")
+        if event.recording_ref is None:
+            raise ValueError("play event has no recording_ref to replace")
+        if track.recording is not event.recording_ref:
+            raise ValueError("track.recording must match play event recording")
+        event._track = track  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        event._recording_ref = None  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
 
 
 @dataclass(eq=False, kw_only=True)
-class LibraryItem(Entity, IngestedEntity):
+class LibraryItem(ProvenanceTrackedMixin):
     """User saved items (artists, releases, recordings, etc.).
 
     Storage uses (entity_type, entity_id) as polymorphic reference.
@@ -54,22 +133,39 @@ class LibraryItem(Entity, IngestedEntity):
 
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.LIBRARY_ITEM
 
-    user: User = field(repr=False)
+    _user: User = field(repr=False)
 
-    target_type: EntityType
-    target_id: UUID
-    target: CanonicalEntity | None = None  # optional in-memory convenience
+    _target_type: EntityType
+    _target_id: UUID
+    _target: EntityRef | None = None  # optional in-memory convenience
 
     source: Provider | None = None
     saved_at: datetime | None = None
 
+    @property
+    def user(self) -> User:
+        return self._user
+
+    @property
+    def target_type(self) -> EntityType:
+        return self._target_type
+
+    @property
+    def target_id(self) -> UUID:
+        return self._target_id
+
+    @property
+    def target(self) -> EntityRef | None:
+        return self._target
+
     def __post_init__(self) -> None:
-        # Keep user graph consistent without ORM.
-        self.user._attach_library_item(self)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        # Validate target shape; ownership is managed by User commands.
+        if self._target is not None and self._target.resolved_id != self._target_id:
+            raise ValueError("target_id must match target.resolved_id")
 
 
 @dataclass(eq=False, kw_only=True)
-class PlayEvent(Entity, IngestedEntity):
+class PlayEvent(ProvenanceTrackedMixin):
     """A listener consuming something at a point in time.
 
     XOR:
@@ -82,32 +178,38 @@ class PlayEvent(Entity, IngestedEntity):
     played_at: datetime
     source: Provider
 
-    user: User = field(repr=False)
+    _user: User = field(repr=False)
 
     # XOR fields:
-    track: ReleaseTrack | None = field(default=None, repr=False)
-    recording_ref: Recording | None = field(default=None, repr=False)
+    _track: ReleaseTrack | None = field(default=None, repr=False)
+    _recording_ref: Recording | None = field(default=None, repr=False)
 
     duration_ms: int | None = None
 
+    @property
+    def user(self) -> User:
+        return self._user
+
+    @property
+    def track(self) -> ReleaseTrack | None:
+        return self._track
+
+    @property
+    def recording_ref(self) -> Recording | None:
+        return self._recording_ref
+
     def __post_init__(self) -> None:
-        if (self.track is None) == (self.recording_ref is None):
+        if (self._track is None) == (self._recording_ref is None):
             raise ValueError("PlayEvent requires exactly one of track or recording_ref")
-        # Maintain recording backref
-        self.recording._attach_play_event(self)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
 
     @property
     def recording(self) -> Recording:
-        if self.track is not None:
-            return self.track.recording
-        if self.recording_ref is not None:
-            return self.recording_ref
+        if self._track is not None:
+            return self._track.recording
+        if self._recording_ref is not None:
+            return self._recording_ref
         raise ValueError("PlayEvent requires exactly one of track or recording_ref")
 
     @property
     def release(self) -> Release | None:
-        return self.track.release if self.track is not None else None
-
-    def detach(self) -> None:
-        """Explicit cleanup hook if you remove the event from the domain graph."""
-        self.recording._detach_play_event(self)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        return self._track.release if self._track is not None else None

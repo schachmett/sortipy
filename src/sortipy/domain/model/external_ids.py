@@ -6,10 +6,11 @@ Domain attaches ExternalIDs to the *resolved id* of canonical entities.
 
 from __future__ import annotations
 
+from abc import ABC
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final, Protocol
 
-from sortipy.domain.model.base import Entity
+from sortipy.domain.model.entity import Entity
 from sortipy.domain.model.enums import EntityType, ExternalNamespace, Provider
 
 if TYPE_CHECKING:
@@ -53,46 +54,15 @@ class ExternalID:
     created_at: datetime | None = None
 
 
-@dataclass(eq=False, kw_only=True)
-class ExternallyIdentifiableEntity(Entity):
-    """Mixin-like protocol by convention.
-
-    Keep it simple: concrete classes carry `external_ids: list[ExternalID]` and
-    call these helpers.
-    """
-
-    external_ids: list[ExternalID] = field(default_factory=list["ExternalID"], repr=False)
-
-    def add_external_id(
-        self,
-        namespace: Namespace,
-        value: str,
-        *,
-        provider: Provider | None = None,
-        replace: bool = False,
-    ) -> None:
-        resolved_provider = provider if provider is not None else provider_for(namespace)
-        ext = ExternalID(
-            namespace=namespace,
-            value=value,
-            owner_type=self.entity_type,
-            owner_id=self.resolved_id,
-            provider=resolved_provider,
-        )
-        if replace:
-            self.external_ids[:] = [e for e in self.external_ids if e.namespace != namespace]
-        self.external_ids.append(ext)
+class ExternalIdCollection(Protocol):
+    """Read-only access to owned external IDs."""
 
     @property
-    def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]:
-        mapping: dict[Namespace, ExternalID] = {}
-        for e in self.external_ids:
-            mapping[e.namespace] = e
-        return mapping
+    def external_ids(self) -> tuple[ExternalID, ...]: ...
 
 
-class HasExternalIDs(Protocol):
-    external_ids: list[ExternalID]
+class ExternallyIdentifiable(ExternalIdCollection, Protocol):
+    """An entity that owns external IDs."""
 
     def add_external_id(
         self,
@@ -105,3 +75,48 @@ class HasExternalIDs(Protocol):
 
     @property
     def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]: ...
+
+
+@dataclass(eq=False, kw_only=True)
+class ExternallyIdentifiableMixin(Entity, ABC):
+    """Capability: owns ExternalIDs.
+
+    Requires the concrete class to provide `entity_type` and `resolved_id`
+    (usually via inheriting from `Entity` / `ResolvableEntity`).
+    """
+
+    _external_ids: list[ExternalID] = field(
+        default_factory=list["ExternalID"], repr=False, init=False
+    )
+
+    @property
+    def external_ids(self) -> tuple[ExternalID, ...]:
+        return tuple(self._external_ids)
+
+    def add_external_id(
+        self,
+        namespace: Namespace,
+        value: str,
+        *,
+        provider: Provider | None = None,
+        replace: bool = False,
+    ) -> None:
+        # owner = cast(EntityRef, self)
+        resolved_provider = provider if provider is not None else provider_for(namespace)
+        ext = ExternalID(
+            namespace=namespace,
+            value=value,
+            owner_type=self.entity_type,
+            owner_id=self.resolved_id,
+            provider=resolved_provider,
+        )
+        if replace:
+            self._external_ids[:] = [e for e in self._external_ids if e.namespace != namespace]
+        self._external_ids.append(ext)
+
+    @property
+    def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]:
+        mapping: dict[Namespace, ExternalID] = {}
+        for e in self._external_ids:
+            mapping[e.namespace] = e
+        return mapping

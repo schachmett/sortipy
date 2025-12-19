@@ -1,7 +1,9 @@
 """Association objects.
 
-All are IdentifiedEntities (can have ExternalIDs), but NOT Resolvable.
 Owned by aggregate roots.
+
+Only `ReleaseTrack` is externally identifiable today (tracks can have MBIDs).
+Contributions do not carry external IDs for now.
 """
 
 from __future__ import annotations
@@ -9,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from sortipy.domain.model.base import IngestedEntity
 from sortipy.domain.model.enums import ArtistRole, EntityType
-from sortipy.domain.model.external_ids import ExternallyIdentifiableEntity
+from sortipy.domain.model.external_ids import ExternallyIdentifiableMixin
+from sortipy.domain.model.provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
     from sortipy.domain.model.music import Artist, Recording, Release, ReleaseSet
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(eq=False, kw_only=True)
-class ReleaseSetContribution(IngestedEntity):
+class ReleaseSetContribution(ProvenanceTrackedMixin):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RELEASE_SET_CONTRIBUTION
 
     _release_set: ReleaseSet = field(repr=False)
@@ -40,7 +42,7 @@ class ReleaseSetContribution(IngestedEntity):
 
 
 @dataclass(eq=False, kw_only=True)
-class RecordingContribution(IngestedEntity):
+class RecordingContribution(ProvenanceTrackedMixin):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RECORDING_CONTRIBUTION
 
     _recording: Recording = field(repr=False)
@@ -61,7 +63,7 @@ class RecordingContribution(IngestedEntity):
 
 
 @dataclass(eq=False, kw_only=True)
-class ReleaseTrack(ExternallyIdentifiableEntity, IngestedEntity):
+class ReleaseTrack(ProvenanceTrackedMixin, ExternallyIdentifiableMixin):
     """Placement of a recording on a specific release (tracklist entry)."""
 
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RELEASE_TRACK

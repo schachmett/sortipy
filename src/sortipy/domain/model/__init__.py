@@ -7,16 +7,21 @@ from sortipy.domain.model.associations import (
     ReleaseSetContribution,
     ReleaseTrack,
 )
-from sortipy.domain.model.audit import EntityMerge
-from sortipy.domain.model.base import (
-    CanonicalEntity,
-    ExternallyIdentifiableEntity,
-    HasEntityType,
-    IngestedEntity,
-    ResolvableEntity,
+from sortipy.domain.model.audit import (
+    EntityMerge,
+)
+from sortipy.domain.model.entity import (
+    Entity,
+    EntityRef,
 )
 from sortipy.domain.model.enums import *  # noqa: F403
-from sortipy.domain.model.external_ids import ExternalID, HasExternalIDs, Namespace, provider_for
+from sortipy.domain.model.external_ids import (
+    ExternalID,
+    ExternalIdCollection,
+    ExternallyIdentifiable,
+    Namespace,
+    provider_for,
+)
 from sortipy.domain.model.music import (
     Artist,
     Label,
@@ -25,6 +30,11 @@ from sortipy.domain.model.music import (
     ReleaseSet,
 )
 from sortipy.domain.model.primitives import *  # noqa: F403
+from sortipy.domain.model.provenance import (
+    Provenance,
+    Provenanced,
+    ProvenanceTracked,
+)
 from sortipy.domain.model.user import (
     LibraryItem,
     PlayEvent,
@@ -33,16 +43,18 @@ from sortipy.domain.model.user import (
 
 __all__ = [  # noqa: RUF022
     # base
-    "HasEntityType",
-    "IngestedEntity",
-    "ExternallyIdentifiableEntity",
-    "CanonicalEntity",
-    "ResolvableEntity",
+    "Entity",
+    "EntityRef",
     # external ids
     "ExternalID",
     "Namespace",
-    "HasExternalIDs",
+    "ExternalIdCollection",
     "provider_for",
+    "ExternallyIdentifiable",
+    # provenance
+    "Provenance",
+    "Provenanced",
+    "ProvenanceTracked",
     # associations
     "ReleaseSetContribution",
     "RecordingContribution",
