@@ -107,11 +107,31 @@ class ReleaseSet(CanonicalEntity):
         return tuple(c.artist for c in self._contributions)
 
     # Commands (ownership here)
-    def add_release(self, release: Release) -> None:
+    def _add_release(self, release: Release) -> None:
         if release.release_set is not self:
             # keep graph consistent
             release._set_release_set(self)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
         self._releases.append(release)
+
+    def create_release(
+        self,
+        *,
+        title: str,
+        release_date: PartialDate | None = None,
+        country: CountryCode | None = None,
+        format_: str | None = None,
+        medium_count: int | None = None,
+    ) -> Release:
+        release = Release(
+            title=title,
+            _release_set=self,
+            release_date=release_date,
+            country=country,
+            format=format_,
+            medium_count=medium_count,
+        )
+        self._add_release(release)
+        return release
 
     def add_artist(
         self,

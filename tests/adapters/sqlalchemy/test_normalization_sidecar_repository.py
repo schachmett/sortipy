@@ -22,7 +22,12 @@ def test_save_and_find_by_keys(sqlite_session: Session) -> None:
     artist = Artist(name="Radiohead")
     artist.id = uuid.uuid4()
     sqlite_session.add(artist)
-    data = _Data(priority_keys=(("artist:mbid", "mbid-1"), ("artist:name", "radiohead"),))
+    data = _Data(
+        priority_keys=(
+            ("artist:mbid", "mbid-1"),
+            ("artist:name", "radiohead"),
+        )
+    )
 
     repo.save(artist, data)
     sqlite_session.flush()
