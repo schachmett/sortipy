@@ -13,7 +13,9 @@ from sortipy.adapters.lastfm import (
     TrackPayload,
     parse_play_event,
 )
+from sortipy.adapters.lastfm.translator import parse_play_event_model
 from sortipy.common.config import LastFmConfig, MissingConfigurationError
+from sortipy.domain.model.enums import Provider as ModelProvider
 from sortipy.domain.types import Provider
 
 
@@ -84,6 +86,56 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
     assert {eid.namespace for eid in release_set.external_ids} == {"musicbrainz:release-group"}
     assert {eid.namespace for eid in release.external_ids} == {"musicbrainz:release"}
     assert {eid.namespace for eid in recording.external_ids} == {
+        "musicbrainz:recording",
+        "lastfm:recording",
+    }
+
+
+def test_parse_play_event_model_creates_domain_model_entities(
+    sample_payload: dict[str, object],
+) -> None:
+    event = parse_play_event_model(sample_payload)
+    validated = TrackPayload.model_validate(sample_payload)
+
+    track = event.track
+    assert track is not None
+    release = track.release
+    release_set = release.release_set
+    recording = event.recording
+    user = event.user
+
+    assert event.source is ModelProvider.LASTFM
+    assert recording.title == validated.name
+    assert release.title == validated.album.title
+    assert release_set.title == validated.album.title
+
+    assert event in user.play_events
+    assert event in recording.play_events
+
+    assert recording.artists
+    artist = recording.artists[0]
+    assert artist.name == validated.artist.name
+    assert release_set.artists
+    assert release_set.artists[0] is artist
+
+    assert artist.provenance is not None
+    assert ModelProvider.LASTFM in artist.provenance.sources
+    assert release_set.provenance is not None
+    assert ModelProvider.LASTFM in release_set.provenance.sources
+    assert release.provenance is not None
+    assert ModelProvider.LASTFM in release.provenance.sources
+    assert recording.provenance is not None
+    assert ModelProvider.LASTFM in recording.provenance.sources
+    assert track.provenance is not None
+    assert ModelProvider.LASTFM in track.provenance.sources
+
+    assert {str(eid.namespace) for eid in artist.external_ids} == {
+        "musicbrainz:artist",
+        "lastfm:artist",
+    }
+    assert {str(eid.namespace) for eid in release_set.external_ids} == {"musicbrainz:release-group"}
+    assert {str(eid.namespace) for eid in release.external_ids} == {"musicbrainz:release"}
+    assert {str(eid.namespace) for eid in recording.external_ids} == {
         "musicbrainz:recording",
         "lastfm:recording",
     }
