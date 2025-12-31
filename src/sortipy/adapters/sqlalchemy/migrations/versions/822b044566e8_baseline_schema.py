@@ -1,8 +1,8 @@
 """baseline schema
 
-Revision ID: faa9c956fcbe
+Revision ID: 822b044566e8
 Revises:
-Create Date: 2025-11-03 21:24:00.550296
+Create Date: 2025-12-31 23:53:09.409274
 
 """
 
@@ -11,9 +11,10 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
+from sortipy.adapters.sqlalchemy import mappings as sa_mappings
 
 # revision identifiers, used by Alembic.
-revision: str = "faa9c956fcbe"
+revision: str = "822b044566e8"
 down_revision: tuple[str, ...] | str | None = None
 branch_labels: tuple[str, ...] | str | None = None
 depends_on: tuple[str, ...] | str | None = None
@@ -25,15 +26,7 @@ def upgrade() -> None:
     op.create_table(
         "artist",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
         sa.Column("canonical_id", sa.Uuid(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("sort_name", sa.String(), nullable=True),
         sa.Column("country", sa.String(length=3), nullable=True),
@@ -50,9 +43,14 @@ def upgrade() -> None:
                 "RELEASE_SET",
                 "RELEASE",
                 "RECORDING",
-                "TRACK",
                 "LABEL",
-                name="canonicalentitytype",
+                "RELEASE_TRACK",
+                "RELEASE_SET_CONTRIBUTION",
+                "RECORDING_CONTRIBUTION",
+                "USER",
+                "PLAY_EVENT",
+                "LIBRARY_ITEM",
+                name="entitytype",
                 native_enum=False,
             ),
             nullable=False,
@@ -64,7 +62,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "created_at",
-            sa.DateTime(timezone=True),
+            sa_mappings.UTCDateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
             nullable=False,
         ),
@@ -79,20 +77,25 @@ def upgrade() -> None:
         sa.Column("namespace", sa.String(), nullable=False),
         sa.Column("value", sa.String(), nullable=False),
         sa.Column(
-            "entity_type",
+            "owner_type",
             sa.Enum(
                 "ARTIST",
                 "RELEASE_SET",
                 "RELEASE",
                 "RECORDING",
-                "TRACK",
                 "LABEL",
-                name="canonicalentitytype",
+                "RELEASE_TRACK",
+                "RELEASE_SET_CONTRIBUTION",
+                "RECORDING_CONTRIBUTION",
+                "USER",
+                "PLAY_EVENT",
+                "LIBRARY_ITEM",
+                name="entitytype",
                 native_enum=False,
             ),
             nullable=False,
         ),
-        sa.Column("entity_id", sa.Uuid(), nullable=False),
+        sa.Column("owner_id", sa.Uuid(), nullable=False),
         sa.Column(
             "provider",
             sa.Enum("LASTFM", "SPOTIFY", "MUSICBRAINZ", name="provider", native_enum=False),
@@ -100,43 +103,98 @@ def upgrade() -> None:
         ),
         sa.Column(
             "created_at",
-            sa.DateTime(timezone=True),
+            sa_mappings.UTCDateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
             nullable=True,
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_external_id")),
         sa.UniqueConstraint(
-            "namespace", "value", "entity_type", name=op.f("uq_external_id_external_id_namespace")
+            "namespace", "value", "owner_type", name=op.f("uq_external_id_external_id_namespace")
         ),
     )
+    with op.batch_alter_table("external_id", schema=None) as batch_op:
+        batch_op.create_index("ix_external_id_owner", ["owner_type", "owner_id"], unique=False)
+
     op.create_table(
         "label",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
         sa.Column("canonical_id", sa.Uuid(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("country", sa.String(length=3), nullable=True),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_label")),
     )
     op.create_table(
-        "recording",
+        "normalization_sidecar",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
         sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            "entity_type",
+            sa.Enum(
+                "ARTIST",
+                "RELEASE_SET",
+                "RELEASE",
+                "RECORDING",
+                "LABEL",
+                "RELEASE_TRACK",
+                "RELEASE_SET_CONTRIBUTION",
+                "RECORDING_CONTRIBUTION",
+                "USER",
+                "PLAY_EVENT",
+                "LIBRARY_ITEM",
+                name="entitytype",
+                native_enum=False,
+            ),
             nullable=False,
         ),
+        sa.Column("entity_id", sa.Uuid(), nullable=False),
+        sa.Column("key", sa.String(), nullable=False),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_normalization_sidecar")),
+        sa.UniqueConstraint(
+            "entity_type",
+            "key",
+            name=op.f("uq_normalization_sidecar_normalization_sidecar_entity_type"),
+        ),
+    )
+    with op.batch_alter_table("normalization_sidecar", schema=None) as batch_op:
+        batch_op.create_index(
+            "ix_normalization_sidecar_entity_key", ["entity_type", "key"], unique=False
+        )
+
+    op.create_table(
+        "provenance",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "owner_type",
+            sa.Enum(
+                "ARTIST",
+                "RELEASE_SET",
+                "RELEASE",
+                "RECORDING",
+                "LABEL",
+                "RELEASE_TRACK",
+                "RELEASE_SET_CONTRIBUTION",
+                "RECORDING_CONTRIBUTION",
+                "USER",
+                "PLAY_EVENT",
+                "LIBRARY_ITEM",
+                name="entitytype",
+                native_enum=False,
+            ),
+            nullable=False,
+        ),
+        sa.Column("owner_id", sa.Uuid(), nullable=False),
+        sa.Column("sources", sa_mappings.ProviderSetType(), nullable=False),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_provenance")),
+        sa.UniqueConstraint(
+            "owner_type", "owner_id", name=op.f("uq_provenance_provenance_owner_type")
+        ),
+    )
+    with op.batch_alter_table("provenance", schema=None) as batch_op:
+        batch_op.create_index("ix_provenance_owner", ["owner_type", "owner_id"], unique=False)
+
+    op.create_table(
+        "recording",
+        sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("canonical_id", sa.Uuid(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("title", sa.String(), nullable=False),
         sa.Column("duration_ms", sa.Integer(), nullable=True),
         sa.Column("version", sa.String(), nullable=True),
@@ -145,15 +203,7 @@ def upgrade() -> None:
     op.create_table(
         "release_set",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
         sa.Column("canonical_id", sa.Uuid(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("title", sa.String(), nullable=False),
         sa.Column(
             "primary_type",
@@ -179,19 +229,10 @@ def upgrade() -> None:
     op.create_table(
         "user_account",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
         sa.Column("display_name", sa.String(), nullable=False),
         sa.Column("email", sa.String(), nullable=True),
         sa.Column("spotify_user_id", sa.String(), nullable=True),
         sa.Column("lastfm_user", sa.String(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_user_account")),
     )
     op.create_table(
@@ -199,33 +240,31 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column(
-            "entity_type",
+            "target_type",
             sa.Enum(
                 "ARTIST",
                 "RELEASE_SET",
                 "RELEASE",
                 "RECORDING",
-                "TRACK",
                 "LABEL",
-                name="canonicalentitytype",
+                "RELEASE_TRACK",
+                "RELEASE_SET_CONTRIBUTION",
+                "RECORDING_CONTRIBUTION",
+                "USER",
+                "PLAY_EVENT",
+                "LIBRARY_ITEM",
+                name="entitytype",
                 native_enum=False,
             ),
             nullable=False,
         ),
-        sa.Column("entity_id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
+        sa.Column("target_id", sa.Uuid(), nullable=False),
         sa.Column(
             "source",
             sa.Enum("LASTFM", "SPOTIFY", "MUSICBRAINZ", name="provider", native_enum=False),
             nullable=True,
         ),
-        sa.Column("saved_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("saved_at", sa_mappings.UTCDateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(
             ["user_id"],
             ["user_account.id"],
@@ -233,42 +272,47 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_library_item")),
-        sa.UniqueConstraint("user_id", "entity_type", "entity_id", name="uq_library_item_entity"),
+        sa.UniqueConstraint("user_id", "target_type", "target_id", name="uq_library_item_entity"),
     )
     op.create_table(
-        "recording_artist",
+        "recording_contribution",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("recording_id", sa.Uuid(), nullable=False),
         sa.Column("artist_id", sa.Uuid(), nullable=False),
-        sa.Column("role", sa.String(), nullable=True),
+        sa.Column(
+            "role",
+            sa.Enum(
+                "PRIMARY",
+                "FEATURED",
+                "PRODUCER",
+                "COMPOSER",
+                "CONDUCTOR",
+                name="artistrole",
+                native_enum=False,
+            ),
+            nullable=True,
+        ),
         sa.Column("instrument", sa.String(), nullable=True),
         sa.Column("credit_order", sa.Integer(), nullable=True),
+        sa.Column("credited_as", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(
             ["artist_id"],
             ["artist.id"],
-            name=op.f("fk_recording_artist_recording_artist_artist_id_artist"),
+            name=op.f("fk_recording_contribution_recording_contribution_artist_id_artist"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["recording_id"],
             ["recording.id"],
-            name=op.f("fk_recording_artist_recording_artist_recording_id_recording"),
+            name=op.f("fk_recording_contribution_recording_contribution_recording_id_recording"),
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_recording_artist")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_recording_contribution")),
     )
     op.create_table(
         "release",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
         sa.Column("canonical_id", sa.Uuid(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("title", sa.String(), nullable=False),
         sa.Column("release_set_id", sa.Uuid(), nullable=False),
         sa.Column("release_year", sa.Integer(), nullable=True),
@@ -281,29 +325,46 @@ def upgrade() -> None:
             ["release_set_id"],
             ["release_set.id"],
             name=op.f("fk_release_release_release_set_id_release_set"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_release")),
     )
     op.create_table(
-        "release_set_artist",
+        "release_set_contribution",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("release_set_id", sa.Uuid(), nullable=False),
         sa.Column("artist_id", sa.Uuid(), nullable=False),
-        sa.Column("role", sa.String(), nullable=True),
+        sa.Column(
+            "role",
+            sa.Enum(
+                "PRIMARY",
+                "FEATURED",
+                "PRODUCER",
+                "COMPOSER",
+                "CONDUCTOR",
+                name="artistrole",
+                native_enum=False,
+            ),
+            nullable=True,
+        ),
         sa.Column("credit_order", sa.Integer(), nullable=True),
+        sa.Column("credited_as", sa.String(), nullable=True),
+        sa.Column("join_phrase", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(
             ["artist_id"],
             ["artist.id"],
-            name=op.f("fk_release_set_artist_release_set_artist_artist_id_artist"),
+            name=op.f("fk_release_set_contribution_release_set_contribution_artist_id_artist"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["release_set_id"],
             ["release_set.id"],
-            name=op.f("fk_release_set_artist_release_set_artist_release_set_id_release_set"),
+            name=op.f(
+                "fk_release_set_contribution_release_set_contribution_release_set_id_release_set"
+            ),
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_release_set_artist")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_release_set_contribution")),
     )
     op.create_table(
         "release_label",
@@ -324,17 +385,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("release_id", "label_id", name=op.f("pk_release_label")),
     )
     op.create_table(
-        "track",
+        "release_track",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
-        sa.Column("canonical_id", sa.Uuid(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("release_id", sa.Uuid(), nullable=False),
         sa.Column("recording_id", sa.Uuid(), nullable=False),
         sa.Column("disc_number", sa.Integer(), nullable=True),
@@ -342,31 +394,31 @@ def upgrade() -> None:
         sa.Column("title_override", sa.String(), nullable=True),
         sa.Column("duration_ms", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(
-            ["recording_id"], ["recording.id"], name=op.f("fk_track_track_recording_id_recording")
+            ["recording_id"],
+            ["recording.id"],
+            name=op.f("fk_release_track_release_track_recording_id_recording"),
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["release_id"], ["release.id"], name=op.f("fk_track_track_release_id_release")
+            ["release_id"],
+            ["release.id"],
+            name=op.f("fk_release_track_release_track_release_id_release"),
+            ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_track")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_release_track")),
     )
     op.create_table(
         "play_event",
-        sa.Column("played_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("raw_payload_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "ingested_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-            nullable=False,
-        ),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("user_id", sa.Uuid(), nullable=False),
+        sa.Column("played_at", sa_mappings.UTCDateTime(timezone=True), nullable=False),
         sa.Column(
             "source",
             sa.Enum("LASTFM", "SPOTIFY", "MUSICBRAINZ", name="provider", native_enum=False),
             nullable=False,
         ),
-        sa.Column("recording_id", sa.Uuid(), nullable=False),
         sa.Column("track_id", sa.Uuid(), nullable=True),
-        sa.Column("user_id", sa.Uuid(), nullable=True),
+        sa.Column("recording_id", sa.Uuid(), nullable=True),
         sa.Column("duration_ms", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(
             ["recording_id"],
@@ -374,14 +426,18 @@ def upgrade() -> None:
             name=op.f("fk_play_event_play_event_recording_id_recording"),
         ),
         sa.ForeignKeyConstraint(
-            ["track_id"], ["track.id"], name=op.f("fk_play_event_play_event_track_id_track")
+            ["track_id"],
+            ["release_track.id"],
+            name=op.f("fk_play_event_play_event_track_id_release_track"),
         ),
         sa.ForeignKeyConstraint(
             ["user_id"],
             ["user_account.id"],
             name=op.f("fk_play_event_play_event_user_id_user_account"),
+            ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("played_at", name=op.f("pk_play_event")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_play_event")),
+        sa.UniqueConstraint("user_id", "source", "played_at", name="uq_play_event_identity"),
     )
     # ### end Alembic commands ###
 
@@ -390,16 +446,27 @@ def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table("play_event")
-    op.drop_table("track")
+    op.drop_table("release_track")
     op.drop_table("release_label")
-    op.drop_table("release_set_artist")
+    op.drop_table("release_set_contribution")
     op.drop_table("release")
-    op.drop_table("recording_artist")
+    op.drop_table("recording_contribution")
     op.drop_table("library_item")
     op.drop_table("user_account")
     op.drop_table("release_set")
     op.drop_table("recording")
+    with op.batch_alter_table("provenance", schema=None) as batch_op:
+        batch_op.drop_index("ix_provenance_owner")
+
+    op.drop_table("provenance")
+    with op.batch_alter_table("normalization_sidecar", schema=None) as batch_op:
+        batch_op.drop_index("ix_normalization_sidecar_entity_key")
+
+    op.drop_table("normalization_sidecar")
     op.drop_table("label")
+    with op.batch_alter_table("external_id", schema=None) as batch_op:
+        batch_op.drop_index("ix_external_id_owner")
+
     op.drop_table("external_id")
     op.drop_table("entity_merge")
     op.drop_table("artist")

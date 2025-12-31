@@ -15,9 +15,9 @@ from sortipy.adapters.sqlalchemy import (
     SqlAlchemyRecordingRepository,
     SqlAlchemyReleaseRepository,
     SqlAlchemyReleaseSetRepository,
-    create_all_tables,
     start_mappers,
 )
+from sortipy.adapters.sqlalchemy.migrations import upgrade_head
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
 from sortipy.common.storage import get_database_uri
 from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
@@ -80,13 +80,7 @@ def startup(
 
     resolved_engine = engine or create_engine(database_uri or get_database_uri(), future=True)
     start_mappers()
-    create_all_tables(resolved_engine)
-
-    from sortipy.adapters.sqlalchemy.sidecar_mappings import (  # noqa: PLC0415
-        normalization_sidecar_table,
-    )
-
-    normalization_sidecar_table.create(resolved_engine, checkfirst=True)
+    upgrade_head(engine=resolved_engine)
 
     _STATE.engine = resolved_engine
 

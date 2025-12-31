@@ -10,7 +10,8 @@ from sqlalchemy.engine import Engine  # noqa: TC002
 from sqlalchemy.orm import Session, sessionmaker
 
 from sortipy.adapters.lastfm import RecentTracksResponse
-from sortipy.adapters.sqlalchemy import create_all_tables, start_mappers
+from sortipy.adapters.sqlalchemy import start_mappers
+from sortipy.adapters.sqlalchemy.migrations import upgrade_head
 from sortipy.adapters.sqlalchemy.unit_of_work import (
     SqlAlchemyIngestUnitOfWork,
     shutdown,
@@ -41,12 +42,7 @@ def recent_tracks_payload(
 def sqlite_engine() -> Iterator[Engine]:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     start_mappers()
-    create_all_tables(engine)
-    from sortipy.adapters.sqlalchemy.sidecar_mappings import (  # noqa: PLC0415
-        normalization_sidecar_table,
-    )
-
-    normalization_sidecar_table.create(engine, checkfirst=True)
+    upgrade_head(engine=engine)
     try:
         yield engine
     finally:
