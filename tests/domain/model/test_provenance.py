@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from sortipy.domain.model.enums import Provider
-from sortipy.domain.model.music import Artist
-from sortipy.domain.model.provenance import Provenance
+from sortipy.domain.model import Artist, Provenance, Provider
 
 
 def test_provenance_is_optional_by_default() -> None:

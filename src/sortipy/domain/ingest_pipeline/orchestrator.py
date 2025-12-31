@@ -3,70 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol
 
-from sortipy.domain.types import (
-    Artist,
-    CanonicalEntity,
-    PlayEvent,
-    Recording,
-    Release,
-    ReleaseSet,
-    Track,
-)
+from sortipy.domain.ingest_pipeline.context import IngestGraph, PipelineContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
-    from sortipy.domain.ingest_pipeline.state import NormalizationState
+    from sortipy.domain.model import PlayEvent
 
 
-@dataclass(slots=True)
-class PipelineContext:
-    """Mutable context shared across pipeline phases."""
-
-    batch_id: str | None = None
-    normalization_state: NormalizationState | None = None
-    ingest_uow: IngestUnitOfWork | None = None
-    normalized_entities_count: int = 0
-    dedup_collapsed: int = 0
-
-
-@dataclass(slots=True)
-class IngestGraph:
-    """Container for all entities ingested in a single batch run.
-
-    The graph mirrors the structure described in ``docs/data_pipeline.md`` and
-    is intentionally lightweight: each phase mutates entities in-place rather
-    than creating parallel structures. Keeping the lists explicit also makes it
-    trivial to run per-entity-type passes when normalizing or deduplicating.
-    """
-
-    artists: list[Artist] = field(default_factory=list[Artist])
-    release_sets: list[ReleaseSet] = field(default_factory=list[ReleaseSet])
-    releases: list[Release] = field(default_factory=list[Release])
-    recordings: list[Recording] = field(default_factory=list[Recording])
-    tracks: list[Track] = field(default_factory=list[Track])
-    play_events: list[PlayEvent] = field(default_factory=list[PlayEvent])
-
-    def iter_catalog_entities(self) -> Iterable[CanonicalEntity]:
-        """Yield all catalog entities (artists through tracks) in dependency order.
-
-        Artists are yielded first so downstream phases can assume their canonical
-        identities exist before processing release sets, releases, recordings,
-        and tracks. Play events are intentionally skipped because they are the
-        leaf nodes of the graph.
-        """
-
-        yield from self.artists
-        yield from self.release_sets
-        yield from self.releases
-        yield from self.recordings
-        yield from self.tracks
-
-
-@runtime_checkable
 class PipelinePhase(Protocol):
     """Contract implemented by each ingestion phase."""
 
@@ -106,7 +52,7 @@ class IngestionPipeline:
 
 
 def ingest_graph_from_events(events: Iterable[PlayEvent]) -> IngestGraph:
-    """Utility for constructing a graph from parsed play events.
+    """Utility for constructing a graph from domain.model PlayEvents.
 
     The helper only wires the top-level collections; relationship wiring happens
     when adapters (for example the Last.fm translator) attach entities to each
@@ -116,21 +62,19 @@ def ingest_graph_from_events(events: Iterable[PlayEvent]) -> IngestGraph:
 
     graph = IngestGraph()
     for event in events:
-        graph.play_events.append(event)
-        if event.track is not None and event.track not in graph.tracks:
-            graph.tracks.append(event.track)
-        if event.recording not in graph.recordings:
-            graph.recordings.append(event.recording)
-        for artist_link in event.recording.artist_links:
-            artist = artist_link.artist
-            if artist not in graph.artists:
-                graph.artists.append(artist)
-        track = event.track
-        if track is not None:
-            release = track.release
-            if release not in graph.releases:
-                graph.releases.append(release)
-            release_set = release.release_set
-            if release_set not in graph.release_sets:
-                graph.release_sets.append(release_set)
+        graph.add_play_event(event)
+        graph.add_user(event.user)
+        graph.add_recording(event.recording)
+
+        for artist in event.recording.artists:
+            graph.add_artist(artist)
+
+        if event.track is None:
+            continue
+
+        graph.add_release(event.track.release)
+        graph.add_release_set(event.track.release.release_set)
+        for artist in event.track.release.release_set.artists:
+            graph.add_artist(artist)
+
     return graph

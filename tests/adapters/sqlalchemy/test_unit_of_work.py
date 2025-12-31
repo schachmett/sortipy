@@ -58,4 +58,4 @@ def test_unit_of_work_persists_events(sqlite_engine: Engine) -> None:
     with SqlAlchemyPlayEventUnitOfWork() as uow:
         repo = uow.repositories.play_events
         assert repo.latest_timestamp() is not None
-        assert repo.exists(played_at)
+        assert repo.exists(user_id=event.user.id, source=event.source, played_at=played_at)

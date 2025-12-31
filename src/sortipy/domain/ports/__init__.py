@@ -10,7 +10,6 @@ from .persistence import (
     ReleaseRepository,
     ReleaseSetRepository,
     Repository,
-    TrackRepository,
 )
 from .unit_of_work import (
     PlayEventRepositories,
@@ -31,6 +30,5 @@ __all__ = [
     "ReleaseSetRepository",
     "Repository",
     "RepositoryCollection",
-    "TrackRepository",
     "UnitOfWork",
 ]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from sortipy.domain.model.enums import ArtistRole
-from sortipy.domain.model.music import Artist, Recording, Release, ReleaseSet
+from sortipy.domain.model import Artist, ArtistRole, Recording, Release, ReleaseSet
 
 
 def test_release_set_add_release_maintains_release_set_pointer() -> None:
@@ -9,7 +8,7 @@ def test_release_set_add_release_maintains_release_set_pointer() -> None:
     b = ReleaseSet(title="B")
     release = Release(title="Example", _release_set=b)
 
-    a._add_release(release)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+    a.add_release(release)
 
     assert release.release_set is a
     assert release in a.releases

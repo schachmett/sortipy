@@ -9,11 +9,11 @@ rules remain explicit and adapter-free.
 from __future__ import annotations
 
 from .canonicalization import CanonicalizationPhase
+from .context import IngestGraph, NormalizationState, PipelineContext
 from .deduplication import DeduplicationPhase
 from .ingest_ports import NormalizationSidecarRepository
 from .normalization import NormalizationPhase
-from .orchestrator import IngestGraph, IngestionPipeline, PipelineContext, PipelinePhase
-from .state import NormalizationState
+from .orchestrator import IngestionPipeline, PipelinePhase
 
 __all__ = [
     "CanonicalizationPhase",

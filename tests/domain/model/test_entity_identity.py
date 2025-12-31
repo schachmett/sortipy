@@ -4,8 +4,7 @@ import uuid
 
 import pytest
 
-from sortipy.domain.model.enums import EntityType
-from sortipy.domain.model.music import Artist, Label
+from sortipy.domain.model import Artist, EntityType, Label
 
 
 def test_canonicalizable_defaults_to_canonical() -> None:

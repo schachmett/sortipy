@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sortipy.domain.model.associations import ReleaseTrack
-    from sortipy.domain.model.entity import EntityRef
+    from sortipy.domain.model.entity import IdentifiedEntity
     from sortipy.domain.model.music import Recording, Release
 
 
@@ -41,7 +41,7 @@ class User(ProvenanceTrackedMixin):
 
     def save_entity(
         self,
-        entity: EntityRef,
+        entity: IdentifiedEntity,
         *,
         source: Provider | None = None,
         saved_at: datetime | None = None,
@@ -59,7 +59,7 @@ class User(ProvenanceTrackedMixin):
         *,
         target_type: EntityType,
         target_id: UUID,
-        target: EntityRef | None = None,
+        target: IdentifiedEntity | None = None,
         source: Provider | None = None,
         saved_at: datetime | None = None,
     ) -> LibraryItem:
@@ -99,14 +99,12 @@ class User(ProvenanceTrackedMixin):
             duration_ms=duration_ms,
         )
         self._play_events.append(event)
-        recording._attach_play_event(event)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
         return event
 
     def remove_play_event(self, event: PlayEvent) -> None:
         if event.user is not self:
             raise ValueError("play event not owned by this user")
         self._play_events.remove(event)
-        event.recording._detach_play_event(event)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
 
     def link_play_to_track(self, event: PlayEvent, track: ReleaseTrack) -> None:
         if event.user is not self:
@@ -119,8 +117,17 @@ class User(ProvenanceTrackedMixin):
             raise ValueError("play event has no recording_ref to replace")
         if track.recording is not event.recording_ref:
             raise ValueError("track.recording must match play event recording")
-        event._track = track  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
-        event._recording_ref = None  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        event.internal_set_track(track)
+        event.internal_set_recording_ref(None)
+
+    def move_play_event_to(self, event: PlayEvent, recording: Recording) -> None:
+        if event.user is not self:
+            raise ValueError("play event not owned by this user")
+        if event.track is not None:
+            raise ValueError("play event is already linked to a track")
+        if event.recording_ref is recording:
+            return
+        event.internal_set_recording_ref(recording)
 
 
 @dataclass(eq=False, kw_only=True)
@@ -137,7 +144,7 @@ class LibraryItem(ProvenanceTrackedMixin):
 
     _target_type: EntityType
     _target_id: UUID
-    _target: EntityRef | None = None  # optional in-memory convenience
+    _target: IdentifiedEntity | None = None  # optional in-memory convenience
 
     source: Provider | None = None
     saved_at: datetime | None = None
@@ -155,7 +162,7 @@ class LibraryItem(ProvenanceTrackedMixin):
         return self._target_id
 
     @property
-    def target(self) -> EntityRef | None:
+    def target(self) -> IdentifiedEntity | None:
         return self._target
 
     def __post_init__(self) -> None:
@@ -197,6 +204,12 @@ class PlayEvent(ProvenanceTrackedMixin):
     @property
     def recording_ref(self) -> Recording | None:
         return self._recording_ref
+
+    def internal_set_track(self, track: ReleaseTrack | None) -> None:
+        self._track = track
+
+    def internal_set_recording_ref(self, recording: Recording | None) -> None:
+        self._recording_ref = recording
 
     def __post_init__(self) -> None:
         if (self._track is None) == (self._recording_ref is None):

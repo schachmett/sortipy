@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from sortipy.domain.model.enums import ExternalNamespace, Provider
-from sortipy.domain.model.music import Artist
+from sortipy.domain.model import Artist, ExternalNamespace, Provider
 
 
 def test_add_external_id_infers_provider_and_sets_owner_to_resolved_id() -> None:

@@ -1,43 +1,50 @@
 """Central registry for per-entity ingest operations."""
-# ruff: noqa: I001
 
 from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-from sortipy.domain.ingest_pipeline.state import (
+from sortipy.domain.ingest_pipeline.context import (
     NormalizationData,
     NormalizationState,
-    deterministic_key,
+    NormKey,
+    NormKeySeq,
 )
-from sortipy.domain.types import (
+from sortipy.domain.model import (
     Artist,
     ArtistRole,
-    CanonicalEntity,
-    CanonicalEntityType,
+    EntityType,
     ExternalNamespace,
+    IdentifiedEntity,
+    PlayEvent,
+    Provenanced,
+    ProvenanceTracked,
     Recording,
     Release,
     ReleaseSet,
-    Track,
+    User,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from datetime import datetime
+    from uuid import UUID
+
+    from sortipy.domain.model import ExternallyIdentifiable
 
 
 @dataclass(slots=True)
-class BaseNormalizationData[TEntity: CanonicalEntity](NormalizationData[TEntity]):
-    priority_keys: tuple[deterministic_key, ...] = field(init=False)
+class BaseNormalizationData[TEntity: IdentifiedEntity](NormalizationData[TEntity]):
+    priority_keys: NormKeySeq = field(init=False)
 
     @property
-    def _keys(self) -> tuple[deterministic_key, ...]: ...
+    def _keys(self) -> NormKeySeq: ...
 
     def __post_init__(self) -> None:
-        seen: set[deterministic_key] = set()
-        deduped: list[deterministic_key] = []
+        seen: set[NormKey] = set()
+        deduped: list[NormKey] = []
         for key in self._keys:
             if not all(key) or key in seen:
                 continue
@@ -53,7 +60,7 @@ class ArtistNormalizationData(BaseNormalizationData[Artist]):
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[deterministic_key, ...]:
+    def _keys(self) -> NormKeySeq:
         return (
             ("artist:mbid", self.musicbrainz_id),
             ("artist:source-name", _primary_source(self.sources), self.normalized_name),
@@ -69,7 +76,7 @@ class ReleaseSetNormalizationData(BaseNormalizationData[ReleaseSet]):
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[deterministic_key, ...]:
+    def _keys(self) -> NormKeySeq:
         return (
             ("release_set:mbid", self.musicbrainz_id),
             (
@@ -94,7 +101,7 @@ class ReleaseNormalizationData(BaseNormalizationData[Release]):
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[deterministic_key, ...]:
+    def _keys(self) -> NormKeySeq:
         return (
             ("release:mbid", self.musicbrainz_id),
             (
@@ -116,7 +123,7 @@ class RecordingNormalizationData(BaseNormalizationData[Recording]):
     musicbrainz_id: str | None
 
     @property
-    def _keys(self) -> tuple[deterministic_key, ...]:
+    def _keys(self) -> NormKeySeq:
         return (
             ("recording:mbid", self.musicbrainz_id),
             (
@@ -136,40 +143,39 @@ class RecordingNormalizationData(BaseNormalizationData[Recording]):
 
 
 @dataclass(slots=True)
-class TrackNormalizationData(BaseNormalizationData[Track]):
-    normalized_title: str | None
-    release_keys: tuple[deterministic_key, ...]
-    recording_keys: tuple[deterministic_key, ...]
-    disc_number: int | None
-    track_number: int | None
-    sources: tuple[str, ...]
+class UserNormalizationData(BaseNormalizationData[User]):
+    normalized_display_name: str | None
+    email: str | None
+    spotify_user_id: str | None
+    lastfm_user: str | None
 
     @property
-    def _keys(self) -> tuple[deterministic_key, ...]:
+    def _keys(self) -> NormKeySeq:
         return (
-            *(
-                (
-                    "track:full",
-                    release_key,
-                    recording_key,
-                    self.disc_number,
-                    self.track_number,
-                    self.normalized_title,
-                )
-                for release_key in self.release_keys
-                for recording_key in self.recording_keys
-            ),
-            *(
-                (
-                    "track:release-recording-title",
-                    release_key,
-                    recording_key,
-                    self.normalized_title,
-                )
-                for release_key in self.release_keys
-                for recording_key in self.recording_keys
-            ),
+            ("user:lastfm", self.lastfm_user),
+            ("user:spotify", self.spotify_user_id),
+            ("user:email", self.email),
+            ("user:display_name", self.normalized_display_name),
         )
+
+
+@dataclass(slots=True)
+class PlayEventNormalizationData(BaseNormalizationData[PlayEvent]):
+    user_id: UUID
+    source: str
+    played_at: datetime
+    recording_id: UUID
+    track_id: UUID | None
+
+    @property
+    def _keys(self) -> NormKeySeq:
+        keys: list[NormKey] = [
+            ("play_event:user-source-played_at", self.user_id, self.source, self.played_at),
+            ("play_event:recording-played_at", self.recording_id, self.played_at),
+        ]
+        if self.track_id is not None:
+            keys.append(("play_event:track-played_at", self.track_id, self.played_at))
+        return tuple(keys)
 
 
 # --- Helpers shared by compute functions -------------------------------------
@@ -195,11 +201,11 @@ def _normalize_text(value: str | None) -> str | None:
     return text or None
 
 
-def _normalize_sources(entity: object) -> tuple[str, ...]:
-    sources = getattr(entity, "sources", None)
-    if not sources:
+def _normalize_sources(entity: Provenanced) -> tuple[str, ...]:
+    provenance = entity.provenance
+    if provenance is None or not provenance.sources:
         return ()
-    return tuple(sorted(provider.value for provider in sources))
+    return tuple(sorted(provider.value for provider in provenance.sources))
 
 
 def _primary_source(sources: tuple[str, ...]) -> str | None:
@@ -208,7 +214,9 @@ def _primary_source(sources: tuple[str, ...]) -> str | None:
     return sources[0]
 
 
-def _external_id_value(entity: CanonicalEntity, namespace: ExternalNamespace | str) -> str | None:
+def _external_id_value(
+    entity: ExternallyIdentifiable, namespace: ExternalNamespace | str
+) -> str | None:
     target_namespace = str(namespace)
     for external_id in entity.external_ids:
         if str(external_id.namespace) == target_namespace:
@@ -220,20 +228,20 @@ def _release_set_primary_artist_name(
     release_set: ReleaseSet,
     state: NormalizationState,
 ) -> str | None:
-    if not release_set.artist_links:
+    if not release_set.contributions:
         return None
     ordered = sorted(
-        release_set.artist_links,
-        key=lambda link: (
-            _ROLE_PRIORITY.get(link.role, 10),
-            link.credit_order if link.credit_order is not None else 10_000,
+        release_set.contributions,
+        key=lambda contribution: (
+            _ROLE_PRIORITY.get(contribution.role, 10),
+            contribution.credit_order if contribution.credit_order is not None else 10_000,
         ),
     )
-    for link in ordered:
-        artist_data = state.fetch(link.artist)
+    for contribution in ordered:
+        artist_data = state.fetch(contribution.artist)
         if artist_data is not None and artist_data.normalized_name:
             return artist_data.normalized_name
-        fallback = _normalize_text(link.artist.name)
+        fallback = _normalize_text(contribution.artist.name)
         if fallback:
             return fallback
     return None
@@ -254,20 +262,20 @@ def _release_artist_name(release: Release, state: NormalizationState) -> str | N
 
 
 def _recording_primary_artist_name(recording: Recording, state: NormalizationState) -> str | None:
-    if not recording.artist_links:
+    if not recording.contributions:
         return None
     ordered = sorted(
-        recording.artist_links,
-        key=lambda link: (
-            _ROLE_PRIORITY.get(link.role, 10),
-            link.credit_order if link.credit_order is not None else 10_000,
+        recording.contributions,
+        key=lambda contribution: (
+            _ROLE_PRIORITY.get(contribution.role, 10),
+            contribution.credit_order if contribution.credit_order is not None else 10_000,
         ),
     )
-    for link in ordered:
-        artist_data = state.fetch(link.artist)
+    for contribution in ordered:
+        artist_data = state.fetch(contribution.artist)
         if artist_data is not None and artist_data.normalized_name:
             return artist_data.normalized_name
-        fallback = _normalize_text(link.artist.name)
+        fallback = _normalize_text(contribution.artist.name)
         if fallback:
             return fallback
     return None
@@ -284,7 +292,7 @@ def _normalize_duration(duration_ms: int | None, *, bucket_ms: int = 2000) -> in
 
 def normalize_artist(
     artist: Artist,
-    _state: NormalizationState | None = None,
+    _state: NormalizationState,
 ) -> ArtistNormalizationData:
     normalized_name = _normalize_text(artist.name)
     sources = _normalize_sources(artist)
@@ -342,32 +350,36 @@ def normalize_recording(
     )
 
 
-def normalize_track(
-    track: Track,
-    state: NormalizationState,
-) -> TrackNormalizationData:
-    base_title = track.title_override or track.recording.title
-    normalized_title = _normalize_text(base_title)
-    release_data = state.fetch(track.release)
-    if not release_data is not None:
-        raise TypeError("Release normalization must run before track normalization")
-    recording_data = state.fetch(track.recording)
-    if not recording_data is not None:
-        raise TypeError("Recording normalization must run before track normalization")
-    return TrackNormalizationData(
-        normalized_title=normalized_title,
-        release_keys=release_data.priority_keys,
-        recording_keys=recording_data.priority_keys,
-        disc_number=track.disc_number or 1,
-        track_number=track.track_number,
-        sources=_normalize_sources(track),
+def normalize_user(
+    user: User,
+    _state: NormalizationState,
+) -> UserNormalizationData:
+    return UserNormalizationData(
+        normalized_display_name=_normalize_text(user.display_name),
+        email=user.email,
+        spotify_user_id=user.spotify_user_id,
+        lastfm_user=user.lastfm_user,
     )
 
 
-# --- Merge policies ----------------------------------------------------------
+def normalize_play_event(
+    play_event: PlayEvent,
+    _state: NormalizationState,
+) -> PlayEventNormalizationData:
+    track = play_event.track
+    return PlayEventNormalizationData(
+        user_id=play_event.user.resolved_id,
+        source=play_event.source.value,
+        played_at=play_event.played_at,
+        recording_id=play_event.recording.resolved_id,
+        track_id=track.resolved_id if track is not None else None,
+    )
 
 
-def merge_artist(primary: Artist, duplicate: Artist) -> None:
+# --- Absorb policies ---------------------------------------------------------
+
+
+def absorb_artist(primary: Artist, duplicate: Artist) -> None:
     _merge_scalar_attributes(
         primary,
         duplicate,
@@ -376,128 +388,75 @@ def merge_artist(primary: Artist, duplicate: Artist) -> None:
     _merge_sources(primary, duplicate)
     _merge_external_ids(primary, duplicate)
 
+    for contribution in list(duplicate.release_set_contributions):
+        contribution.release_set.replace_artist(duplicate, primary)
+    for contribution in list(duplicate.recording_contributions):
+        contribution.recording.replace_artist(duplicate, primary)
 
-def merge_release_set(primary: ReleaseSet, duplicate: ReleaseSet) -> None:
+
+def absorb_release_set(primary: ReleaseSet, duplicate: ReleaseSet) -> None:
     _merge_scalar_attributes(primary, duplicate, ("primary_type",))
     if primary.first_release is None and duplicate.first_release is not None:
         primary.first_release = duplicate.first_release
     _merge_sources(primary, duplicate)
     _merge_external_ids(primary, duplicate)
 
+    duplicate.move_contributions_to(primary)
+    for release in list(duplicate.releases):
+        duplicate.remove_release(release)
+        primary.add_release(release)
 
-def merge_release(primary: Release, duplicate: Release) -> None:
+
+def absorb_release(primary: Release, duplicate: Release) -> None:
     _merge_scalar_attributes(
         primary,
         duplicate,
         ("release_date", "country", "format", "medium_count"),
     )
     if not primary.labels and duplicate.labels:
-        primary.labels = duplicate.labels
+        for label in duplicate.labels:
+            primary.add_label(label)
     _merge_sources(primary, duplicate)
     _merge_external_ids(primary, duplicate)
 
+    duplicate.release_set.remove_release(duplicate)
+    duplicate.move_tracks_to(primary)
 
-def merge_recording(primary: Recording, duplicate: Recording) -> None:
+
+def absorb_recording(primary: Recording, duplicate: Recording) -> None:
     _merge_scalar_attributes(primary, duplicate, ("duration_ms", "version"))
     _merge_sources(primary, duplicate)
     _merge_external_ids(primary, duplicate)
 
+    duplicate.move_contributions_to(primary)
+    duplicate.move_tracks_to(primary)
 
-def merge_track(primary: Track, duplicate: Track) -> None:
+
+def absorb_user(primary: User, duplicate: User) -> None:
     _merge_scalar_attributes(
         primary,
         duplicate,
-        ("disc_number", "track_number", "title_override", "duration_ms"),
+        ("email", "spotify_user_id", "lastfm_user"),
     )
+    if not primary.display_name and duplicate.display_name:
+        primary.display_name = duplicate.display_name
     _merge_sources(primary, duplicate)
-    _merge_external_ids(primary, duplicate)
 
 
-# --- Reference rewriters -----------------------------------------------------
-
-
-def rewire_artist(primary: Artist, duplicate: Artist) -> None:
-    for release_set_link in list(duplicate.release_set_links):
-        if release_set_link.artist is duplicate:
-            release_set_link.artist = primary
-        _ensure_item(primary.release_set_links, release_set_link)
-    duplicate.release_set_links.clear()
-
-    for recording_link in list(duplicate.recording_links):
-        if recording_link.artist is duplicate:
-            recording_link.artist = primary
-        _ensure_item(primary.recording_links, recording_link)
-    duplicate.recording_links.clear()
-
-
-def rewire_release_set(primary: ReleaseSet, duplicate: ReleaseSet) -> None:
-    for release in list(duplicate.releases):
-        release.release_set = primary
-        _ensure_item(primary.releases, release)
-    duplicate.releases.clear()
-
-    for link in list(duplicate.artist_links):
-        link.release_set = primary
-        _ensure_item(primary.artist_links, link)
-    duplicate.artist_links.clear()
-
-
-def rewire_release(primary: Release, duplicate: Release) -> None:
-    release_set = primary.release_set or duplicate.release_set
-    _replace_item(release_set.releases, duplicate, primary)
-    primary.release_set = release_set
-    duplicate.release_set = release_set
-
-    for track in list(duplicate.tracks):
-        track.release = primary
-        _ensure_item(primary.tracks, track)
-    duplicate.tracks.clear()
-
-
-def rewire_recording(primary: Recording, duplicate: Recording) -> None:
-    for track in list(duplicate.tracks):
-        track.recording = primary
-        _ensure_item(primary.tracks, track)
-    duplicate.tracks.clear()
-
-    for play_event in list(duplicate.play_events):
-        play_event.recording = primary
-        _ensure_item(primary.play_events, play_event)
-    duplicate.play_events.clear()
-
-    for link in list(duplicate.artist_links):
-        link.recording = primary
-        _ensure_item(primary.artist_links, link)
-    duplicate.artist_links.clear()
-
-
-def rewire_track(primary: Track, duplicate: Track) -> None:
-    source_release = duplicate.release
-    target_release = primary.release
-    _replace_item(source_release.tracks, duplicate, primary)
-    if target_release is not source_release:
-        _ensure_item(target_release.tracks, primary)
-    duplicate.release = target_release
-
-    source_recording = duplicate.recording
-    target_recording = primary.recording
-    _replace_item(source_recording.tracks, duplicate, primary)
-    if target_recording is not source_recording:
-        _ensure_item(target_recording.tracks, primary)
-    duplicate.recording = target_recording
-
-    for play_event in list(duplicate.play_events):
-        play_event.track = primary
-        _ensure_item(primary.play_events, play_event)
-    duplicate.play_events.clear()
+def absorb_play_event(primary: PlayEvent, duplicate: PlayEvent) -> None:
+    if primary.track is None and duplicate.track is not None:
+        primary.user.link_play_to_track(primary, duplicate.track)
+    if primary.duration_ms is None and duplicate.duration_ms is not None:
+        primary.duration_ms = duplicate.duration_ms
+    _merge_sources(primary, duplicate)
 
 
 # --- Shared merge helpers ----------------------------------------------------
 
 
 def _merge_scalar_attributes(
-    primary: CanonicalEntity,
-    duplicate: CanonicalEntity,
+    primary: object,
+    duplicate: object,
     attributes: tuple[str, ...],
 ) -> None:
     for attribute in attributes:
@@ -507,81 +466,73 @@ def _merge_scalar_attributes(
                 setattr(primary, attribute, value)
 
 
-def _merge_sources(primary: CanonicalEntity, duplicate: CanonicalEntity) -> None:
-    primary.sources.update(duplicate.sources)
+def _merge_sources(primary: ProvenanceTracked, duplicate: Provenanced) -> None:
+    provenance = duplicate.provenance
+    if provenance is None:
+        return
+    for source in provenance.sources:
+        primary.add_source(source)
 
 
-def _merge_external_ids(primary: CanonicalEntity, duplicate: CanonicalEntity) -> None:
+def _merge_external_ids(primary: ExternallyIdentifiable, duplicate: ExternallyIdentifiable) -> None:
     existing = {(external_id.namespace, external_id.value) for external_id in primary.external_ids}
     for external_id in duplicate.external_ids:
         key = (external_id.namespace, external_id.value)
-        if key not in existing:
-            primary.external_ids.append(external_id)
-            existing.add(key)
-
-
-def _ensure_item[T](sequence: list[T], item: T) -> None:
-    if any(existing is item for existing in sequence):
-        return
-    sequence.append(item)
-
-
-def _replace_item[T](sequence: list[T], old: T, new: T | None) -> None:
-    for index, current in enumerate(sequence):
-        if current is old:
-            if new is None:
-                sequence.pop(index)
-            else:
-                sequence[index] = new
-            return
+        if key in existing:
+            continue
+        primary.add_external_id(
+            external_id.namespace,
+            external_id.value,
+            provider=external_id.provider,
+        )
+        existing.add(key)
 
 
 # --- Registry ---------------------------------------------------------------
 
 
 @dataclass(slots=True)
-class EntityOps[TEntity: CanonicalEntity]:
+class EntityOps[TEntity: IdentifiedEntity]:
     data_type: type[NormalizationData[TEntity]]
     normalize: Callable[[TEntity, NormalizationState], NormalizationData[TEntity]]
-    merge: Callable[[TEntity, TEntity], None]
-    rewire: Callable[[TEntity, TEntity], None]
+    absorb: Callable[[TEntity, TEntity], None]
 
 
-_REGISTRY: dict[CanonicalEntityType, EntityOps[Any]] = {
-    CanonicalEntityType.ARTIST: EntityOps(
+_REGISTRY: dict[EntityType, EntityOps[Any]] = {
+    EntityType.ARTIST: EntityOps(
         data_type=ArtistNormalizationData,
         normalize=normalize_artist,
-        merge=merge_artist,
-        rewire=rewire_artist,
+        absorb=absorb_artist,
     ),
-    CanonicalEntityType.RELEASE_SET: EntityOps(
+    EntityType.RELEASE_SET: EntityOps(
         data_type=ReleaseSetNormalizationData,
         normalize=normalize_release_set,
-        merge=merge_release_set,
-        rewire=rewire_release_set,
+        absorb=absorb_release_set,
     ),
-    CanonicalEntityType.RELEASE: EntityOps(
+    EntityType.RELEASE: EntityOps(
         data_type=ReleaseNormalizationData,
         normalize=normalize_release,
-        merge=merge_release,
-        rewire=rewire_release,
+        absorb=absorb_release,
     ),
-    CanonicalEntityType.RECORDING: EntityOps(
+    EntityType.RECORDING: EntityOps(
         data_type=RecordingNormalizationData,
         normalize=normalize_recording,
-        merge=merge_recording,
-        rewire=rewire_recording,
+        absorb=absorb_recording,
     ),
-    CanonicalEntityType.TRACK: EntityOps(
-        data_type=TrackNormalizationData,
-        normalize=normalize_track,
-        merge=merge_track,
-        rewire=rewire_track,
+    EntityType.USER: EntityOps(
+        data_type=UserNormalizationData,
+        normalize=normalize_user,
+        absorb=absorb_user,
+    ),
+    EntityType.PLAY_EVENT: EntityOps(
+        data_type=PlayEventNormalizationData,
+        normalize=normalize_play_event,
+        absorb=absorb_play_event,
     ),
 }
 
 
-def ops_for[TEntity: CanonicalEntity](entity: TEntity) -> EntityOps[TEntity]:
+def ops_for[TEntity: IdentifiedEntity](entity: TEntity) -> EntityOps[TEntity]:
     try:
         return _REGISTRY[entity.entity_type]
     except KeyError as exc:

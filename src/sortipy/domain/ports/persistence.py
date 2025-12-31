@@ -4,20 +4,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from sortipy.domain.types import (
+from sortipy.domain.model import (
     Artist,
-    CanonicalEntity,
+    ExternallyIdentifiable,
     Label,
     Namespace,
     PlayEvent,
+    Provider,
     Recording,
     Release,
     ReleaseSet,
-    Track,
+    User,
 )
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from uuid import UUID
 
 
 @runtime_checkable
@@ -31,13 +33,15 @@ class Repository[TEntity](Protocol):
 class PlayEventRepository(Repository[PlayEvent], Protocol):
     """Persistence contract for play events."""
 
-    def exists(self, timestamp: datetime) -> bool: ...
+    def exists(self, *, user_id: UUID, source: Provider, played_at: datetime) -> bool: ...
 
     def latest_timestamp(self) -> datetime | None: ...
 
 
 @runtime_checkable
-class CanonicalEntityRepository[TCanonical: CanonicalEntity](Repository[TCanonical], Protocol):
+class CanonicalEntityRepository[TCanonical: ExternallyIdentifiable](
+    Repository[TCanonical], Protocol
+):
     """Repository contract for canonical catalog aggregates."""
 
     def get_by_external_id(self, namespace: Namespace, value: str) -> TCanonical | None: ...
@@ -64,10 +68,10 @@ class RecordingRepository(CanonicalEntityRepository[Recording], Protocol):
 
 
 @runtime_checkable
-class TrackRepository(CanonicalEntityRepository[Track], Protocol):
-    """Repository contract for tracks."""
+class LabelRepository(CanonicalEntityRepository[Label], Protocol):
+    """Repository contract for labels."""
 
 
 @runtime_checkable
-class LabelRepository(CanonicalEntityRepository[Label], Protocol):
-    """Repository contract for labels."""
+class UserRepository(Repository[User], Protocol):
+    """Repository contract for users."""

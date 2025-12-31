@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence  # noqa: TC003
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
@@ -13,10 +13,11 @@ from sortipy.adapters.lastfm import (
     TrackPayload,
     parse_play_event,
 )
-from sortipy.adapters.lastfm.translator import parse_play_event_model
 from sortipy.common.config import LastFmConfig, MissingConfigurationError
-from sortipy.domain.model.enums import Provider as ModelProvider
-from sortipy.domain.types import Provider
+from sortipy.domain.model import Provider
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 
 def _make_client_factory(
@@ -63,8 +64,8 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
     release = track.release
     release_set = release.release_set
     recording = event.recording
-    assert recording.artist_links
-    artist = recording.artist_links[0].artist
+    assert recording.contributions
+    artist = recording.contributions[0].artist
 
     assert event.source is Provider.LASTFM
     assert recording.title == validated.name
@@ -74,14 +75,18 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
     assert artist.name == validated.artist.name
     assert track in release.tracks
     assert release in release_set.releases
-    assert track in recording.tracks
-    assert event in track.play_events
-    assert event in recording.play_events
-    assert Provider.LASTFM in track.sources
-    assert Provider.LASTFM in release.sources
-    assert Provider.LASTFM in recording.sources
-    assert Provider.LASTFM in release_set.sources
-    assert Provider.LASTFM in artist.sources
+    assert track in recording.release_tracks
+    assert event.recording is recording
+    assert track.provenance is not None
+    assert Provider.LASTFM in track.provenance.sources
+    assert release.provenance is not None
+    assert Provider.LASTFM in release.provenance.sources
+    assert recording.provenance is not None
+    assert Provider.LASTFM in recording.provenance.sources
+    assert release_set.provenance is not None
+    assert Provider.LASTFM in release_set.provenance.sources
+    assert artist.provenance is not None
+    assert Provider.LASTFM in artist.provenance.sources
     assert {eid.namespace for eid in artist.external_ids} == {"musicbrainz:artist", "lastfm:artist"}
     assert {eid.namespace for eid in release_set.external_ids} == {"musicbrainz:release-group"}
     assert {eid.namespace for eid in release.external_ids} == {"musicbrainz:release"}
@@ -94,7 +99,7 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
 def test_parse_play_event_model_creates_domain_model_entities(
     sample_payload: dict[str, object],
 ) -> None:
-    event = parse_play_event_model(sample_payload)
+    event = parse_play_event(sample_payload)
     validated = TrackPayload.model_validate(sample_payload)
 
     track = event.track
@@ -104,13 +109,13 @@ def test_parse_play_event_model_creates_domain_model_entities(
     recording = event.recording
     user = event.user
 
-    assert event.source is ModelProvider.LASTFM
+    assert event.source is Provider.LASTFM
     assert recording.title == validated.name
     assert release.title == validated.album.title
     assert release_set.title == validated.album.title
 
     assert event in user.play_events
-    assert event in recording.play_events
+    assert event.recording is recording
 
     assert recording.artists
     artist = recording.artists[0]
@@ -119,15 +124,15 @@ def test_parse_play_event_model_creates_domain_model_entities(
     assert release_set.artists[0] is artist
 
     assert artist.provenance is not None
-    assert ModelProvider.LASTFM in artist.provenance.sources
+    assert Provider.LASTFM in artist.provenance.sources
     assert release_set.provenance is not None
-    assert ModelProvider.LASTFM in release_set.provenance.sources
+    assert Provider.LASTFM in release_set.provenance.sources
     assert release.provenance is not None
-    assert ModelProvider.LASTFM in release.provenance.sources
+    assert Provider.LASTFM in release.provenance.sources
     assert recording.provenance is not None
-    assert ModelProvider.LASTFM in recording.provenance.sources
+    assert Provider.LASTFM in recording.provenance.sources
     assert track.provenance is not None
-    assert ModelProvider.LASTFM in track.provenance.sources
+    assert Provider.LASTFM in track.provenance.sources
 
     assert {str(eid.namespace) for eid in artist.external_ids} == {
         "musicbrainz:artist",

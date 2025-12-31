@@ -47,11 +47,19 @@ class ExternalID:
     namespace: Namespace
     value: str
 
-    owner_type: EntityType
-    owner_id: UUID
+    _owner_type: EntityType
+    _owner_id: UUID
 
     provider: Provider | None = None
     created_at: datetime | None = None
+
+    @property
+    def owner_type(self) -> EntityType:
+        return self._owner_type
+
+    @property
+    def owner_id(self) -> UUID:
+        return self._owner_id
 
 
 class ExternalIdCollection(Protocol):
@@ -106,8 +114,8 @@ class ExternallyIdentifiableMixin(Entity, ABC):
         ext = ExternalID(
             namespace=namespace,
             value=value,
-            owner_type=self.entity_type,
-            owner_id=self.resolved_id,
+            _owner_type=self.entity_type,
+            _owner_id=self.resolved_id,
             provider=resolved_provider,
         )
         if replace:

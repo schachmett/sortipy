@@ -14,7 +14,6 @@ if TYPE_CHECKING:
         RecordingRepository,
         ReleaseRepository,
         ReleaseSetRepository,
-        TrackRepository,
     )
 
 
@@ -53,7 +52,6 @@ class PlayEventRepositories(RepositoryCollection):
     release_sets: ReleaseSetRepository
     releases: ReleaseRepository
     recordings: RecordingRepository
-    tracks: TrackRepository
 
 
 type PlayEventUnitOfWork = UnitOfWork[PlayEventRepositories]

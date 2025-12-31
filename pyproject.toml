@@ -111,7 +111,7 @@ lint.select = [
     # "DOC", # no docstring linting
     "RUF",
 ]
-lint.fixable = ["TC003"]
+lint.extend-fixable = ["TC003"]
 lint.ignore = [
     "G004",   # log with f-strings
     "TRY003", # use f-strings in exception constructors

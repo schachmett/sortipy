@@ -262,7 +262,7 @@ At the end of the UnitOfWork:
 When Codex works on this codebase:
 
 * Always fetch all **relevant source files** before reasoning:
-  * `src/sortipy/domain/types.py` (entity definitions)
+  * `src/sortipy/domain/model/` (entity definitions)
   * `src/sortipy/domain/ports/` (ports for persistence, unit of work and data fetching)
   * `src/sortipy/adapters/sqlalchemy/` (implementation for persistence and uow ports)
   * `src/sortipy/adapters/lastfm/` (implementation for fetcher port)

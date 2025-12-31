@@ -5,12 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sortipy.domain.ingest_pipeline.entity_ops import ops_for
-from sortipy.domain.ingest_pipeline.orchestrator import PipelineContext, PipelinePhase
-from sortipy.domain.types import CanonicalEntity
+from sortipy.domain.ingest_pipeline.orchestrator import PipelinePhase
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.orchestrator import IngestGraph
-    from sortipy.domain.ingest_pipeline.state import NormalizationState, deterministic_key
+    from sortipy.domain.ingest_pipeline.context import (
+        IngestGraph,
+        NormalizationState,
+        NormKey,
+        PipelineContext,
+    )
+    from sortipy.domain.model import IdentifiedEntity
 
 
 class DeduplicationPhase(PipelinePhase):
@@ -27,14 +31,15 @@ class DeduplicationPhase(PipelinePhase):
         context.dedup_collapsed += self._deduplicate_entities(graph.release_sets, state)
         context.dedup_collapsed += self._deduplicate_entities(graph.releases, state)
         context.dedup_collapsed += self._deduplicate_entities(graph.recordings, state)
-        context.dedup_collapsed += self._deduplicate_entities(graph.tracks, state)
+        context.dedup_collapsed += self._deduplicate_entities(graph.users, state)
+        context.dedup_collapsed += self._deduplicate_entities(graph.play_events, state)
 
-    def _deduplicate_entities[TEntity: CanonicalEntity](
+    def _deduplicate_entities[TEntity: IdentifiedEntity](
         self,
         entities: list[TEntity],
         state: NormalizationState,
     ) -> int:
-        key_index: dict[deterministic_key, TEntity] = {}
+        key_index: dict[NormKey, TEntity] = {}
         survivors: list[TEntity] = []
         collapsed = 0
 
@@ -47,11 +52,11 @@ class DeduplicationPhase(PipelinePhase):
         entities[:] = survivors
         return collapsed
 
-    def _deduplicate_entity[TEntity: CanonicalEntity](
+    def _deduplicate_entity[TEntity: IdentifiedEntity](
         self,
         entity: TEntity,
         state: NormalizationState,
-        key_index: dict[deterministic_key, TEntity],
+        key_index: dict[NormKey, TEntity],
     ) -> bool:
         """Return False if the entity is new and survives. Return True if it was deduplicated."""
         ops = ops_for(entity)
@@ -70,20 +75,15 @@ class DeduplicationPhase(PipelinePhase):
             _register_keys(key_index, entity, keys)
             return False
 
-        ops.merge(primary, entity)
-        ops.rewire(primary, entity)
+        ops.absorb(primary, entity)
         state.remove(entity)
-        # data = ops.normalize(primary, state)
-        # state.store(primary, data)
-        # _register_keys(key_index, primary, data.priority_keys)
-        # collapsed += 1
         return True
 
 
-def _register_keys[TEntity: CanonicalEntity](
-    mapping: dict[deterministic_key, TEntity],
+def _register_keys[TEntity: IdentifiedEntity](
+    mapping: dict[NormKey, TEntity],
     entity: TEntity,
-    keys: tuple[deterministic_key, ...],
+    keys: tuple[NormKey, ...],
 ) -> None:
     for key in keys:
         mapping[key] = entity

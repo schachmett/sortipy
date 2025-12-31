@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session  # noqa: TC002
 
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
 from sortipy.adapters.sqlalchemy.sidecar_mappings import normalization_sidecar_table
-from sortipy.domain.ingest_pipeline.state import NormalizationData
-from sortipy.domain.types import Artist, CanonicalEntity, CanonicalEntityType
+from sortipy.domain.ingest_pipeline.context import NormalizationData
+from sortipy.domain.model import Artist, EntityType
 
 
 @dataclass(slots=True)
-class _Data(NormalizationData[CanonicalEntity]):
+class _Data(NormalizationData[Artist]):
     priority_keys: tuple[tuple[object, ...], ...]
 
 
@@ -35,7 +35,7 @@ def test_save_and_find_by_keys(sqlite_session: Session) -> None:
     assert len(rows) == 2
 
     found = repo.find_by_keys(
-        CanonicalEntityType.ARTIST,
+        EntityType.ARTIST,
         (("artist:mbid", "mbid-1"), ("artist:name", "radiohead")),
     )
 
@@ -54,5 +54,5 @@ def test_save_ignores_empty_keys(sqlite_session: Session) -> None:
     repo.save(artist, data)
     sqlite_session.flush()
 
-    found = repo.find_by_keys(CanonicalEntityType.ARTIST, (("artist:name", "empty"),))
+    found = repo.find_by_keys(EntityType.ARTIST, (("artist:name", "empty"),))
     assert found == {}

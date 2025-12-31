@@ -4,24 +4,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from logging import getLogger
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from sortipy.domain.ingest_pipeline.entity_ops import EntityOps, ops_for
-from sortipy.domain.ingest_pipeline.orchestrator import PipelineContext, PipelinePhase
-from sortipy.domain.types import CanonicalEntity
+from sortipy.domain.ingest_pipeline.orchestrator import PipelinePhase
+from sortipy.domain.model import ExternallyIdentifiable, IdentifiedEntity
 
 if TYPE_CHECKING:
+    from sortipy.domain.ingest_pipeline.context import (
+        IngestGraph,
+        NormalizationData,
+        NormalizationState,
+        PipelineContext,
+    )
     from sortipy.domain.ingest_pipeline.ingest_ports import NormalizationSidecarRepository
-    from sortipy.domain.ingest_pipeline.orchestrator import IngestGraph
-    from sortipy.domain.ingest_pipeline.state import NormalizationData, NormalizationState
     from sortipy.domain.ports.persistence import CanonicalEntityRepository
 
 
 log = getLogger(__name__)
 
 
+class CanonicalizableEntity(IdentifiedEntity, ExternallyIdentifiable, Protocol): ...
+
+
 @dataclass(slots=True)
-class _Resolver[TEntity: CanonicalEntity]:
+class _Resolver[TEntity: CanonicalizableEntity]:
     """Resolve a single ingest entity against the canonical catalog."""
 
     entity: TEntity
@@ -81,8 +88,7 @@ class _Resolver[TEntity: CanonicalEntity]:
     def _merge_into(self, target: TEntity) -> None:
         if target is self.entity:
             return
-        self.ops.merge(target, self.entity)
-        self.ops.rewire(target, self.entity)
+        self.ops.absorb(target, self.entity)
         self.sidecars.save(target, self.data)
 
     def _persist_new(self) -> None:
@@ -111,11 +117,10 @@ class CanonicalizationPhase(PipelinePhase):
         _resolve_entities(graph.release_sets, state, repos.release_sets, sidecars)
         _resolve_entities(graph.releases, state, repos.releases, sidecars)
         _resolve_entities(graph.recordings, state, repos.recordings, sidecars)
-        _resolve_entities(graph.tracks, state, repos.tracks, sidecars)
         uow.commit()
 
 
-def _resolve_entities[TEntity: CanonicalEntity](
+def _resolve_entities[TEntity: CanonicalizableEntity](
     entities: list[TEntity],
     state: NormalizationState,
     repo: CanonicalEntityRepository[TEntity],

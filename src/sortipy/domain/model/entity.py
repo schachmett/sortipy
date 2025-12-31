@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
-    from sortipy.domain.model.enums import EntityType
+    from sortipy.domain.model import EntityType
 
 
 def new_id() -> UUID:
@@ -19,7 +19,7 @@ def new_id() -> UUID:
 
 
 @runtime_checkable
-class EntityRef(Protocol):
+class IdentifiedEntity(Protocol):
     """Reference to a typed entity using its stable (resolved) identity."""
 
     @property
@@ -71,7 +71,7 @@ class CanonicalizableMixin(Entity, ABC):
         """Mark this entity as canonical (no pointer)."""
         self._canonical_id = None
 
-    def point_to_canonical(self, canonical: EntityRef) -> None:
+    def point_to_canonical(self, canonical: IdentifiedEntity) -> None:
         """Point this entity at a canonical/root identity.
 
         This is the core domain operation for merge/canonicalization.

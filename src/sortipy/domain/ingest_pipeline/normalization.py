@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sortipy.domain.ingest_pipeline.context import NormalizationState, PipelineContext
 from sortipy.domain.ingest_pipeline.entity_ops import ops_for
-from sortipy.domain.ingest_pipeline.orchestrator import PipelineContext, PipelinePhase
-from sortipy.domain.ingest_pipeline.state import NormalizationState
+from sortipy.domain.ingest_pipeline.orchestrator import PipelinePhase
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from sortipy.domain.ingest_pipeline.orchestrator import IngestGraph
-    from sortipy.domain.types import CanonicalEntity
+    from sortipy.domain.ingest_pipeline.context import IngestGraph
+    from sortipy.domain.model import IdentifiedEntity
 
 
 class NormalizationPhase(PipelinePhase):
@@ -28,11 +28,12 @@ class NormalizationPhase(PipelinePhase):
         context.normalized_entities_count += self._normalize_batch(graph.release_sets, state)
         context.normalized_entities_count += self._normalize_batch(graph.releases, state)
         context.normalized_entities_count += self._normalize_batch(graph.recordings, state)
-        context.normalized_entities_count += self._normalize_batch(graph.tracks, state)
+        context.normalized_entities_count += self._normalize_batch(graph.users, state)
+        context.normalized_entities_count += self._normalize_batch(graph.play_events, state)
 
     def _normalize_batch(
         self,
-        entities: Iterable[CanonicalEntity],
+        entities: Iterable[IdentifiedEntity],
         state: NormalizationState,
     ) -> int:
         count = 0

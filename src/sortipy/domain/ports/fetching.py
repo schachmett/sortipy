@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from datetime import datetime
 
-    from sortipy.domain.types import PlayEvent
+    from sortipy.domain.model import PlayEvent
 
 
 @dataclass(slots=True)

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
 from functools import cache
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from sqlalchemy import (
     Column,
@@ -25,34 +26,33 @@ from sqlalchemy import (
     func,
     orm,
 )
-from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import composite, configure_mappers, relationship
 
-from sortipy.domain.types import (
+from sortipy.domain.model import (
     Artist,
-    CanonicalEntity,
-    CanonicalEntityType,
+    ArtistRole,
     EntityMerge,
+    EntityType,
     ExternalID,
+    IdentifiedEntity,
     Label,
     LibraryItem,
     MergeReason,
     PartialDate,
     PlayEvent,
+    Provenance,
     Provider,
     Recording,
-    RecordingArtist,
+    RecordingContribution,
     Release,
     ReleaseSet,
-    ReleaseSetArtist,
+    ReleaseSetContribution,
     ReleaseSetType,
-    Track,
+    ReleaseTrack,
     User,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from sqlalchemy.engine import Engine
 
 log = logging.getLogger(__name__)
@@ -79,6 +79,32 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
+class ProviderSetType(TypeDecorator[set[Provider]]):
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: set[Provider] | None, dialect: Dialect) -> str | None:
+        _ = dialect
+        if value is None:
+            return None
+        payload = sorted(source.value for source in value)
+        return json.dumps(payload)
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> set[Provider]:
+        _ = dialect
+        if value is None:
+            return set()
+        loaded = json.loads(value)
+        if not isinstance(loaded, list):
+            return set()
+        items = cast(list[Any], loaded)
+        providers: set[Provider] = set()
+        for item in items:
+            if isinstance(item, str):
+                providers.add(Provider(item))
+        return providers
+
+
 mapper_registry = orm.registry()
 mapper_registry.metadata.naming_convention = {
     "ix": "ix_%(column_0_label)s",
@@ -94,10 +120,7 @@ artist_table = Table(
     "artist",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
-    Column("canonical_id", UUIDColumnType, nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
+    Column("canonical_id", UUIDColumnType, key="_canonical_id", nullable=True),
     Column("name", String, nullable=False),
     Column("sort_name", String, nullable=True),
     Column("country", String(3), nullable=True),
@@ -109,10 +132,7 @@ label_table = Table(
     "label",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
-    Column("canonical_id", UUIDColumnType, nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
+    Column("canonical_id", UUIDColumnType, key="_canonical_id", nullable=True),
     Column("name", String, nullable=False),
     Column("country", String(3), nullable=True),
 )
@@ -121,10 +141,7 @@ release_set_table = Table(
     "release_set",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
-    Column("canonical_id", UUIDColumnType, nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
+    Column("canonical_id", UUIDColumnType, key="_canonical_id", nullable=True),
     Column("title", String, nullable=False),
     Column("primary_type", Enum(ReleaseSetType, native_enum=False), nullable=True),
     Column("first_release_year", Integer, nullable=True),
@@ -136,12 +153,14 @@ release_table = Table(
     "release",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
-    Column("canonical_id", UUIDColumnType, nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
+    Column("canonical_id", UUIDColumnType, key="_canonical_id", nullable=True),
     Column("title", String, nullable=False),
-    Column("release_set_id", UUIDColumnType, ForeignKey("release_set.id"), nullable=False),
+    Column(
+        "release_set_id",
+        UUIDColumnType,
+        ForeignKey("release_set.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("release_year", Integer, nullable=True),
     Column("release_month", Integer, nullable=True),
     Column("release_day", Integer, nullable=True),
@@ -161,8 +180,8 @@ release_label_table = Table(
     ),
 )
 
-release_set_artist_table = Table(
-    "release_set_artist",
+release_set_contribution_table = Table(
+    "release_set_contribution",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
     Column(
@@ -174,25 +193,24 @@ release_set_artist_table = Table(
     Column(
         "artist_id", UUIDColumnType, ForeignKey("artist.id", ondelete="CASCADE"), nullable=False
     ),
-    Column("role", String, nullable=True),
+    Column("role", Enum(ArtistRole, native_enum=False), nullable=True),
     Column("credit_order", Integer, nullable=True),
+    Column("credited_as", String, nullable=True),
+    Column("join_phrase", String, nullable=True),
 )
 
 recording_table = Table(
     "recording",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
-    Column("canonical_id", UUIDColumnType, nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
+    Column("canonical_id", UUIDColumnType, key="_canonical_id", nullable=True),
     Column("title", String, nullable=False),
     Column("duration_ms", Integer, nullable=True),
     Column("version", String, nullable=True),
 )
 
-recording_artist_table = Table(
-    "recording_artist",
+recording_contribution_table = Table(
+    "recording_contribution",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
     Column(
@@ -204,21 +222,28 @@ recording_artist_table = Table(
     Column(
         "artist_id", UUIDColumnType, ForeignKey("artist.id", ondelete="CASCADE"), nullable=False
     ),
-    Column("role", String, nullable=True),
+    Column("role", Enum(ArtistRole, native_enum=False), nullable=True),
     Column("instrument", String, nullable=True),
     Column("credit_order", Integer, nullable=True),
+    Column("credited_as", String, nullable=True),
 )
 
-track_table = Table(
-    "track",
+release_track_table = Table(
+    "release_track",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
-    Column("canonical_id", UUIDColumnType, nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
-    Column("release_id", UUIDColumnType, ForeignKey("release.id"), nullable=False),
-    Column("recording_id", UUIDColumnType, ForeignKey("recording.id"), nullable=False),
+    Column(
+        "release_id",
+        UUIDColumnType,
+        ForeignKey("release.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "recording_id",
+        UUIDColumnType,
+        ForeignKey("recording.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("disc_number", Integer, nullable=True),
     Column("track_number", Integer, nullable=True),
     Column("title_override", String, nullable=True),
@@ -229,14 +254,10 @@ user_table = Table(
     "user_account",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
     Column("display_name", String, nullable=False),
     Column("email", String, nullable=True),
     Column("spotify_user_id", String, nullable=True),
     Column("lastfm_user", String, nullable=True),
-    Column("created_at", UTCDateTime(), nullable=True),
-    Column("updated_at", UTCDateTime(), nullable=True),
 )
 
 library_item_table = Table(
@@ -246,32 +267,32 @@ library_item_table = Table(
     Column(
         "user_id", UUIDColumnType, ForeignKey("user_account.id", ondelete="CASCADE"), nullable=False
     ),
-    Column("entity_type", Enum(CanonicalEntityType, native_enum=False), nullable=False),
-    Column("entity_id", UUIDColumnType, nullable=False),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
+    Column("target_type", Enum(EntityType, native_enum=False), key="_target_type", nullable=False),
+    Column("target_id", UUIDColumnType, key="_target_id", nullable=False),
     Column("source", Enum(Provider, native_enum=False), nullable=True),
     Column("saved_at", UTCDateTime(), nullable=True),
-    UniqueConstraint("user_id", "entity_type", "entity_id", name="uq_library_item_entity"),
+    UniqueConstraint("user_id", "_target_type", "_target_id", name="uq_library_item_entity"),
 )
 
 play_event_table = Table(
     "play_event",
     mapper_registry.metadata,
-    Column("played_at", UTCDateTime(), primary_key=True),
-    Column("raw_payload_id", UUIDColumnType, nullable=True),
-    Column("ingested_at", UTCDateTime(), nullable=False, server_default=func.now()),
+    Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
+    Column(
+        "user_id", UUIDColumnType, ForeignKey("user_account.id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("played_at", UTCDateTime(), nullable=False),
     Column("source", Enum(Provider, native_enum=False), nullable=False),
-    Column("recording_id", UUIDColumnType, ForeignKey("recording.id"), nullable=False),
-    Column("track_id", UUIDColumnType, ForeignKey("track.id"), nullable=True),
-    Column("user_id", UUIDColumnType, ForeignKey("user_account.id"), nullable=True),
+    Column("track_id", UUIDColumnType, ForeignKey("release_track.id"), nullable=True),
+    Column("recording_id", UUIDColumnType, ForeignKey("recording.id"), nullable=True),
     Column("duration_ms", Integer, nullable=True),
+    UniqueConstraint("user_id", "source", "played_at", name="uq_play_event_identity"),
 )
 
 entity_merge_table = Table(
     "entity_merge",
     mapper_registry.metadata,
-    Column("entity_type", Enum(CanonicalEntityType, native_enum=False), primary_key=True),
+    Column("entity_type", Enum(EntityType, native_enum=False), primary_key=True),
     Column("source_id", UUIDColumnType, primary_key=True),
     Column("target_id", UUIDColumnType, primary_key=True),
     Column("reason", Enum(MergeReason, native_enum=False), nullable=False),
@@ -285,86 +306,78 @@ external_id_table = Table(
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
     Column("namespace", String, nullable=False),
     Column("value", String, nullable=False),
-    Column("entity_type", Enum(CanonicalEntityType, native_enum=False), nullable=False),
-    Column("entity_id", UUIDColumnType, nullable=False),
+    Column(
+        "owner_type",
+        Enum(EntityType, native_enum=False),
+        key="_owner_type",
+        nullable=False,
+    ),
+    Column("owner_id", UUIDColumnType, key="_owner_id", nullable=False),
     Column("provider", Enum(Provider, native_enum=False), nullable=True),
     Column("created_at", UTCDateTime(), nullable=True, server_default=func.now()),
-    UniqueConstraint("namespace", "value", "entity_type"),
+    UniqueConstraint("namespace", "value", "_owner_type"),
+    Index("ix_external_id_owner", "_owner_type", "_owner_id"),
 )
 
-canonical_source_table = Table(
-    "canonical_source",
+provenance_table = Table(
+    "provenance",
     mapper_registry.metadata,
     Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
-    Column("entity_type", Enum(CanonicalEntityType, native_enum=False), nullable=False),
-    Column("entity_id", UUIDColumnType, nullable=False),
-    Column("provider", Enum(Provider, native_enum=False), nullable=False),
-    UniqueConstraint("entity_type", "entity_id", "provider"),
-    Index("ix_canonical_source_entity", "entity_type", "entity_id"),
+    Column(
+        "owner_type",
+        Enum(EntityType, native_enum=False),
+        key="_owner_type",
+        nullable=False,
+    ),
+    Column("owner_id", UUIDColumnType, key="_owner_id", nullable=False),
+    Column("sources", ProviderSetType(), nullable=False, default=set),
+    UniqueConstraint("_owner_type", "_owner_id"),
+    Index("ix_provenance_owner", "_owner_type", "_owner_id"),
 )
 
-CANONICAL_TYPE_BY_CLASS: Final[dict[type[CanonicalEntity], CanonicalEntityType]] = {
-    Artist: CanonicalEntityType.ARTIST,
-    ReleaseSet: CanonicalEntityType.RELEASE_SET,
-    Release: CanonicalEntityType.RELEASE,
-    Recording: CanonicalEntityType.RECORDING,
-    Track: CanonicalEntityType.TRACK,
-    Label: CanonicalEntityType.LABEL,
+ENTITY_TYPE_BY_CLASS: Final[dict[type[IdentifiedEntity], EntityType]] = {
+    Artist: EntityType.ARTIST,
+    ReleaseSet: EntityType.RELEASE_SET,
+    Release: EntityType.RELEASE,
+    Recording: EntityType.RECORDING,
+    ReleaseTrack: EntityType.RELEASE_TRACK,
+    Label: EntityType.LABEL,
 }
 
-CLASS_BY_CANONICAL_TYPE: Final[dict[CanonicalEntityType, type[CanonicalEntity]]] = {
-    value: key for key, value in CANONICAL_TYPE_BY_CLASS.items()
+CLASS_BY_ENTITY_TYPE: Final[dict[EntityType, type[IdentifiedEntity]]] = {
+    value: key for key, value in ENTITY_TYPE_BY_CLASS.items()
 }
-
-
-class CanonicalSourceLink:
-    def __init__(
-        self,
-        provider: Provider,
-        *,
-        entity_type: CanonicalEntityType,
-    ) -> None:
-        self.provider = provider
-        self.entity_type = entity_type
-
-
-def _source_link_creator(
-    entity_type: CanonicalEntityType,
-) -> Callable[[Provider], CanonicalSourceLink]:
-    def create(provider: Provider) -> CanonicalSourceLink:
-        return CanonicalSourceLink(provider=provider, entity_type=entity_type)
-
-    return create
 
 
 def _external_ids_relationship(
-    entity_table: Table, entity_type: CanonicalEntityType
+    entity_table: Table, entity_type: EntityType
 ) -> orm.RelationshipProperty[ExternalID]:
     return relationship(
         ExternalID,
         cascade="all, delete-orphan",
         primaryjoin=and_(
-            external_id_table.c.entity_id == entity_table.c.id,
-            external_id_table.c.entity_type == entity_type,
+            external_id_table.c._owner_id == entity_table.c.id,  # noqa: SLF001
+            external_id_table.c._owner_type == entity_type,  # noqa: SLF001
         ),
-        foreign_keys=[external_id_table.c.entity_id],
-        overlaps="external_ids",
+        foreign_keys=[external_id_table.c._owner_id],  # noqa: SLF001
+        overlaps="_external_ids",
     )
 
 
-def _sources_relationship(
-    entity_table: Table, entity_type: CanonicalEntityType
-) -> orm.RelationshipProperty[CanonicalSourceLink]:
+def _provenance_relationship(
+    entity_table: Table, entity_type: EntityType
+) -> orm.RelationshipProperty[Provenance]:
     return relationship(
-        CanonicalSourceLink,
+        Provenance,
         cascade="all, delete-orphan",
-        collection_class=set,
         primaryjoin=and_(
-            canonical_source_table.c.entity_id == entity_table.c.id,
-            canonical_source_table.c.entity_type == entity_type,
+            provenance_table.c._owner_id == entity_table.c.id,  # noqa: SLF001
+            provenance_table.c._owner_type == entity_type,  # noqa: SLF001
         ),
-        foreign_keys=[canonical_source_table.c.entity_id],
-        overlaps="source_links",
+        foreign_keys=[provenance_table.c._owner_id],  # noqa: SLF001
+        uselist=False,
+        single_parent=True,
+        overlaps="_provenance",
     )
 
 
@@ -378,17 +391,15 @@ def start_mappers() -> orm.registry:
         Artist,
         artist_table,
         properties={
-            "external_ids": _external_ids_relationship(artist_table, CanonicalEntityType.ARTIST),
-            "source_links": _sources_relationship(artist_table, CanonicalEntityType.ARTIST),
-            "release_set_links": relationship(
-                ReleaseSetArtist,
-                back_populates="artist",
-                cascade="all, delete-orphan",
+            "_external_ids": _external_ids_relationship(artist_table, EntityType.ARTIST),
+            "_provenance": _provenance_relationship(artist_table, EntityType.ARTIST),
+            "_release_set_contributions": relationship(
+                ReleaseSetContribution,
+                back_populates="_artist",
             ),
-            "recording_links": relationship(
-                RecordingArtist,
-                back_populates="artist",
-                cascade="all, delete-orphan",
+            "_recording_contributions": relationship(
+                RecordingContribution,
+                back_populates="_artist",
             ),
         },
     )
@@ -397,21 +408,19 @@ def start_mappers() -> orm.registry:
         ReleaseSet,
         release_set_table,
         properties={
-            "external_ids": _external_ids_relationship(
+            "_external_ids": _external_ids_relationship(
                 release_set_table,
-                CanonicalEntityType.RELEASE_SET,
+                EntityType.RELEASE_SET,
             ),
-            "source_links": _sources_relationship(
-                release_set_table, CanonicalEntityType.RELEASE_SET
-            ),
-            "releases": relationship(
+            "_provenance": _provenance_relationship(release_set_table, EntityType.RELEASE_SET),
+            "_releases": relationship(
                 Release,
-                back_populates="release_set",
+                back_populates="_release_set",
                 cascade="all, delete-orphan",
             ),
-            "artist_links": relationship(
-                ReleaseSetArtist,
-                back_populates="release_set",
+            "_contributions": relationship(
+                ReleaseSetContribution,
+                back_populates="_release_set",
                 cascade="all, delete-orphan",
             ),
             "first_release": composite(
@@ -421,20 +430,42 @@ def start_mappers() -> orm.registry:
                 release_set_table.c.first_release_day,
             ),
         },
-        exclude_properties=set(),
     )
 
     mapper_registry.map_imperatively(
-        ReleaseSetArtist,
-        release_set_artist_table,
+        ReleaseSetContribution,
+        release_set_contribution_table,
         properties={
-            "release_set": relationship(
+            "_release_set": relationship(
                 ReleaseSet,
-                back_populates="artist_links",
+                back_populates="_contributions",
             ),
-            "artist": relationship(
+            "_artist": relationship(
                 Artist,
-                back_populates="release_set_links",
+                back_populates="_release_set_contributions",
+            ),
+            "_provenance": _provenance_relationship(
+                release_set_contribution_table,
+                EntityType.RELEASE_SET_CONTRIBUTION,
+            ),
+        },
+    )
+
+    mapper_registry.map_imperatively(
+        RecordingContribution,
+        recording_contribution_table,
+        properties={
+            "_recording": relationship(
+                Recording,
+                back_populates="_contributions",
+            ),
+            "_artist": relationship(
+                Artist,
+                back_populates="_recording_contributions",
+            ),
+            "_provenance": _provenance_relationship(
+                recording_contribution_table,
+                EntityType.RECORDING_CONTRIBUTION,
             ),
         },
     )
@@ -443,32 +474,20 @@ def start_mappers() -> orm.registry:
         Label,
         label_table,
         properties={
-            "external_ids": _external_ids_relationship(
-                label_table,
-                CanonicalEntityType.LABEL,
-            ),
-            "source_links": _sources_relationship(label_table, CanonicalEntityType.LABEL),
-            "releases": relationship(
-                Release,
-                secondary=release_label_table,
-                back_populates="labels",
-            ),
+            "_external_ids": _external_ids_relationship(label_table, EntityType.LABEL),
+            "_provenance": _provenance_relationship(label_table, EntityType.LABEL),
         },
-        exclude_properties=set(),
     )
 
     mapper_registry.map_imperatively(
         Release,
         release_table,
         properties={
-            "external_ids": _external_ids_relationship(
-                release_table,
-                CanonicalEntityType.RELEASE,
-            ),
-            "source_links": _sources_relationship(release_table, CanonicalEntityType.RELEASE),
-            "release_set": relationship(
+            "_external_ids": _external_ids_relationship(release_table, EntityType.RELEASE),
+            "_provenance": _provenance_relationship(release_table, EntityType.RELEASE),
+            "_release_set": relationship(
                 ReleaseSet,
-                back_populates="releases",
+                back_populates="_releases",
             ),
             "release_date": composite(
                 PartialDate,
@@ -476,167 +495,110 @@ def start_mappers() -> orm.registry:
                 release_table.c.release_month,
                 release_table.c.release_day,
             ),
-            "labels": relationship(
+            "_labels": relationship(
                 Label,
                 secondary=release_label_table,
-                back_populates="releases",
             ),
-            "tracks": relationship(
-                Track,
-                back_populates="release",
+            "_tracks": relationship(
+                ReleaseTrack,
+                back_populates="_release",
                 cascade="all, delete-orphan",
             ),
         },
-        exclude_properties=set(),
     )
 
     mapper_registry.map_imperatively(
         Recording,
         recording_table,
         properties={
-            "external_ids": _external_ids_relationship(
+            "_external_ids": _external_ids_relationship(
                 recording_table,
-                CanonicalEntityType.RECORDING,
+                EntityType.RECORDING,
             ),
-            "source_links": _sources_relationship(recording_table, CanonicalEntityType.RECORDING),
-            "tracks": relationship(
-                Track,
-                back_populates="recording",
+            "_provenance": _provenance_relationship(recording_table, EntityType.RECORDING),
+            "_contributions": relationship(
+                RecordingContribution,
+                back_populates="_recording",
                 cascade="all, delete-orphan",
             ),
-            "play_events": relationship(
-                PlayEvent,
-                back_populates="recording",
-                cascade="all, delete-orphan",
-            ),
-            "artist_links": relationship(
-                RecordingArtist,
-                back_populates="recording",
-                cascade="all, delete-orphan",
-            ),
-        },
-        exclude_properties=set(),
-    )
-
-    mapper_registry.map_imperatively(
-        RecordingArtist,
-        recording_artist_table,
-        properties={
-            "recording": relationship(
-                Recording,
-                back_populates="artist_links",
-            ),
-            "artist": relationship(
-                Artist,
-                back_populates="recording_links",
+            "_release_tracks": relationship(
+                ReleaseTrack,
+                back_populates="_recording",
             ),
         },
     )
 
     mapper_registry.map_imperatively(
-        Track,
-        track_table,
+        ReleaseTrack,
+        release_track_table,
         properties={
-            "external_ids": _external_ids_relationship(
-                track_table,
-                CanonicalEntityType.TRACK,
+            "_external_ids": _external_ids_relationship(
+                release_track_table,
+                EntityType.RELEASE_TRACK,
             ),
-            "source_links": _sources_relationship(track_table, CanonicalEntityType.TRACK),
-            "release": relationship(
+            "_provenance": _provenance_relationship(
+                release_track_table,
+                EntityType.RELEASE_TRACK,
+            ),
+            "_release": relationship(
                 Release,
-                back_populates="tracks",
+                back_populates="_tracks",
             ),
-            "recording": relationship(
+            "_recording": relationship(
                 Recording,
-                back_populates="tracks",
-            ),
-            "play_events": relationship(
-                PlayEvent,
-                back_populates="track",
-                cascade="all, delete-orphan",
+                back_populates="_release_tracks",
             ),
         },
-        exclude_properties=set(),
     )
 
     mapper_registry.map_imperatively(
         LibraryItem,
         library_item_table,
         properties={
-            # ``entity_type``/``entity_id`` carry the polymorphic reference; ``entity`` stays
-            # an optional in-memory convenience resolved by higher layers as needed.
-            "user": relationship(
+            "_user": relationship(
                 User,
-                back_populates="library_items",
+                back_populates="_library_items",
             ),
-            "entity_type": library_item_table.c.entity_type,
-            "entity_id": library_item_table.c.entity_id,
+            "_provenance": _provenance_relationship(library_item_table, EntityType.LIBRARY_ITEM),
         },
-        exclude_properties={"entity"},
+        exclude_properties={"_target"},
     )
 
     mapper_registry.map_imperatively(
         PlayEvent,
         play_event_table,
         properties={
-            "recording": relationship(
+            "_user": relationship(
+                User,
+                back_populates="_play_events",
+            ),
+            "_track": relationship(
+                ReleaseTrack,
+                foreign_keys=[play_event_table.c.track_id],
+            ),
+            "_recording_ref": relationship(
                 Recording,
-                back_populates="play_events",
+                foreign_keys=[play_event_table.c.recording_id],
             ),
-            "track": relationship(
-                Track,
-                back_populates="play_events",
-            ),
-            "user": relationship(User),
+            "_provenance": _provenance_relationship(play_event_table, EntityType.PLAY_EVENT),
         },
-    )
-
-    mapper_registry.map_imperatively(
-        CanonicalSourceLink,
-        canonical_source_table,
-    )
-
-    # Attach association proxies for sources after base relationships exist.
-    Artist.sources = association_proxy(  # type: ignore[assignment]
-        "source_links",
-        "provider",
-        creator=_source_link_creator(CanonicalEntityType.ARTIST),
-    )
-    ReleaseSet.sources = association_proxy(  # type: ignore[assignment]
-        "source_links",
-        "provider",
-        creator=_source_link_creator(CanonicalEntityType.RELEASE_SET),
-    )
-    Label.sources = association_proxy(  # type: ignore[assignment]
-        "source_links",
-        "provider",
-        creator=_source_link_creator(CanonicalEntityType.LABEL),
-    )
-    Release.sources = association_proxy(  # type: ignore[assignment]
-        "source_links",
-        "provider",
-        creator=_source_link_creator(CanonicalEntityType.RELEASE),
-    )
-    Recording.sources = association_proxy(  # type: ignore[assignment]
-        "source_links",
-        "provider",
-        creator=_source_link_creator(CanonicalEntityType.RECORDING),
-    )
-    Track.sources = association_proxy(  # type: ignore[assignment]
-        "source_links",
-        "provider",
-        creator=_source_link_creator(CanonicalEntityType.TRACK),
     )
 
     mapper_registry.map_imperatively(
         User,
         user_table,
         properties={
-            "library_items": relationship(
+            "_library_items": relationship(
                 LibraryItem,
-                back_populates="user",
+                back_populates="_user",
                 cascade="all, delete-orphan",
             ),
+            "_play_events": relationship(
+                PlayEvent,
+                back_populates="_user",
+                cascade="all, delete-orphan",
+            ),
+            "_provenance": _provenance_relationship(user_table, EntityType.USER),
         },
     )
 
@@ -648,6 +610,11 @@ def start_mappers() -> orm.registry:
     mapper_registry.map_imperatively(
         ExternalID,
         external_id_table,
+    )
+
+    mapper_registry.map_imperatively(
+        Provenance,
+        provenance_table,
     )
 
     configure_mappers()

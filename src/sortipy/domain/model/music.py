@@ -66,17 +66,19 @@ class Artist(CanonicalEntity):
     def recordings(self) -> tuple[Recording, ...]:
         return tuple(c.recording for c in self._recording_contributions)
 
-    # Friend primitives (called only by owners)
-    def _attach_release_set_contribution(self, c: ReleaseSetContribution) -> None:
-        self._release_set_contributions.append(c)
+    # Internal primitives (called only by owners)
+    def internal_attach_release_set_contribution(self, c: ReleaseSetContribution) -> None:
+        if c not in self._release_set_contributions:
+            self._release_set_contributions.append(c)
 
-    def _detach_release_set_contribution(self, c: ReleaseSetContribution) -> None:
+    def internal_detach_release_set_contribution(self, c: ReleaseSetContribution) -> None:
         self._release_set_contributions.remove(c)
 
-    def _attach_recording_contribution(self, c: RecordingContribution) -> None:
-        self._recording_contributions.append(c)
+    def internal_attach_recording_contribution(self, c: RecordingContribution) -> None:
+        if c not in self._recording_contributions:
+            self._recording_contributions.append(c)
 
-    def _detach_recording_contribution(self, c: RecordingContribution) -> None:
+    def internal_detach_recording_contribution(self, c: RecordingContribution) -> None:
         self._recording_contributions.remove(c)
 
 
@@ -107,11 +109,18 @@ class ReleaseSet(CanonicalEntity):
         return tuple(c.artist for c in self._contributions)
 
     # Commands (ownership here)
-    def _add_release(self, release: Release) -> None:
+    def add_release(self, release: Release) -> None:
         if release.release_set is not self:
             # keep graph consistent
-            release._set_release_set(self)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
-        self._releases.append(release)
+            release.internal_set_release_set(self)
+        if release not in self._releases:
+            self._releases.append(release)
+
+    def remove_release(self, release: Release) -> None:
+        if release.release_set is not self:
+            raise ValueError("release not owned by this release set")
+        if release in self._releases:
+            self._releases.remove(release)
 
     def create_release(
         self,
@@ -130,7 +139,7 @@ class ReleaseSet(CanonicalEntity):
             format=format_,
             medium_count=medium_count,
         )
-        self._add_release(release)
+        self.add_release(release)
         return release
 
     def add_artist(
@@ -150,15 +159,35 @@ class ReleaseSet(CanonicalEntity):
             credited_as=credited_as,
             join_phrase=join_phrase,
         )
-        self._contributions.append(c)
-        artist._attach_release_set_contribution(c)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        if c not in self._contributions:
+            self._contributions.append(c)
+        artist.internal_attach_release_set_contribution(c)
         return c
+
+    def move_contributions_to(self, new_owner: ReleaseSet) -> None:
+        if new_owner is self:
+            return
+        for c in list(self._contributions):
+            self._contributions.remove(c)
+            c.internal_set_release_set(new_owner)
+            if c not in new_owner._contributions:
+                new_owner._contributions.append(c)
+
+    def replace_artist(self, old: Artist, new: Artist) -> None:
+        if old is new:
+            return
+        for c in list(self._contributions):
+            if c.artist is not old:
+                continue
+            old.internal_detach_release_set_contribution(c)
+            c.internal_set_artist(new)
+            new.internal_attach_release_set_contribution(c)
 
     def remove_artist(self, artist: Artist) -> None:
         for c in list(self._contributions):
             if c.artist is artist:
                 self._contributions.remove(c)
-                artist._detach_release_set_contribution(c)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+                artist.internal_detach_release_set_contribution(c)
                 return
         raise ValueError("artist not linked to this release set")
 
@@ -191,7 +220,7 @@ class Release(CanonicalEntity):
     def release_set(self) -> ReleaseSet:
         return self._release_set
 
-    def _set_release_set(self, rs: ReleaseSet) -> None:
+    def internal_set_release_set(self, rs: ReleaseSet) -> None:
         self._release_set = rs
 
     @property
@@ -224,13 +253,33 @@ class Release(CanonicalEntity):
             title_override=title_override,
             duration_ms=duration_ms,
         )
-        self._tracks.append(t)
-        recording._attach_release_track(t)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        if t not in self._tracks:
+            self._tracks.append(t)
+        recording.internal_attach_release_track(t)
         return t
+
+    def move_tracks_to(self, new_release: Release) -> None:
+        if new_release is self:
+            return
+        for track in list(self._tracks):
+            self._tracks.remove(track)
+            track.internal_set_release(new_release)
+            if track not in new_release._tracks:
+                new_release._tracks.append(track)
+
+    def move_track_to_recording(self, track: ReleaseTrack, recording: Recording) -> None:
+        if track.release is not self:
+            raise ValueError("track not owned by this release")
+        if track.recording is recording:
+            return
+        old_recording = track.recording
+        old_recording.internal_detach_release_track(track)
+        track.internal_set_recording(recording)
+        recording.internal_attach_release_track(track)
 
     def remove_track(self, track: ReleaseTrack) -> None:
         self._tracks.remove(track)
-        track.recording._detach_release_track(track)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        track.recording.internal_detach_release_track(track)
 
     def add_label(self, label: Label) -> None:
         if label not in self._labels:
@@ -256,9 +305,6 @@ class Recording(CanonicalEntity):
     # Backrefs / views (owned by Release via ReleaseTrack)
     _release_tracks: list[ReleaseTrack] = field(default_factory=list["ReleaseTrack"], repr=False)
 
-    # Backrefs for user events (owned by PlayEvent)
-    _play_events: list[PlayEvent] = field(default_factory=list["PlayEvent"], repr=False)
-
     @property
     def contributions(self) -> tuple[RecordingContribution, ...]:
         return tuple(self._contributions)
@@ -274,10 +320,6 @@ class Recording(CanonicalEntity):
     @property
     def releases(self) -> tuple[Release, ...]:
         return tuple(rt.release for rt in self._release_tracks)
-
-    @property
-    def play_events(self) -> tuple[PlayEvent, ...]:
-        return tuple(self._play_events)
 
     # Commands (ownership here)
     def add_artist(
@@ -297,27 +339,51 @@ class Recording(CanonicalEntity):
             credited_as=credited_as,
             instrument=instrument,
         )
-        self._contributions.append(c)
-        artist._attach_recording_contribution(c)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+        if c not in self._contributions:
+            self._contributions.append(c)
+        artist.internal_attach_recording_contribution(c)
         return c
+
+    def move_contributions_to(self, new_recording: Recording) -> None:
+        if new_recording is self:
+            return
+        for c in list(self._contributions):
+            self._contributions.remove(c)
+            c.internal_set_recording(new_recording)
+            if c not in new_recording._contributions:
+                new_recording._contributions.append(c)
+
+    def replace_artist(self, old: Artist, new: Artist) -> None:
+        if old is new:
+            return
+        for c in list(self._contributions):
+            if c.artist is not old:
+                continue
+            old.internal_detach_recording_contribution(c)
+            c.internal_set_artist(new)
+            new.internal_attach_recording_contribution(c)
 
     def remove_artist(self, artist: Artist) -> None:
         for c in list(self._contributions):
             if c.artist is artist:
                 self._contributions.remove(c)
-                artist._detach_recording_contribution(c)  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+                artist.internal_detach_recording_contribution(c)
                 return
         raise ValueError("artist not linked to this recording")
 
-    # Friend primitives
-    def _attach_release_track(self, rt: ReleaseTrack) -> None:
-        self._release_tracks.append(rt)
+    def move_tracks_to(self, new_recording: Recording) -> None:
+        if new_recording is self:
+            return
+        for track in list(self._release_tracks):
+            track.release.move_track_to_recording(track, new_recording)
 
-    def _detach_release_track(self, rt: ReleaseTrack) -> None:
+    def move_play_event_to(self, event: PlayEvent, new_recording: Recording) -> None:
+        event.user.move_play_event_to(event, new_recording)
+
+    # Internal primitives
+    def internal_attach_release_track(self, rt: ReleaseTrack) -> None:
+        if rt not in self._release_tracks:
+            self._release_tracks.append(rt)
+
+    def internal_detach_release_track(self, rt: ReleaseTrack) -> None:
         self._release_tracks.remove(rt)
-
-    def _attach_play_event(self, pe: PlayEvent) -> None:
-        self._play_events.append(pe)
-
-    def _detach_play_event(self, pe: PlayEvent) -> None:
-        self._play_events.remove(pe)

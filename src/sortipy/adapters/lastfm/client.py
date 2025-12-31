@@ -25,7 +25,7 @@ from .translator import parse_play_event
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from sortipy.domain.types import PlayEvent
+    from sortipy.domain.model import PlayEvent
 
 log = getLogger(__name__)
 

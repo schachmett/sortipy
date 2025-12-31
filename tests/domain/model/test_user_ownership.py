@@ -4,9 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sortipy.domain.model.enums import Provider
-from sortipy.domain.model.music import Artist, Recording, Release, ReleaseSet
-from sortipy.domain.model.user import User
+from sortipy.domain.model import Artist, Provider, Recording, Release, ReleaseSet, User
 
 
 def test_user_save_entity_creates_library_item() -> None:
@@ -42,7 +40,6 @@ def test_user_log_play_attaches_event_to_user_and_recording() -> None:
     assert event in user.play_events
     assert event.user is user
     assert event.recording is recording
-    assert event in recording.play_events
 
 
 def test_user_log_play_with_track_sets_track_and_derived_recording() -> None:

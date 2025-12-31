@@ -11,17 +11,14 @@ from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
 from sortipy.adapters.lastfm import LastFmFetcher, RecentTracksResponse
 from sortipy.common.config import LastFmConfig
 from sortipy.domain.data_integration import sync_play_events
-from sortipy.domain.types import (
+from sortipy.domain.model import (
     Artist,
     ArtistRole,
     PlayEvent,
     Provider,
     Recording,
-    RecordingArtist,
-    Release,
     ReleaseSet,
-    ReleaseSetArtist,
-    Track,
+    User,
 )
 from tests.helpers.play_events import FakePlayEventSource
 
@@ -90,34 +87,20 @@ def _make_play_event(
 ) -> PlayEvent:
     artist = Artist(name=artist_name)
     release_set = ReleaseSet(title=f"{artist_name} Collection")
-    release = Release(title=release_title, release_set=release_set)
+    release = release_set.create_release(title=release_title)
     recording = Recording(title=track_name)
-    track = Track(release=release, recording=recording)
+    track = release.add_track(recording)
 
-    release_set.releases.append(release)
-    release_set_artist = ReleaseSetArtist(
-        release_set=release_set,
-        artist=artist,
-        role=ArtistRole.PRIMARY,
-    )
-    release_set.artist_links.append(release_set_artist)
-    artist.release_set_links.append(release_set_artist)
+    release_set.add_artist(artist, role=ArtistRole.PRIMARY)
+    recording.add_artist(artist, role=ArtistRole.PRIMARY)
 
-    release.tracks.append(track)
-    recording.tracks.append(track)
-    recording_artist = RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
-    recording.artist_links.append(recording_artist)
-    artist.recording_links.append(recording_artist)
-
-    play_event = PlayEvent(
+    user = User(display_name="Test User")
+    return user.log_play(
         played_at=timestamp,
         source=Provider.LASTFM,
         recording=recording,
         track=track,
     )
-    recording.play_events.append(play_event)
-    track.play_events.append(play_event)
-    return play_event
 
 
 @pytest.mark.integration
@@ -149,10 +132,10 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
     with sqlite_unit_of_work() as uow:
         persisted = uow.session.execute(select(PlayEvent)).scalars().all()
         artist_names = {
-            link.artist.name
+            contribution.artist.name
             for event in persisted
-            for link in event.recording.artist_links
-            if link.role == ArtistRole.PRIMARY
+            for contribution in event.recording.contributions
+            if contribution.role == ArtistRole.PRIMARY
         }
         track_names = {event.recording.title for event in persisted}
 

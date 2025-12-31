@@ -8,11 +8,10 @@ from typing import TYPE_CHECKING
 from sortipy.domain.ingest_pipeline import (
     CanonicalizationPhase,
     DeduplicationPhase,
-    IngestGraph,
     IngestionPipeline,
     NormalizationPhase,
-    PipelineContext,
 )
+from sortipy.domain.ingest_pipeline.context import IngestGraph, PipelineContext
 from sortipy.domain.ingest_pipeline.orchestrator import ingest_graph_from_events
 
 DEFAULT_SYNC_BATCH_SIZE = 200
@@ -22,9 +21,9 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
+    from sortipy.domain.model import PlayEvent
     from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
     from sortipy.domain.ports.persistence import PlayEventRepository
-    from sortipy.domain.types import PlayEvent
 
 
 @dataclass(slots=True)
@@ -113,7 +112,7 @@ def _filter_new_events(
             continue
         if upper and played_at > upper:
             continue
-        if repository.exists(played_at):
+        if repository.exists(user_id=event.user.id, source=event.source, played_at=played_at):
             continue
         if played_at in seen_timestamps:
             continue

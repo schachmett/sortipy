@@ -40,6 +40,12 @@ class ReleaseSetContribution(ProvenanceTrackedMixin):
     def artist(self) -> Artist:
         return self._artist
 
+    def internal_set_release_set(self, release_set: ReleaseSet) -> None:
+        self._release_set = release_set
+
+    def internal_set_artist(self, artist: Artist) -> None:
+        self._artist = artist
+
 
 @dataclass(eq=False, kw_only=True)
 class RecordingContribution(ProvenanceTrackedMixin):
@@ -60,6 +66,12 @@ class RecordingContribution(ProvenanceTrackedMixin):
     @property
     def artist(self) -> Artist:
         return self._artist
+
+    def internal_set_recording(self, recording: Recording) -> None:
+        self._recording = recording
+
+    def internal_set_artist(self, artist: Artist) -> None:
+        self._artist = artist
 
 
 @dataclass(eq=False, kw_only=True)
@@ -83,3 +95,9 @@ class ReleaseTrack(ProvenanceTrackedMixin, ExternallyIdentifiableMixin):
     @property
     def recording(self) -> Recording:
         return self._recording
+
+    def internal_set_release(self, release: Release) -> None:
+        self._release = release
+
+    def internal_set_recording(self, recording: Recording) -> None:
+        self._recording = recording

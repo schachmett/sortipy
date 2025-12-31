@@ -9,23 +9,24 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy import select
 
 from sortipy.adapters.sqlalchemy.mappings import (
-    CANONICAL_TYPE_BY_CLASS,
-    CLASS_BY_CANONICAL_TYPE,
+    CLASS_BY_ENTITY_TYPE,
+    ENTITY_TYPE_BY_CLASS,
     external_id_table,
+    play_event_table,
 )
 from sortipy.adapters.sqlalchemy.sidecar_mappings import normalization_sidecar_table
 from sortipy.domain.ingest_pipeline.ingest_ports import NormalizationSidecarRepository
-from sortipy.domain.types import (
+from sortipy.domain.model import (
     Artist,
-    CanonicalEntity,
-    CanonicalEntityType,
+    EntityType,
+    IdentifiedEntity,
     Label,
     Namespace,
     PlayEvent,
+    Provider,
     Recording,
     Release,
     ReleaseSet,
-    Track,
 )
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
-    from sortipy.domain.ingest_pipeline.state import NormalizationData
+    from sortipy.domain.ingest_pipeline.context import NormalizationData
 
 
 class SqlAlchemyPlayEventRepository:
@@ -44,9 +45,13 @@ class SqlAlchemyPlayEventRepository:
         self._prepare_event(entity)
         self.session.add(entity)
 
-    def exists(self, timestamp: datetime) -> bool:
-        played_at_column = cast("InstrumentedAttribute[datetime]", PlayEvent.played_at)
-        stmt = select(PlayEvent).where(played_at_column == timestamp)
+    def exists(self, *, user_id: uuid.UUID, source: Provider, played_at: datetime) -> bool:
+        stmt = (
+            select(PlayEvent)
+            .where(play_event_table.c.user_id == user_id)
+            .where(play_event_table.c.source == source)
+            .where(play_event_table.c.played_at == played_at)
+        )
         return self.session.execute(stmt).scalar_one_or_none() is not None
 
     def latest_timestamp(self) -> datetime | None:
@@ -58,23 +63,23 @@ class SqlAlchemyPlayEventRepository:
         _ = event
 
 
-class SqlAlchemyCanonicalRepository[TCanonical: CanonicalEntity]:
-    """Shared helpers for repositories managing canonical catalog entities."""
+class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
+    """Shared helpers for repositories managing catalog entities with external IDs."""
 
-    def __init__(self, session: Session, entity_cls: type[TCanonical]) -> None:
+    def __init__(self, session: Session, entity_cls: type[TEntity]) -> None:
         self.session = session
         self._entity_cls = entity_cls
-        self._entity_type = CANONICAL_TYPE_BY_CLASS[entity_cls]
+        self._entity_type = ENTITY_TYPE_BY_CLASS[entity_cls]
 
-    def add(self, entity: TCanonical) -> None:
+    def add(self, entity: TEntity) -> None:
         self.session.add(entity)
 
-    def get_by_external_id(self, namespace: Namespace, value: str) -> TCanonical | None:
+    def get_by_external_id(self, namespace: Namespace, value: str) -> TEntity | None:
         stmt = (
-            select(external_id_table.c.entity_id)
+            select(external_id_table.c._owner_id)  # noqa: SLF001
             .where(external_id_table.c.namespace == namespace)
             .where(external_id_table.c.value == value)
-            .where(external_id_table.c.entity_type == self._entity_type)
+            .where(external_id_table.c._owner_type == self._entity_type)  # noqa: SLF001
             .limit(1)
         )
         entity_id = self.session.execute(stmt).scalar_one_or_none()
@@ -103,11 +108,6 @@ class SqlAlchemyRecordingRepository(SqlAlchemyCanonicalRepository[Recording]):
         super().__init__(session, Recording)
 
 
-class SqlAlchemyTrackRepository(SqlAlchemyCanonicalRepository[Track]):
-    def __init__(self, session: Session) -> None:
-        super().__init__(session, Track)
-
-
 class SqlAlchemyLabelRepository(SqlAlchemyCanonicalRepository[Label]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, Label)
@@ -119,19 +119,17 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def save(self, entity: CanonicalEntity, data: NormalizationData[CanonicalEntity]) -> None:
+    def save(self, entity: IdentifiedEntity, data: NormalizationData[IdentifiedEntity]) -> None:
         if not data.priority_keys:
             return
-        if entity.id is None:
-            entity.id = uuid.uuid4()
         for key in data.priority_keys:
-            self._insert(entity.entity_type, entity.id, key)
+            self._insert(entity.entity_type, entity.resolved_id, key)
 
     def find_by_keys(
         self,
-        entity_type: CanonicalEntityType,
+        entity_type: EntityType,
         keys: tuple[tuple[object, ...], ...],
-    ) -> dict[tuple[object, ...], CanonicalEntity]:
+    ) -> dict[tuple[object, ...], IdentifiedEntity]:
         if not keys:
             return {}
         key_strings = [self._serialize_key(key) for key in keys]
@@ -141,8 +139,10 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
             .where(normalization_sidecar_table.c.key.in_(key_strings))
         )
         rows = self.session.execute(stmt).all()
-        entity_cls = CLASS_BY_CANONICAL_TYPE[entity_type]
-        results: dict[tuple[object, ...], CanonicalEntity] = {}
+        entity_cls = CLASS_BY_ENTITY_TYPE.get(entity_type)
+        if entity_cls is None:
+            return {}
+        results: dict[tuple[object, ...], IdentifiedEntity] = {}
         for key_str, entity_id in rows:
             entity_obj = self.session.get(entity_cls, entity_id)
             if entity_obj is None:
@@ -156,7 +156,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
 
     def _insert(
         self,
-        entity_type: CanonicalEntityType,
+        entity_type: EntityType,
         entity_id: uuid.UUID,
         key: tuple[object, ...],
     ) -> None:
@@ -192,7 +192,6 @@ if TYPE_CHECKING:
         RecordingRepository,
         ReleaseRepository,
         ReleaseSetRepository,
-        TrackRepository,
     )
 
     _session_stub = cast("Session", object())
@@ -201,4 +200,3 @@ if TYPE_CHECKING:
     _release_set_repo: ReleaseSetRepository = SqlAlchemyReleaseSetRepository(_session_stub)
     _release_repo: ReleaseRepository = SqlAlchemyReleaseRepository(_session_stub)
     _recording_repo: RecordingRepository = SqlAlchemyRecordingRepository(_session_stub)
-    _track_repo: TrackRepository = SqlAlchemyTrackRepository(_session_stub)

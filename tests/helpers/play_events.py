@@ -6,25 +6,26 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
-from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
-from sortipy.domain.types import (
+from sortipy.domain.model import (
     Artist,
     ArtistRole,
-    CanonicalEntity,
-    CanonicalEntityType,
+    EntityType,
+    IdentifiedEntity,
     Namespace,
     PlayEvent,
     Provider,
     Recording,
-    RecordingArtist,
     Release,
     ReleaseSet,
-    ReleaseSetArtist,
-    Track,
+    User,
 )
+from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from uuid import UUID
+
+    from sortipy.domain.ingest_pipeline.context import NormalizationData
 
 
 def make_play_event(
@@ -36,31 +37,20 @@ def make_play_event(
 
     artist = Artist(name="Example Artist")
     release_set = ReleaseSet(title="Example Release Set")
-    release = Release(title="Example Release", release_set=release_set)
+    release = release_set.create_release(title="Example Release")
     recording = Recording(title=name)
-    track = Track(release=release, recording=recording)
-
-    release_set.releases.append(release)
-    release_set_artist = ReleaseSetArtist(
-        release_set=release_set, artist=artist, role=ArtistRole.PRIMARY
-    )
-    release_set.artist_links.append(release_set_artist)
-    artist.release_set_links.append(release_set_artist)
-
-    release.tracks.append(track)
-    recording.tracks.append(track)
-    recording_artist = RecordingArtist(recording=recording, artist=artist, role=ArtistRole.PRIMARY)
-    recording.artist_links.append(recording_artist)
-    artist.recording_links.append(recording_artist)
+    release_set.add_artist(artist, role=ArtistRole.PRIMARY)
+    recording.add_artist(artist, role=ArtistRole.PRIMARY)
+    track = release.add_track(recording)
 
     event_time = timestamp or datetime.now(tz=UTC)
-    event = PlayEvent(
-        played_at=event_time, source=Provider.LASTFM, recording=recording, track=track
+    user = User(display_name="Example User")
+    return user.log_play(
+        played_at=event_time,
+        source=Provider.LASTFM,
+        recording=recording,
+        track=track,
     )
-
-    recording.play_events.append(event)
-    track.play_events.append(event)
-    return event
 
 
 class FakePlayEventSource(PlayEventFetcher):
@@ -123,8 +113,11 @@ class FakePlayEventRepository:
     def add(self, entity: PlayEvent) -> None:
         self.items.append(entity)
 
-    def exists(self, timestamp: datetime) -> bool:
-        return any(item.played_at == timestamp for item in self.items)
+    def exists(self, *, user_id: UUID, source: Provider, played_at: datetime) -> bool:
+        return any(
+            item.user.id == user_id and item.source == source and item.played_at == played_at
+            for item in self.items
+        )
 
     def latest_timestamp(self) -> datetime | None:
         if not self.items:
@@ -148,14 +141,18 @@ class _NullCanonicalRepository[TCanonical]:
 
 
 class _NullSidecarRepository:
-    def save(self, entity: CanonicalEntity, data: object) -> None:  # pragma: no cover - trivial
+    def save(
+        self,
+        entity: IdentifiedEntity,
+        data: NormalizationData[IdentifiedEntity],
+    ) -> None:  # pragma: no cover - trivial
         _ = (entity, data)
 
     def find_by_keys(
         self,
-        entity_type: CanonicalEntityType,
+        entity_type: EntityType,
         keys: tuple[tuple[object, ...], ...],
-    ) -> dict[tuple[object, ...], CanonicalEntity]:
+    ) -> dict[tuple[object, ...], IdentifiedEntity]:
         _ = (entity_type, keys)
         return {}
 
@@ -170,7 +167,6 @@ class FakeIngestUnitOfWork:
             release_sets=_NullCanonicalRepository[ReleaseSet](),
             releases=_NullCanonicalRepository[Release](),
             recordings=_NullCanonicalRepository[Recording](),
-            tracks=_NullCanonicalRepository[Track](),
             normalization_sidecars=_NullSidecarRepository(),
         )
         self.committed = False

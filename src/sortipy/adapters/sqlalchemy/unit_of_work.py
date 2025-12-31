@@ -15,10 +15,9 @@ from sortipy.adapters.sqlalchemy import (
     SqlAlchemyRecordingRepository,
     SqlAlchemyReleaseRepository,
     SqlAlchemyReleaseSetRepository,
-    SqlAlchemyTrackRepository,
+    create_all_tables,
     start_mappers,
 )
-from sortipy.adapters.sqlalchemy.migrations import upgrade_head
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
 from sortipy.common.storage import get_database_uri
 from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
@@ -81,15 +80,12 @@ def startup(
 
     resolved_engine = engine or create_engine(database_uri or get_database_uri(), future=True)
     start_mappers()
-    upgrade_head(engine=resolved_engine)
+    create_all_tables(resolved_engine)
 
-    # temporary fix
-    from sortipy.adapters.sqlalchemy.mappings import canonical_source_table  # noqa: PLC0415
     from sortipy.adapters.sqlalchemy.sidecar_mappings import (  # noqa: PLC0415
         normalization_sidecar_table,
     )
 
-    canonical_source_table.create(resolved_engine, checkfirst=True)
     normalization_sidecar_table.create(resolved_engine, checkfirst=True)
 
     _STATE.engine = resolved_engine
@@ -177,7 +173,6 @@ class SqlAlchemyPlayEventUnitOfWork(BaseSqlAlchemyUnitOfWork[PlayEventRepositori
             release_sets=SqlAlchemyReleaseSetRepository(session),
             releases=SqlAlchemyReleaseRepository(session),
             recordings=SqlAlchemyRecordingRepository(session),
-            tracks=SqlAlchemyTrackRepository(session),
         )
 
 
@@ -191,7 +186,6 @@ class SqlAlchemyIngestUnitOfWork(BaseSqlAlchemyUnitOfWork[IngestRepositories]):
             release_sets=SqlAlchemyReleaseSetRepository(session),
             releases=SqlAlchemyReleaseRepository(session),
             recordings=SqlAlchemyRecordingRepository(session),
-            tracks=SqlAlchemyTrackRepository(session),
             normalization_sidecars=SqlAlchemyNormalizationSidecarRepository(session),
         )
 

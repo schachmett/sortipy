@@ -8,7 +8,7 @@ from sortipy.domain.model.associations import (
     ReleaseTrack,
 )
 from sortipy.domain.model.audit import EntityMerge
-from sortipy.domain.model.entity import EntityRef
+from sortipy.domain.model.entity import Entity, IdentifiedEntity
 from sortipy.domain.model.enums import (
     ArtistRole,
     EntityType,
@@ -39,7 +39,8 @@ from sortipy.domain.model.user import LibraryItem, PlayEvent, User
 
 __all__ = [  # noqa: RUF022
     # base
-    "EntityRef",
+    "IdentifiedEntity",
+    "Entity",
     # external ids
     "ExternalID",
     "Namespace",

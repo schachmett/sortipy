@@ -6,8 +6,8 @@ from . import (
     sidecar_mappings as _sidecar_mappings,  # noqa: F401  # pyright: ignore[reportUnusedImport]
 )
 from .mappings import (
-    CANONICAL_TYPE_BY_CLASS,
-    CLASS_BY_CANONICAL_TYPE,
+    CLASS_BY_ENTITY_TYPE,
+    ENTITY_TYPE_BY_CLASS,
     create_all_tables,
     mapper_registry,
     start_mappers,
@@ -19,7 +19,6 @@ from .repositories import (
     SqlAlchemyRecordingRepository,
     SqlAlchemyReleaseRepository,
     SqlAlchemyReleaseSetRepository,
-    SqlAlchemyTrackRepository,
 )
 from .unit_of_work import (
     SqlAlchemyIngestUnitOfWork,
@@ -28,8 +27,8 @@ from .unit_of_work import (
 )
 
 __all__ = [
-    "CANONICAL_TYPE_BY_CLASS",
-    "CLASS_BY_CANONICAL_TYPE",
+    "CLASS_BY_ENTITY_TYPE",
+    "ENTITY_TYPE_BY_CLASS",
     "SqlAlchemyArtistRepository",
     "SqlAlchemyIngestUnitOfWork",
     "SqlAlchemyNormalizationSidecarRepository",
@@ -38,7 +37,6 @@ __all__ = [
     "SqlAlchemyRecordingRepository",
     "SqlAlchemyReleaseRepository",
     "SqlAlchemyReleaseSetRepository",
-    "SqlAlchemyTrackRepository",
     "create_all_tables",
     "mapper_registry",
     "start_mappers",
