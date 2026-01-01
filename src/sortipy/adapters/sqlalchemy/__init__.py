@@ -8,7 +8,6 @@ from . import (
 from .mappings import (
     CLASS_BY_ENTITY_TYPE,
     ENTITY_TYPE_BY_CLASS,
-    create_all_tables,
     mapper_registry,
     start_mappers,
 )
@@ -37,7 +36,6 @@ __all__ = [
     "SqlAlchemyRecordingRepository",
     "SqlAlchemyReleaseRepository",
     "SqlAlchemyReleaseSetRepository",
-    "create_all_tables",
     "mapper_registry",
     "start_mappers",
     "startup",

@@ -70,10 +70,7 @@ class NormalizationState:
         self, entity: TEntity
     ) -> NormalizationData[TEntity] | None:
         bucket = self._bucket(entity.entity_type)
-        data = bucket.get(id(entity))
-        if data is None:
-            return None
-        return data
+        return bucket.get(id(entity))
 
     def remove(self, entity: IdentifiedEntity) -> None:
         bucket = self._bucket(entity.entity_type)

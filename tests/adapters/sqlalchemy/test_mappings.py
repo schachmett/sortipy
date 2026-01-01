@@ -6,9 +6,9 @@ from uuid import uuid4
 
 from sqlalchemy import Table, func, insert, inspect, select
 
-from sortipy.adapters.sqlalchemy import create_all_tables, start_mappers
 from sortipy.adapters.sqlalchemy.mappings import (
     artist_table,
+    create_all_tables,
     external_id_table,
     label_table,
     library_item_table,
@@ -21,6 +21,7 @@ from sortipy.adapters.sqlalchemy.mappings import (
     release_set_table,
     release_table,
     release_track_table,
+    start_mappers,
     user_table,
 )
 from sortipy.domain.model import (
