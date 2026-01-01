@@ -144,6 +144,7 @@ lint.pylint.max-args = 7
 [tool.pyright] # see https://github.com/microsoft/pyright/blob/main/docs/configuration.md
 include = ["src", "tests"]
 ignore = ["**/__pycache__", ".venv", ".tox"]
+reportPrivateUsage = "none"
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 pythonPlatform = "Linux"

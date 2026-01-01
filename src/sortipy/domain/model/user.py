@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, ClassVar
 from sortipy.domain.model.enums import EntityType, Provider
 from sortipy.domain.model.provenance import ProvenanceTrackedMixin
 
+from . import _internal as internal
+
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
@@ -117,8 +119,8 @@ class User(ProvenanceTrackedMixin):
             raise ValueError("play event has no recording_ref to replace")
         if track.recording is not event.recording_ref:
             raise ValueError("track.recording must match play event recording")
-        event.internal_set_track(track)
-        event.internal_set_recording_ref(None)
+        internal.set_play_event_track(event, track)
+        internal.set_play_event_recording_ref(event, None)
 
     def move_play_event_to(self, event: PlayEvent, recording: Recording) -> None:
         if event.user is not self:
@@ -127,7 +129,7 @@ class User(ProvenanceTrackedMixin):
             raise ValueError("play event is already linked to a track")
         if event.recording_ref is recording:
             return
-        event.internal_set_recording_ref(recording)
+        internal.set_play_event_recording_ref(event, recording)
 
 
 @dataclass(eq=False, kw_only=True)
@@ -204,12 +206,6 @@ class PlayEvent(ProvenanceTrackedMixin):
     @property
     def recording_ref(self) -> Recording | None:
         return self._recording_ref
-
-    def internal_set_track(self, track: ReleaseTrack | None) -> None:
-        self._track = track
-
-    def internal_set_recording_ref(self, recording: Recording | None) -> None:
-        self._recording_ref = recording
 
     def __post_init__(self) -> None:
         if (self._track is None) == (self._recording_ref is None):

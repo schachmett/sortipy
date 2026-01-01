@@ -21,6 +21,8 @@ from sortipy.domain.model.enums import ArtistRole, EntityType
 from sortipy.domain.model.external_ids import ExternallyIdentifiableMixin
 from sortipy.domain.model.provenance import ProvenanceTrackedMixin
 
+from . import _internal as internal
+
 if TYPE_CHECKING:
     from sortipy.domain.model.enums import ReleaseSetType
     from sortipy.domain.model.primitives import CountryCode, DurationMs, PartialDate
@@ -66,21 +68,6 @@ class Artist(CanonicalEntity):
     def recordings(self) -> tuple[Recording, ...]:
         return tuple(c.recording for c in self._recording_contributions)
 
-    # Internal primitives (called only by owners)
-    def internal_attach_release_set_contribution(self, c: ReleaseSetContribution) -> None:
-        if c not in self._release_set_contributions:
-            self._release_set_contributions.append(c)
-
-    def internal_detach_release_set_contribution(self, c: ReleaseSetContribution) -> None:
-        self._release_set_contributions.remove(c)
-
-    def internal_attach_recording_contribution(self, c: RecordingContribution) -> None:
-        if c not in self._recording_contributions:
-            self._recording_contributions.append(c)
-
-    def internal_detach_recording_contribution(self, c: RecordingContribution) -> None:
-        self._recording_contributions.remove(c)
-
 
 @dataclass(eq=False, kw_only=True)
 class ReleaseSet(CanonicalEntity):
@@ -111,8 +98,7 @@ class ReleaseSet(CanonicalEntity):
     # Commands (ownership here)
     def add_release(self, release: Release) -> None:
         if release.release_set is not self:
-            # keep graph consistent
-            release.internal_set_release_set(self)
+            internal.set_release_release_set(release, self)
         if release not in self._releases:
             self._releases.append(release)
 
@@ -159,19 +145,17 @@ class ReleaseSet(CanonicalEntity):
             credited_as=credited_as,
             join_phrase=join_phrase,
         )
-        if c not in self._contributions:
-            self._contributions.append(c)
-        artist.internal_attach_release_set_contribution(c)
+        internal.attach_release_set_contribution_to_release_set(self, c)
+        internal.attach_release_set_contribution_to_artist(artist, c)
         return c
 
     def move_contributions_to(self, new_owner: ReleaseSet) -> None:
         if new_owner is self:
             return
         for c in list(self._contributions):
-            self._contributions.remove(c)
-            c.internal_set_release_set(new_owner)
-            if c not in new_owner._contributions:
-                new_owner._contributions.append(c)
+            internal.detach_release_set_contribution_from_release_set(self, c)
+            internal.set_release_set_contribution_release_set(c, new_owner)
+            internal.attach_release_set_contribution_to_release_set(new_owner, c)
 
     def replace_artist(self, old: Artist, new: Artist) -> None:
         if old is new:
@@ -179,15 +163,15 @@ class ReleaseSet(CanonicalEntity):
         for c in list(self._contributions):
             if c.artist is not old:
                 continue
-            old.internal_detach_release_set_contribution(c)
-            c.internal_set_artist(new)
-            new.internal_attach_release_set_contribution(c)
+            internal.detach_release_set_contribution_from_artist(old, c)
+            internal.set_release_set_contribution_artist(c, new)
+            internal.attach_release_set_contribution_to_artist(new, c)
 
     def remove_artist(self, artist: Artist) -> None:
         for c in list(self._contributions):
             if c.artist is artist:
-                self._contributions.remove(c)
-                artist.internal_detach_release_set_contribution(c)
+                internal.detach_release_set_contribution_from_release_set(self, c)
+                internal.detach_release_set_contribution_from_artist(artist, c)
                 return
         raise ValueError("artist not linked to this release set")
 
@@ -220,9 +204,6 @@ class Release(CanonicalEntity):
     def release_set(self) -> ReleaseSet:
         return self._release_set
 
-    def internal_set_release_set(self, rs: ReleaseSet) -> None:
-        self._release_set = rs
-
     @property
     def tracks(self) -> tuple[ReleaseTrack, ...]:
         return tuple(self._tracks)
@@ -253,19 +234,17 @@ class Release(CanonicalEntity):
             title_override=title_override,
             duration_ms=duration_ms,
         )
-        if t not in self._tracks:
-            self._tracks.append(t)
-        recording.internal_attach_release_track(t)
+        internal.attach_release_track_to_release(self, t)
+        internal.attach_release_track_to_recording(recording, t)
         return t
 
     def move_tracks_to(self, new_release: Release) -> None:
         if new_release is self:
             return
         for track in list(self._tracks):
-            self._tracks.remove(track)
-            track.internal_set_release(new_release)
-            if track not in new_release._tracks:
-                new_release._tracks.append(track)
+            internal.detach_release_track_from_release(self, track)
+            internal.set_release_track_release(track, new_release)
+            internal.attach_release_track_to_release(new_release, track)
 
     def move_track_to_recording(self, track: ReleaseTrack, recording: Recording) -> None:
         if track.release is not self:
@@ -273,13 +252,13 @@ class Release(CanonicalEntity):
         if track.recording is recording:
             return
         old_recording = track.recording
-        old_recording.internal_detach_release_track(track)
-        track.internal_set_recording(recording)
-        recording.internal_attach_release_track(track)
+        internal.detach_release_track_from_recording(old_recording, track)
+        internal.set_release_track_recording(track, recording)
+        internal.attach_release_track_to_recording(recording, track)
 
     def remove_track(self, track: ReleaseTrack) -> None:
-        self._tracks.remove(track)
-        track.recording.internal_detach_release_track(track)
+        internal.detach_release_track_from_release(self, track)
+        internal.detach_release_track_from_recording(track.recording, track)
 
     def add_label(self, label: Label) -> None:
         if label not in self._labels:
@@ -339,19 +318,17 @@ class Recording(CanonicalEntity):
             credited_as=credited_as,
             instrument=instrument,
         )
-        if c not in self._contributions:
-            self._contributions.append(c)
-        artist.internal_attach_recording_contribution(c)
+        internal.attach_recording_contribution_to_recording(self, c)
+        internal.attach_recording_contribution_to_artist(artist, c)
         return c
 
     def move_contributions_to(self, new_recording: Recording) -> None:
         if new_recording is self:
             return
         for c in list(self._contributions):
-            self._contributions.remove(c)
-            c.internal_set_recording(new_recording)
-            if c not in new_recording._contributions:
-                new_recording._contributions.append(c)
+            internal.detach_recording_contribution_from_recording(self, c)
+            internal.set_recording_contribution_recording(c, new_recording)
+            internal.attach_recording_contribution_to_recording(new_recording, c)
 
     def replace_artist(self, old: Artist, new: Artist) -> None:
         if old is new:
@@ -359,15 +336,15 @@ class Recording(CanonicalEntity):
         for c in list(self._contributions):
             if c.artist is not old:
                 continue
-            old.internal_detach_recording_contribution(c)
-            c.internal_set_artist(new)
-            new.internal_attach_recording_contribution(c)
+            internal.detach_recording_contribution_from_artist(old, c)
+            internal.set_recording_contribution_artist(c, new)
+            internal.attach_recording_contribution_to_artist(new, c)
 
     def remove_artist(self, artist: Artist) -> None:
         for c in list(self._contributions):
             if c.artist is artist:
-                self._contributions.remove(c)
-                artist.internal_detach_recording_contribution(c)
+                internal.detach_recording_contribution_from_recording(self, c)
+                internal.detach_recording_contribution_from_artist(artist, c)
                 return
         raise ValueError("artist not linked to this recording")
 
@@ -379,11 +356,3 @@ class Recording(CanonicalEntity):
 
     def move_play_event_to(self, event: PlayEvent, new_recording: Recording) -> None:
         event.user.move_play_event_to(event, new_recording)
-
-    # Internal primitives
-    def internal_attach_release_track(self, rt: ReleaseTrack) -> None:
-        if rt not in self._release_tracks:
-            self._release_tracks.append(rt)
-
-    def internal_detach_release_track(self, rt: ReleaseTrack) -> None:
-        self._release_tracks.remove(rt)
