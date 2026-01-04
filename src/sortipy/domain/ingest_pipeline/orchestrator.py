@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from sortipy.domain.ingest_pipeline.context import IngestGraph, PipelineContext
+from sortipy.domain.model import Artist, LibraryItem, Recording, Release, ReleaseSet
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -78,3 +79,65 @@ def ingest_graph_from_events(events: Iterable[PlayEvent]) -> IngestGraph:
             graph.add_artist(artist)
 
     return graph
+
+
+def ingest_graph_from_library_items(items: Iterable[LibraryItem]) -> IngestGraph:
+    """Construct a graph from library items with hydrated targets."""
+
+    graph = IngestGraph()
+    for item in items:
+        graph.add_user(item.user)
+        target = item.require_target()
+
+        if isinstance(target, Artist):
+            _add_artist_graph(graph, target)
+        elif isinstance(target, ReleaseSet):
+            _add_release_set_graph(graph, target)
+        elif isinstance(target, Release):
+            _add_release_graph(graph, target)
+        elif isinstance(target, Recording):
+            _add_recording_graph(graph, target)
+        else:
+            raise ValueError(  # noqa: TRY004
+                f"Unsupported LibraryItem target: {target.entity_type} ({type(target).__name__})"
+            )
+
+    return graph
+
+
+def _add_artist_graph(graph: IngestGraph, artist: Artist) -> None:
+    graph.add_artist(artist)
+
+
+def _add_release_set_graph(graph: IngestGraph, release_set: ReleaseSet) -> None:
+    graph.add_release_set(release_set)
+    for artist in release_set.artists:
+        graph.add_artist(artist)
+    for release in release_set.releases:
+        graph.add_release(release)
+        for track in release.tracks:
+            graph.add_recording(track.recording)
+            for artist in track.recording.artists:
+                graph.add_artist(artist)
+
+
+def _add_release_graph(graph: IngestGraph, release: Release) -> None:
+    graph.add_release(release)
+    graph.add_release_set(release.release_set)
+    for artist in release.release_set.artists:
+        graph.add_artist(artist)
+    for track in release.tracks:
+        graph.add_recording(track.recording)
+        for artist in track.recording.artists:
+            graph.add_artist(artist)
+
+
+def _add_recording_graph(graph: IngestGraph, recording: Recording) -> None:
+    graph.add_recording(recording)
+    for artist in recording.artists:
+        graph.add_artist(artist)
+    for track in recording.release_tracks:
+        graph.add_release(track.release)
+        graph.add_release_set(track.release.release_set)
+        for artist in track.release.release_set.artists:
+            graph.add_artist(artist)

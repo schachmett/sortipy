@@ -167,6 +167,11 @@ class LibraryItem(ProvenanceTrackedMixin):
     def target(self) -> IdentifiedEntity | None:
         return self._target
 
+    def require_target(self) -> IdentifiedEntity:
+        if self._target is None:
+            raise ValueError("library item target is not hydrated")
+        return self._target
+
     def __post_init__(self) -> None:
         # Validate target shape; ownership is managed by User commands.
         if self._target is not None and self._target.resolved_id != self._target_id:

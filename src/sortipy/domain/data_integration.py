@@ -8,11 +8,12 @@ from typing import TYPE_CHECKING
 from sortipy.domain.ingest_pipeline import (
     CanonicalizationPhase,
     DeduplicationPhase,
+    IngestGraph,
     IngestionPipeline,
     NormalizationPhase,
+    PipelineContext,
+    ingest_graph_from_events,
 )
-from sortipy.domain.ingest_pipeline.context import IngestGraph, PipelineContext
-from sortipy.domain.ingest_pipeline.orchestrator import ingest_graph_from_events
 
 DEFAULT_SYNC_BATCH_SIZE = 200
 

@@ -13,7 +13,12 @@ from .context import IngestGraph, NormalizationState, PipelineContext
 from .deduplication import DeduplicationPhase
 from .ingest_ports import NormalizationSidecarRepository
 from .normalization import NormalizationPhase
-from .orchestrator import IngestionPipeline, PipelinePhase
+from .orchestrator import (
+    IngestionPipeline,
+    PipelinePhase,
+    ingest_graph_from_events,
+    ingest_graph_from_library_items,
+)
 
 __all__ = [
     "CanonicalizationPhase",
@@ -25,4 +30,6 @@ __all__ = [
     "NormalizationState",
     "PipelineContext",
     "PipelinePhase",
+    "ingest_graph_from_events",
+    "ingest_graph_from_library_items",
 ]

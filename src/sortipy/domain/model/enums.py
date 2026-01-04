@@ -19,11 +19,15 @@ class ExternalNamespace(StrEnum):
     MUSICBRAINZ_LABEL = "musicbrainz:label"
 
     SPOTIFY_ARTIST = "spotify:artist"
+    SPOTIFY_ALBUM = "spotify:album"
+    SPOTIFY_TRACK = "spotify:track"
 
     LASTFM_ARTIST = "lastfm:artist"
     LASTFM_RECORDING = "lastfm:recording"
 
     RECORDING_ISRC = "recording:isrc"
+    RELEASE_EAN = "release:ean"
+    RELEASE_UPC = "release:upc"
     LABEL_CATALOG_NUMBER = "label:catalog_number"
     LABEL_BARCODE = "label:barcode"
 
