@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -54,33 +54,51 @@ class SpotifyConfig:
     client_secret: str
     redirect_uri: str
     scope: tuple[str, ...] = field(default_factory=lambda: SpotifyScopes.library)
+    cache_handler: spotipy.CacheFileHandler | None = None
 
     @classmethod
     def from_environment(cls, *, scope: tuple[str, ...] | None = None) -> SpotifyConfig:
         values = require_env_vars(
-            ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "SPOTIFY_REDIRECT_URI")
+            (
+                "SPOTIFY_CLIENT_ID",
+                "SPOTIFY_CLIENT_SECRET",
+                "SPOTIFY_REDIRECT_URI",
+                "SPOTIFY_CACHE_PATH",
+            )
         )
         return cls(
             client_id=values["SPOTIFY_CLIENT_ID"],
             client_secret=values["SPOTIFY_CLIENT_SECRET"],
             redirect_uri=values["SPOTIFY_REDIRECT_URI"],
             scope=scope or SpotifyScopes.library,
+            cache_handler=spotipy.CacheFileHandler(values["SPOTIFY_CACHE_PATH"]),
         )
+
+
+class SpotifyApiClient(Protocol):
+    def current_user_saved_tracks(self, *, limit: int, offset: int) -> dict[str, object]: ...
+
+    def current_user_saved_albums(self, *, limit: int, offset: int) -> dict[str, object]: ...
+
+    def current_user_followed_artists(
+        self, *, limit: int, after: str | None = None
+    ) -> dict[str, object]: ...
 
 
 class SpotifyClient:
     """Small wrapper around spotipy.Spotify for paging helpers."""
 
-    def __init__(self, *, config: SpotifyConfig, client: spotipy.Spotify | None = None) -> None:
+    def __init__(self, *, config: SpotifyConfig, client: SpotifyApiClient | None = None) -> None:
         if client is None:
             auth_manager = SpotifyOAuth(
                 client_id=config.client_id,
                 client_secret=config.client_secret,
                 redirect_uri=config.redirect_uri,
                 scope=" ".join(config.scope),
+                cache_handler=config.cache_handler,
             )
             client = spotipy.Spotify(auth_manager=auth_manager)
-        self._client = client
+        self._client: SpotifyApiClient = client
 
     def iter_saved_tracks(
         self,
@@ -91,7 +109,7 @@ class SpotifyClient:
         offset = 0
         yielded = 0
         while True:
-            raw_payload = self._client.current_user_saved_tracks(limit=batch_size, offset=offset)  # pyright: ignore[reportUnknownMemberType]
+            raw_payload = self._client.current_user_saved_tracks(limit=batch_size, offset=offset)
             payload = SavedTracksPage.model_validate(raw_payload)
             items = payload.items
             if not items:
@@ -114,7 +132,7 @@ class SpotifyClient:
         offset = 0
         yielded = 0
         while True:
-            raw_payload = self._client.current_user_saved_albums(limit=batch_size, offset=offset)  # pyright: ignore[reportUnknownMemberType]
+            raw_payload = self._client.current_user_saved_albums(limit=batch_size, offset=offset)
             payload = SavedAlbumsPage.model_validate(raw_payload)
             items = payload.items
             if not items:
@@ -137,7 +155,7 @@ class SpotifyClient:
         after: str | None = None
         yielded = 0
         while True:
-            raw_payload = self._client.current_user_followed_artists(limit=batch_size, after=after)  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
+            raw_payload = self._client.current_user_followed_artists(limit=batch_size, after=after)
             payload = FollowedArtistsResponse.model_validate(raw_payload)
             artists = payload.artists
             items = artists.items

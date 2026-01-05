@@ -22,6 +22,7 @@ def _get_default_client() -> SpotifyClient:
 
 def fetch_library_items(
     *,
+    client: SpotifyClient | None = None,
     user: User,
     batch_size: int = 50,
     max_tracks: int | None = None,
@@ -30,9 +31,9 @@ def fetch_library_items(
 ) -> LibraryItemFetchResult:
     """Fetch Spotify library items and translate them into domain entities."""
 
-    client = _get_default_client()
+    active_client = client or _get_default_client()
     return _fetch_library_items(
-        client,
+        active_client,
         user=user,
         batch_size=batch_size,
         max_tracks=max_tracks,

@@ -1,0 +1,83 @@
+{
+  "artists": {
+    "href": "https://api.spotify.com/v1/me/following?type=artist&limit=2",
+    "limit": 2,
+    "next": "https://api.spotify.com/v1/me/following?type=artist&limit=2&after=1QFQplWZIKdvIqeicPonrF",
+    "cursors": {
+      "after": "1QFQplWZIKdvIqeicPonrF"
+    },
+    "total": 242,
+    "items": [
+      {
+        "external_urls": {
+          "spotify": "https://open.spotify.com/artist/6qt7HAbdjQ4a2B0sYAjySO"
+        },
+        "followers": {
+          "href": null,
+          "total": 86671
+        },
+        "genres": [
+          "krautrock",
+          "neue deutsche welle",
+          "german indie"
+        ],
+        "href": "https://api.spotify.com/v1/artists/6qt7HAbdjQ4a2B0sYAjySO",
+        "id": "6qt7HAbdjQ4a2B0sYAjySO",
+        "images": [
+          {
+            "url": "https://i.scdn.co/image/ab6761610000e5eb78d90132e022777659411f22",
+            "height": 640,
+            "width": 640
+          },
+          {
+            "url": "https://i.scdn.co/image/ab6761610000517478d90132e022777659411f22",
+            "height": 320,
+            "width": 320
+          },
+          {
+            "url": "https://i.scdn.co/image/ab6761610000f17878d90132e022777659411f22",
+            "height": 160,
+            "width": 160
+          }
+        ],
+        "name": "Ton Steine Scherben",
+        "popularity": 39,
+        "type": "artist",
+        "uri": "spotify:artist:6qt7HAbdjQ4a2B0sYAjySO"
+      },
+      {
+        "external_urls": {
+          "spotify": "https://open.spotify.com/artist/1QFQplWZIKdvIqeicPonrF"
+        },
+        "followers": {
+          "href": null,
+          "total": 57
+        },
+        "genres": [],
+        "href": "https://api.spotify.com/v1/artists/1QFQplWZIKdvIqeicPonrF",
+        "id": "1QFQplWZIKdvIqeicPonrF",
+        "images": [
+          {
+            "url": "https://i.scdn.co/image/ab6761610000e5ebe6af193049a0b6211d89c329",
+            "height": 640,
+            "width": 640
+          },
+          {
+            "url": "https://i.scdn.co/image/ab67616100005174e6af193049a0b6211d89c329",
+            "height": 320,
+            "width": 320
+          },
+          {
+            "url": "https://i.scdn.co/image/ab6761610000f178e6af193049a0b6211d89c329",
+            "height": 160,
+            "width": 160
+          }
+        ],
+        "name": "AVINA",
+        "popularity": 0,
+        "type": "artist",
+        "uri": "spotify:artist:1QFQplWZIKdvIqeicPonrF"
+      }
+    ]
+  }
+}
