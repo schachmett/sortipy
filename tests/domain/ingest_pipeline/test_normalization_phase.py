@@ -18,15 +18,19 @@ def test_normalization_populates_state_and_counts_entities() -> None:
     state = context.normalization_state
     assert state is not None
 
-    expected_count = (
-        len(graph.artists)
-        + len(graph.release_sets)
-        + len(graph.releases)
-        + len(graph.recordings)
-        + len(graph.users)
-        + len(graph.play_events)
-    )
-    assert context.normalized_entities_count == expected_count
+    expected_count = {
+        entity_type: count
+        for entity_type, count in (
+            (graph.artists[0].entity_type, len(graph.artists)),
+            (graph.release_sets[0].entity_type, len(graph.release_sets)),
+            (graph.releases[0].entity_type, len(graph.releases)),
+            (graph.recordings[0].entity_type, len(graph.recordings)),
+            (graph.users[0].entity_type, len(graph.users)),
+            (graph.play_events[0].entity_type, len(graph.play_events)),
+        )
+        if count
+    }
+    assert context.counters.normalized == expected_count
 
     for entity in graph.artists:
         assert state.fetch(entity) is not None

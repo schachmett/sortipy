@@ -52,7 +52,8 @@ def test_artist_dedup_prefers_musicbrainz_id_and_merges_metadata() -> None:
     assert all(c.artist is surviving_artist for c in release_set.contributions)
     assert all(c.artist is surviving_artist for c in recording.contributions)
 
-    assert context.dedup_collapsed == 1
+    entity_type = surviving_artist.entity_type
+    assert context.counters.dedup_collapsed == {entity_type: 1}
 
 
 def test_deduplication_requires_normalization_state() -> None:

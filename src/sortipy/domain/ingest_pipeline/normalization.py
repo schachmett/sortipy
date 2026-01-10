@@ -24,22 +24,22 @@ class NormalizationPhase(PipelinePhase):
         state = context.normalization_state or NormalizationState()
         context.normalization_state = state
 
-        context.normalized_entities_count += self._normalize_batch(graph.artists, state)
-        context.normalized_entities_count += self._normalize_batch(graph.release_sets, state)
-        context.normalized_entities_count += self._normalize_batch(graph.releases, state)
-        context.normalized_entities_count += self._normalize_batch(graph.recordings, state)
-        context.normalized_entities_count += self._normalize_batch(graph.users, state)
-        context.normalized_entities_count += self._normalize_batch(graph.play_events, state)
+        self._normalize_batch(graph.artists, state, context=context)
+        self._normalize_batch(graph.release_sets, state, context=context)
+        self._normalize_batch(graph.releases, state, context=context)
+        self._normalize_batch(graph.recordings, state, context=context)
+        self._normalize_batch(graph.users, state, context=context)
+        self._normalize_batch(graph.play_events, state, context=context)
 
     def _normalize_batch(
         self,
         entities: Iterable[IdentifiedEntity],
         state: NormalizationState,
-    ) -> int:
-        count = 0
+        *,
+        context: PipelineContext,
+    ) -> None:
         for entity in entities:
             ops = ops_for(entity)
             data = ops.normalize(entity, state)
             state.store(entity, data)
-            count += 1
-        return count
+            context.counters.bump_normalized(entity.entity_type)

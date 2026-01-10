@@ -12,6 +12,7 @@ from sortipy.domain.model import ExternallyIdentifiable, IdentifiedEntity
 
 if TYPE_CHECKING:
     from sortipy.domain.ingest_pipeline.context import (
+        EntityCounters,
         IngestGraph,
         NormalizationData,
         NormalizationState,
@@ -36,6 +37,7 @@ class _Resolver[TEntity: CanonicalizableEntity]:
     repo: CanonicalEntityRepository[TEntity]
     sidecars: NormalizationSidecarRepository
     ops: EntityOps[TEntity]
+    counters: EntityCounters | None = None
 
     def resolve(self) -> TEntity:
         # Keep MBIDs as the first deterministic key even though external IDs are tried first;
@@ -90,10 +92,14 @@ class _Resolver[TEntity: CanonicalizableEntity]:
             return
         self.ops.absorb(target, self.entity)
         self.sidecars.save(target, self.data)
+        if self.counters is not None:
+            self.counters.bump_merged(target.entity_type)
 
     def _persist_new(self) -> None:
         self.repo.add(self.entity)
         self.sidecars.save(self.entity, self.data)
+        if self.counters is not None:
+            self.counters.bump_persisted(self.entity.entity_type)
 
 
 @dataclass(slots=True)
@@ -113,10 +119,17 @@ class CanonicalizationPhase(PipelinePhase):
 
         repos = uow.repositories
         sidecars = repos.normalization_sidecars
-        _resolve_entities(graph.artists, state, repos.artists, sidecars)
-        _resolve_entities(graph.release_sets, state, repos.release_sets, sidecars)
-        _resolve_entities(graph.releases, state, repos.releases, sidecars)
-        _resolve_entities(graph.recordings, state, repos.recordings, sidecars)
+        counters = context.counters
+        _resolve_entities(graph.artists, state, repos.artists, sidecars, counters=counters)
+        _resolve_entities(
+            graph.release_sets,
+            state,
+            repos.release_sets,
+            sidecars,
+            counters=counters,
+        )
+        _resolve_entities(graph.releases, state, repos.releases, sidecars, counters=counters)
+        _resolve_entities(graph.recordings, state, repos.recordings, sidecars, counters=counters)
         uow.commit()
 
 
@@ -125,6 +138,8 @@ def _resolve_entities[TEntity: CanonicalizableEntity](
     state: NormalizationState,
     repo: CanonicalEntityRepository[TEntity],
     sidecars: NormalizationSidecarRepository,
+    *,
+    counters: EntityCounters | None = None,
 ) -> None:
     if not entities:
         return
@@ -133,4 +148,4 @@ def _resolve_entities[TEntity: CanonicalizableEntity](
         data = state.fetch(entity)
         if data is None:
             raise RuntimeError("NormalizationData missing in Canonicalization phase")
-        entities[index] = _Resolver(entity, data, repo, sidecars, ops).resolve()
+        entities[index] = _Resolver(entity, data, repo, sidecars, ops, counters=counters).resolve()

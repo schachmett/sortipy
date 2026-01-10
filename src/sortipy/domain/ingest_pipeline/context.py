@@ -30,6 +30,31 @@ type NormKey = tuple[object, ...]
 type NormKeySeq = tuple[NormKey, ...]
 
 
+@dataclass(slots=True)
+class EntityCounters:
+    """Per-entity counters recorded across ingestion phases."""
+
+    normalized: dict[EntityType, int] = field(default_factory=dict["EntityType", "int"])
+    dedup_collapsed: dict[EntityType, int] = field(default_factory=dict["EntityType", "int"])
+    persisted_new: dict[EntityType, int] = field(default_factory=dict["EntityType", "int"])
+    merged: dict[EntityType, int] = field(default_factory=dict["EntityType", "int"])
+
+    def bump(self, bucket: dict[EntityType, int], entity_type: EntityType, n: int = 1) -> None:
+        bucket[entity_type] = bucket.get(entity_type, 0) + n
+
+    def bump_normalized(self, entity_type: EntityType, n: int = 1) -> None:
+        self.bump(self.normalized, entity_type, n)
+
+    def bump_dedup_collapsed(self, entity_type: EntityType, n: int = 1) -> None:
+        self.bump(self.dedup_collapsed, entity_type, n)
+
+    def bump_persisted(self, entity_type: EntityType, n: int = 1) -> None:
+        self.bump(self.persisted_new, entity_type, n)
+
+    def bump_merged(self, entity_type: EntityType, n: int = 1) -> None:
+        self.bump(self.merged, entity_type, n)
+
+
 class NormalizationData[TEntity: IdentifiedEntity](Protocol):
     """Structured normalization metadata with deterministic keys."""
 
@@ -100,8 +125,7 @@ class PipelineContext:
     batch_id: str | None = None
     normalization_state: NormalizationState | None = None
     ingest_uow: IngestUnitOfWork | None = None
-    normalized_entities_count: int = 0
-    dedup_collapsed: int = 0
+    counters: EntityCounters = field(default_factory=EntityCounters)
 
 
 @dataclass(slots=True)

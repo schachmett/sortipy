@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
 from sortipy.domain.model import (
@@ -180,7 +180,7 @@ class FakeIngestUnitOfWork:
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: object | None,
-    ) -> bool:
+    ) -> Literal[False]:
         if exc_type is not None:
             self.rollback()
         return False

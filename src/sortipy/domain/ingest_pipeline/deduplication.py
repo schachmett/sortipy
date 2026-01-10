@@ -27,36 +27,39 @@ class DeduplicationPhase(PipelinePhase):
         if state is None:
             raise RuntimeError("Normalization must run before deduplication")
 
-        context.dedup_collapsed += self._deduplicate_entities(graph.artists, state)
-        context.dedup_collapsed += self._deduplicate_entities(graph.release_sets, state)
-        context.dedup_collapsed += self._deduplicate_entities(graph.releases, state)
-        context.dedup_collapsed += self._deduplicate_entities(graph.recordings, state)
-        context.dedup_collapsed += self._deduplicate_entities(graph.users, state)
-        context.dedup_collapsed += self._deduplicate_entities(graph.play_events, state)
+        self._deduplicate_entities(graph.artists, state, context=context)
+        self._deduplicate_entities(graph.release_sets, state, context=context)
+        self._deduplicate_entities(graph.releases, state, context=context)
+        self._deduplicate_entities(graph.recordings, state, context=context)
+        self._deduplicate_entities(graph.users, state, context=context)
+        self._deduplicate_entities(graph.play_events, state, context=context)
 
     def _deduplicate_entities[TEntity: IdentifiedEntity](
         self,
         entities: list[TEntity],
         state: NormalizationState,
-    ) -> int:
+        *,
+        context: PipelineContext,
+    ) -> None:
         key_index: dict[NormKey, TEntity] = {}
         survivors: list[TEntity] = []
         collapsed = 0
 
         for entity in entities:
-            if self._deduplicate_entity(entity, state, key_index):
+            if self._deduplicate_entity(entity, state, key_index, context=context):
                 collapsed += 1
             else:
                 survivors.append(entity)
 
         entities[:] = survivors
-        return collapsed
 
     def _deduplicate_entity[TEntity: IdentifiedEntity](
         self,
         entity: TEntity,
         state: NormalizationState,
         key_index: dict[NormKey, TEntity],
+        *,
+        context: PipelineContext,
     ) -> bool:
         """Return False if the entity is new and survives. Return True if it was deduplicated."""
         ops = ops_for(entity)
@@ -77,6 +80,7 @@ class DeduplicationPhase(PipelinePhase):
 
         ops.absorb(primary, entity)
         state.remove(entity)
+        context.counters.bump_dedup_collapsed(entity.entity_type)
         return True
 
 

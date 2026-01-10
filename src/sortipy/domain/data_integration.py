@@ -13,6 +13,7 @@ from sortipy.domain.ingest_pipeline import (
     NormalizationPhase,
     PipelineContext,
     ingest_graph_from_events,
+    ingest_graph_from_library_items,
 )
 
 DEFAULT_SYNC_BATCH_SIZE = 200
@@ -21,9 +22,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from datetime import datetime
 
+    from sortipy.domain.ingest_pipeline.context import EntityCounters
     from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
-    from sortipy.domain.model import PlayEvent
-    from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
+    from sortipy.domain.model import LibraryItem, PlayEvent, User
+    from sortipy.domain.ports.fetching import (
+        LibraryItemFetcher,
+        LibraryItemFetchResult,
+        PlayEventFetcher,
+    )
     from sortipy.domain.ports.persistence import PlayEventRepository
 
 
@@ -35,6 +41,16 @@ class SyncPlayEventsResult:
     fetched: int
     latest_timestamp: datetime | None
     now_playing: PlayEvent | None
+    counters: EntityCounters
+
+
+@dataclass(slots=True)
+class SyncLibraryItemsResult:
+    """Outcome of a library-items sync operation."""
+
+    stored: int
+    fetched: int
+    counters: EntityCounters
 
 
 def sync_play_events(
@@ -53,13 +69,12 @@ def sync_play_events(
     latest_seen: datetime | None = None
     effective_cutoff: datetime | None = from_timestamp
 
-    result: PlayEventFetchResult | None = None
-
     pipeline = IngestionPipeline(
         phases=(NormalizationPhase(), DeduplicationPhase(), CanonicalizationPhase())
     )
 
     with unit_of_work_factory() as uow:
+        context = PipelineContext(ingest_uow=uow)
         repository = uow.repositories.play_events
 
         if effective_cutoff is None:
@@ -85,17 +100,68 @@ def sync_play_events(
         if newest_observed is not None:
             latest_seen = max(latest_seen or newest_observed, newest_observed)
 
-        stored += _persist_events(uow, new_events, pipeline)
-
-    if result is None:
-        raise RuntimeError("Play event source did not return a result")
+        stored += _persist_events(uow, new_events, pipeline, context=context)
 
     return SyncPlayEventsResult(
         stored=stored,
         fetched=fetched,
         latest_timestamp=latest_seen or effective_cutoff,
         now_playing=result.now_playing,
+        counters=context.counters,
     )
+
+
+def sync_library_items(
+    *,
+    fetcher: LibraryItemFetcher,
+    unit_of_work_factory: Callable[[], IngestUnitOfWork],
+    user: User,
+    batch_size: int = 50,
+    max_tracks: int | None = None,
+    max_albums: int | None = None,
+    max_artists: int | None = None,
+) -> SyncLibraryItemsResult:
+    """Fetch library items and persist their catalog entities."""
+
+    fetched = 0
+    stored = 0
+
+    pipeline = IngestionPipeline(
+        phases=(NormalizationPhase(), DeduplicationPhase(), CanonicalizationPhase())
+    )
+
+    with unit_of_work_factory() as uow:
+        context = PipelineContext(ingest_uow=uow)
+        result: LibraryItemFetchResult = fetcher(
+            user=user,
+            batch_size=batch_size,
+            max_tracks=max_tracks,
+            max_albums=max_albums,
+            max_artists=max_artists,
+        )
+        items = list(result.library_items)
+        fetched = len(items)
+
+        if not items:
+            return SyncLibraryItemsResult(stored=0, fetched=0, counters=context.counters)
+
+        graph: IngestGraph = ingest_graph_from_library_items(items)
+        pipeline.run(graph, context=context)
+        stored = _persist_library_items(uow, items)
+        uow.commit()
+
+    return SyncLibraryItemsResult(stored=stored, fetched=fetched, counters=context.counters)
+
+
+def _persist_library_items(
+    uow: IngestUnitOfWork,
+    items: list[LibraryItem],
+) -> int:
+    """Persist library items once repository support is added."""
+
+    _ = uow
+    # TODO(sortipy): persist library items once repositories exist.  # noqa: FIX002
+    return len(items)
 
 
 def _filter_new_events(
@@ -127,11 +193,12 @@ def _persist_events(
     uow: IngestUnitOfWork,
     events: list[PlayEvent],
     pipeline: IngestionPipeline,
+    *,
+    context: PipelineContext,
 ) -> int:
     if not events:
         return 0
     graph: IngestGraph = ingest_graph_from_events(events)
-    context = PipelineContext(ingest_uow=uow)
     pipeline.run(graph, context=context)
     for event in graph.play_events:
         uow.repositories.play_events.add(event)
