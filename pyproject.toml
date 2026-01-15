@@ -21,6 +21,9 @@ dependencies = [
 ]
 optional-dependencies = { dev = ["pytest", "pytest-cov", "pytest-asyncio", "ruff", "pyright", "alembic"] }
 
+[project.scripts]
+sortipy = "sortipy.ui.cli:main"
+
 [build-system]
 requires = ["setuptools>=71", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"

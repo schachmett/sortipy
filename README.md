@@ -14,7 +14,7 @@ The high level plan and user-facing stories live under `docs/user-stories/` (sta
 Sortipy follows a ports-and-adapters (hexagonal) style:
 - **Domain services** expose use cases and work with canonical entities.
 - **Secondary adapters** handle data access (Spotify, Last.fm, MusicBrainz/RYM, SQL persistence) by implementing domain-defined ports.
-- **Primary adapters** drive the domain; currently this is a CLI entry point (`src/sortipy/main.py`).
+- **Primary adapters** drive the domain; currently this is a CLI entry point (`src/sortipy/ui/cli.py`).
 
 See the ADRs for the detailed rationale and constraints.
 
@@ -52,7 +52,7 @@ Work is focused on the data foundation stories: reliable ingestion of Last.fm sc
 
 ## Running the CLI prototype
 ```sh
-python3 src/sortipy/main.py
+python3 src/sortipy/ui/cli.py
 ```
 The current entry point performs a proof-of-concept Last.fm sync into the configured database. As domain services mature, new commands and outputs will be added.
 

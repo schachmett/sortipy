@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sortipy import main as main_module
 from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
 from sortipy.domain.model import User
+from sortipy.ui import cli as main_module
 
 
 def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
