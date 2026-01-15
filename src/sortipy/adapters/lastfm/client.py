@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from logging import getLogger
 from typing import TYPE_CHECKING
@@ -16,8 +15,7 @@ from sortipy.adapters.http_resilience import (
     ResilienceConfig,
     ResilientClient,
 )
-from sortipy.common.config import LastFmConfig
-from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
+from sortipy.domain.ports.fetching import PlayEventFetchResult
 
 from .schema import ErrorResponse, RecentTracksResponse, ResponseAttr, TrackPayload
 from .translator import parse_play_event
@@ -25,7 +23,8 @@ from .translator import parse_play_event
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from sortipy.domain.model import PlayEvent
+    from sortipy.common.config import LastFmConfig
+    from sortipy.domain.model import PlayEvent, User
 
 log = getLogger(__name__)
 
@@ -66,17 +65,24 @@ class LastFmAPIError(RuntimeError):
         self.code = code
 
 
-@dataclass(slots=True)
-class LastFmFetcher:
-    config: LastFmConfig = field(default_factory=LastFmConfig.from_environment)
-    resilience: ResilienceConfig = field(default_factory=_default_resilience_config)
-    client_factory: Callable[[ResilienceConfig], ResilientClient] = field(
-        default=_default_client_factory
-    )
+class LastFmClient:
+    """Low-level HTTP client for the Last.fm API."""
 
-    def __call__(
+    def __init__(
         self,
         *,
+        config: LastFmConfig,
+        resilience: ResilienceConfig | None = None,
+        client_factory: Callable[[ResilienceConfig], ResilientClient] | None = None,
+    ) -> None:
+        self._config = config
+        self._resilience = resilience or _default_resilience_config()
+        self._client_factory = client_factory or _default_client_factory
+
+    def fetch_play_events(
+        self,
+        *,
+        user: User,
         batch_size: int = 200,
         since: datetime | None = None,
         until: datetime | None = None,
@@ -84,6 +90,7 @@ class LastFmFetcher:
     ) -> PlayEventFetchResult:
         return asyncio.run(
             self._fetch_play_events_async(
+                user=user,
                 batch_size=batch_size,
                 since=since,
                 until=until,
@@ -94,6 +101,7 @@ class LastFmFetcher:
     async def _fetch_play_events_async(
         self,
         *,
+        user: User,
         batch_size: int,
         since: datetime | None,
         until: datetime | None,
@@ -107,7 +115,7 @@ class LastFmFetcher:
         page = 1
         remaining = max_events
 
-        async with self.client_factory(self.resilience) as client:
+        async with self._client_factory(self._resilience) as client:
             while True:
                 track_payloads, attrs = await self._request_recent_scrobbles(
                     client=client,
@@ -120,9 +128,9 @@ class LastFmFetcher:
 
                 for track_payload in track_payloads:
                     if track_payload.is_now_playing:
-                        now_playing = parse_play_event(track_payload)
+                        now_playing = parse_play_event(track_payload, user=user)
                         continue
-                    event = parse_play_event(track_payload)
+                    event = parse_play_event(track_payload, user=user)
                     events.append(event)
                     if remaining is not None:
                         remaining -= 1
@@ -149,10 +157,10 @@ class LastFmFetcher:
     ) -> tuple[list[TrackPayload], ResponseAttr]:
         params: dict[str, str | int] = {
             "method": "user.getrecenttracks",
-            "user": self.config.user_name,
+            "user": self._config.user_name,
             "limit": limit,
             "page": page,
-            "api_key": self.config.api_key,
+            "api_key": self._config.api_key,
             "format": "json",
         }
         if from_ts is not None:
@@ -173,7 +181,7 @@ class LastFmFetcher:
         client: ResilientClient,
         params: httpx.QueryParams,
     ) -> RecentTracksResponse:
-        base_url = self.resilience.base_url or LASTFM_BASE_URL
+        base_url = self._resilience.base_url or LASTFM_BASE_URL
         response = await client.get(base_url, params=params)
         response.raise_for_status()
 
@@ -187,7 +195,3 @@ class LastFmFetcher:
             raise LastFmAPIError("Unexpected Last.fm response payload")
 
         return RecentTracksResponse.model_validate(payload)
-
-
-if TYPE_CHECKING:
-    _fetcher_check: PlayEventFetcher = LastFmFetcher()

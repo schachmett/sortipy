@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine
 
 from sortipy.adapters.sqlalchemy.unit_of_work import (
-    SqlAlchemyPlayEventUnitOfWork,
+    SqlAlchemyUnitOfWork,
     StartupError,
     configured_engine,
     shutdown,
@@ -30,7 +30,7 @@ def reset_unit_of_work_state() -> Iterator[None]:
 
 def test_sqlalchemy_unit_of_work_requires_startup() -> None:
     with pytest.raises(StartupError):
-        SqlAlchemyPlayEventUnitOfWork()
+        SqlAlchemyUnitOfWork()
 
 
 def test_startup_requires_force_for_reconfiguration() -> None:
@@ -49,13 +49,14 @@ def test_startup_requires_force_for_reconfiguration() -> None:
 def test_unit_of_work_persists_events(sqlite_engine: Engine) -> None:
     startup(engine=sqlite_engine, force=True)
 
-    with SqlAlchemyPlayEventUnitOfWork() as uow:
+    with SqlAlchemyUnitOfWork() as uow:
         event = make_play_event("Persisted", timestamp=datetime.now(tz=UTC))
+        uow.repositories.users.add(event.user)
         uow.repositories.play_events.add(event)
         uow.commit()
         played_at = event.played_at
 
-    with SqlAlchemyPlayEventUnitOfWork() as uow:
+    with SqlAlchemyUnitOfWork() as uow:
         repo = uow.repositories.play_events
         assert repo.latest_timestamp() is not None
         assert repo.exists(user_id=event.user.id, source=event.source, played_at=played_at)

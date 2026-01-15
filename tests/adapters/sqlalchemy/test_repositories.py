@@ -18,6 +18,9 @@ def test_play_event_repository_tracks_latest_timestamp(sqlite_session: Session) 
     first = make_play_event("First", timestamp=base_time)
     second = make_play_event("Second", timestamp=base_time + timedelta(minutes=5))
 
+    sqlite_session.add_all([first.user, second.user])
+    sqlite_session.commit()
+
     repository.add(first)
     repository.add(second)
     sqlite_session.commit()

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from sortipy.adapters.sqlalchemy import (
@@ -18,13 +19,14 @@ from sortipy.adapters.sqlalchemy import (
     start_mappers,
 )
 from sortipy.adapters.sqlalchemy.migrations import upgrade_head
-from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
-from sortipy.common.storage import get_database_uri
-from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
-from sortipy.domain.ports.unit_of_work import (
-    PlayEventRepositories,
-    RepositoryCollection,
+from sortipy.adapters.sqlalchemy.repositories import (
+    MissingParentError,
+    SqlAlchemyLibraryItemRepository,
+    SqlAlchemyNormalizationSidecarRepository,
+    SqlAlchemyUserRepository,
 )
+from sortipy.common.storage import get_database_uri
+from sortipy.domain.ports.unit_of_work import RepositoryCollection
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -133,7 +135,18 @@ class BaseSqlAlchemyUnitOfWork[TRepositories: RepositoryCollection](ABC):
         return False
 
     def commit(self) -> None:
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError as exc:
+            message = str(exc.orig)
+            if (
+                "NOT NULL constraint failed" in message
+                or "FOREIGN KEY constraint failed" in message
+            ):
+                raise MissingParentError(
+                    f"Integrity error during commit: {message}", exc.params
+                ) from exc
+            raise
 
     def rollback(self) -> None:
         self.session.rollback()
@@ -157,25 +170,26 @@ class BaseSqlAlchemyUnitOfWork[TRepositories: RepositoryCollection](ABC):
         self._session = session
 
 
-class SqlAlchemyPlayEventUnitOfWork(BaseSqlAlchemyUnitOfWork[PlayEventRepositories]):
-    """Unit of work managing SQLAlchemy sessions for play events."""
+@dataclass(slots=True)
+class SqlAlchemyRepositories(RepositoryCollection):
+    play_events: SqlAlchemyPlayEventRepository
+    library_items: SqlAlchemyLibraryItemRepository
+    users: SqlAlchemyUserRepository
+    artists: SqlAlchemyArtistRepository
+    release_sets: SqlAlchemyReleaseSetRepository
+    releases: SqlAlchemyReleaseRepository
+    recordings: SqlAlchemyRecordingRepository
+    normalization_sidecars: SqlAlchemyNormalizationSidecarRepository
 
-    def _build_repositories(self, session: Session) -> PlayEventRepositories:
-        return PlayEventRepositories(
+
+class SqlAlchemyUnitOfWork(BaseSqlAlchemyUnitOfWork[SqlAlchemyRepositories]):
+    """Unit of work providing all SQLAlchemy repositories."""
+
+    def _build_repositories(self, session: Session) -> SqlAlchemyRepositories:
+        return SqlAlchemyRepositories(
             play_events=SqlAlchemyPlayEventRepository(session),
-            artists=SqlAlchemyArtistRepository(session),
-            release_sets=SqlAlchemyReleaseSetRepository(session),
-            releases=SqlAlchemyReleaseRepository(session),
-            recordings=SqlAlchemyRecordingRepository(session),
-        )
-
-
-class SqlAlchemyIngestUnitOfWork(BaseSqlAlchemyUnitOfWork[IngestRepositories]):
-    """Unit of work for ingest pipeline phases."""
-
-    def _build_repositories(self, session: Session) -> IngestRepositories:
-        return IngestRepositories(
-            play_events=SqlAlchemyPlayEventRepository(session),
+            library_items=SqlAlchemyLibraryItemRepository(session),
+            users=SqlAlchemyUserRepository(session),
             artists=SqlAlchemyArtistRepository(session),
             release_sets=SqlAlchemyReleaseSetRepository(session),
             releases=SqlAlchemyReleaseRepository(session),
@@ -185,8 +199,14 @@ class SqlAlchemyIngestUnitOfWork(BaseSqlAlchemyUnitOfWork[IngestRepositories]):
 
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
-    from sortipy.domain.ports.unit_of_work import PlayEventUnitOfWork
+    from sqlalchemy.orm import Session
 
-    _uow_pe_check: PlayEventUnitOfWork = SqlAlchemyPlayEventUnitOfWork()
-    _uow_ig_check: IngestUnitOfWork = SqlAlchemyIngestUnitOfWork()
+    from sortipy.domain.ingest_pipeline.ingest_ports import (
+        IngestionUnitOfWork,
+        LibraryItemSyncUnitOfWork,
+        PlayEventSyncUnitOfWork,
+    )
+
+    _uow_check: IngestionUnitOfWork = SqlAlchemyUnitOfWork()
+    _uow_pe_check: PlayEventSyncUnitOfWork = SqlAlchemyUnitOfWork()
+    _uow_li_check: LibraryItemSyncUnitOfWork = SqlAlchemyUnitOfWork()

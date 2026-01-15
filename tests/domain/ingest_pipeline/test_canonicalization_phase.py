@@ -18,7 +18,6 @@ from sortipy.domain.ingest_pipeline.context import (
     PipelineContext,
 )
 from sortipy.domain.ingest_pipeline.entity_ops import normalize_artist
-from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
 from sortipy.domain.model import (
     Artist,
     EntityType,
@@ -105,6 +104,16 @@ class _FakeNormalizationSidecarRepository:
         return found
 
 
+@dataclass(slots=True)
+class _FakePlayEventRepositories:
+    play_events: PlayEventRepository
+    artists: _FakeCanonicalRepository[Artist]
+    release_sets: _FakeCanonicalRepository[ReleaseSet]
+    releases: _FakeCanonicalRepository[Release]
+    recordings: _FakeCanonicalRepository[Recording]
+    normalization_sidecars: _FakeNormalizationSidecarRepository
+
+
 class FakeIngestUnitOfWork:
     def __init__(
         self,
@@ -115,7 +124,7 @@ class FakeIngestUnitOfWork:
         recordings: _FakeCanonicalRepository[Recording] | None = None,
         sidecars: _FakeNormalizationSidecarRepository | None = None,
     ) -> None:
-        self.repositories = IngestRepositories(
+        self.repositories = _FakePlayEventRepositories(
             play_events=_FakePlayEventRepository(),
             artists=artists or _FakeCanonicalRepository[Artist](),
             release_sets=release_sets or _FakeCanonicalRepository[ReleaseSet](),

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from sortipy.app import sync_lastfm_play_events
 from sortipy.domain.data_integration import SyncPlayEventsResult
+from sortipy.domain.model import User
 from tests.helpers.play_events import (
     FakeIngestUnitOfWork,
     FakePlayEventRepository,
@@ -13,7 +14,7 @@ from tests.helpers.play_events import (
 )
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
+    from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
 
 
 class MonkeyPatch(Protocol):
@@ -33,14 +34,16 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
         "Example Track",
         timestamp=datetime.now(tz=UTC).replace(microsecond=0),
     )
+    user = User(display_name="Listener")
     source = FakePlayEventSource([[play_event]])
     repository = FakePlayEventRepository()
 
-    def factory() -> IngestUnitOfWork:
+    def factory() -> PlayEventSyncUnitOfWork:
         return FakeIngestUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
         source=source,
+        user=user,
         unit_of_work_factory=factory,
         batch_size=1,
     )
@@ -50,6 +53,7 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
     assert result.stored == 1
     assert repository.items == [play_event]
     assert source.calls[0]["batch_size"] == 1
+    assert source.calls[0]["user"] is user
 
 
 def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPatch) -> None:
@@ -58,15 +62,17 @@ def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPa
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
     existing = make_play_event("Existing", timestamp=base_time)
     newer = make_play_event("Newer", timestamp=base_time + timedelta(seconds=60))
+    user = User(display_name="Listener")
 
     repository = FakePlayEventRepository([existing])
     source = FakePlayEventSource([[existing, newer]])
 
-    def factory() -> IngestUnitOfWork:
+    def factory() -> PlayEventSyncUnitOfWork:
         return FakeIngestUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
         source=source,
+        user=user,
         unit_of_work_factory=factory,
         batch_size=2,
     )
@@ -83,15 +89,17 @@ def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatc
     lookback = timedelta(hours=2)
     older = make_play_event("Older", timestamp=now - lookback - timedelta(minutes=10))
     recent = make_play_event("Recent", timestamp=now - timedelta(minutes=30))
+    user = User(display_name="Listener")
 
     repository = FakePlayEventRepository()
     source = FakePlayEventSource([[older, recent]])
 
-    def factory() -> IngestUnitOfWork:
+    def factory() -> PlayEventSyncUnitOfWork:
         return FakeIngestUnitOfWork(repository)
 
     result = sync_lastfm_play_events(
         source=source,
+        user=user,
         unit_of_work_factory=factory,
         batch_size=5,
         from_timestamp=now - lookback,

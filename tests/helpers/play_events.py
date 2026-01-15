@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
-from sortipy.domain.ingest_pipeline.ingest_ports import IngestRepositories
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
@@ -71,6 +71,7 @@ class FakePlayEventSource(PlayEventFetcher):
     def __call__(
         self,
         *,
+        user: User,
         batch_size: int = 200,
         since: datetime | None = None,
         until: datetime | None = None,
@@ -78,6 +79,7 @@ class FakePlayEventSource(PlayEventFetcher):
     ) -> PlayEventFetchResult:
         self.calls.append(
             {
+                "user": user,
                 "batch_size": batch_size,
                 "since": since,
                 "until": until,
@@ -157,11 +159,21 @@ class _NullSidecarRepository:
         return {}
 
 
+@dataclass(slots=True)
+class _FakePlayEventRepositories:
+    play_events: FakePlayEventRepository
+    artists: _NullCanonicalRepository[Artist]
+    release_sets: _NullCanonicalRepository[ReleaseSet]
+    releases: _NullCanonicalRepository[Release]
+    recordings: _NullCanonicalRepository[Recording]
+    normalization_sidecars: _NullSidecarRepository
+
+
 class FakeIngestUnitOfWork:
     """Unit of work capturing play-event persistence interactions."""
 
     def __init__(self, repository: FakePlayEventRepository) -> None:
-        self.repositories = IngestRepositories(
+        self.repositories = _FakePlayEventRepositories(
             play_events=repository,
             artists=_NullCanonicalRepository[Artist](),
             release_sets=_NullCanonicalRepository[ReleaseSet](),
@@ -193,6 +205,6 @@ class FakeIngestUnitOfWork:
 
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
+    from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
 
-    _uow_check: IngestUnitOfWork = FakeIngestUnitOfWork(_check_repo)
+    _uow_check: PlayEventSyncUnitOfWork = FakeIngestUnitOfWork(_check_repo)

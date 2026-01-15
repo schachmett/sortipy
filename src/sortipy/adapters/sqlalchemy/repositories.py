@@ -21,12 +21,14 @@ from sortipy.domain.model import (
     EntityType,
     IdentifiedEntity,
     Label,
+    LibraryItem,
     Namespace,
     PlayEvent,
     Provider,
     Recording,
     Release,
     ReleaseSet,
+    User,
 )
 
 if TYPE_CHECKING:
@@ -37,11 +39,18 @@ if TYPE_CHECKING:
     from sortipy.domain.ingest_pipeline.context import NormalizationData
 
 
+class MissingParentError(Exception): ...
+
+
 class SqlAlchemyPlayEventRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
     def add(self, entity: PlayEvent) -> None:
+        # Re-bind the owning user to this session. Detached user objects won't
+        # populate the FK, and we explicitly avoid cascade persistence.
+        attached_user = self._ensure_user_attached(entity.user)
+        attached_user.rehydrate_play_event(entity)
         self._prepare_event(entity)
         self.session.add(entity)
 
@@ -61,6 +70,12 @@ class SqlAlchemyPlayEventRepository:
 
     def _prepare_event(self, event: PlayEvent) -> None:
         _ = event
+
+    def _ensure_user_attached(self, user: User) -> User:
+        attached = self.session.get(User, user.id)
+        if attached is None:
+            raise MissingParentError(f"User {user.id} does not exist")
+        return attached
 
 
 class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
@@ -111,6 +126,28 @@ class SqlAlchemyRecordingRepository(SqlAlchemyCanonicalRepository[Recording]):
 class SqlAlchemyLabelRepository(SqlAlchemyCanonicalRepository[Label]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, Label)
+
+
+class SqlAlchemyUserRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, entity: User) -> None:
+        self.session.add(entity)
+
+
+class SqlAlchemyLibraryItemRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, entity: LibraryItem) -> None:
+        attached = self.session.get(User, entity.user.id)
+        if attached is None:
+            raise MissingParentError(f"User {entity.user.id} does not exist")
+        # Re-bind the owning user to this session. Detached user objects won't
+        # populate the FK, and we explicitly avoid cascade persistence.
+        attached.rehydrate_library_item(entity)
+        self.session.add(entity)
 
 
 class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
@@ -188,10 +225,12 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
 if TYPE_CHECKING:
     from sortipy.domain.ports.persistence import (
         ArtistRepository,
+        LibraryItemRepository,
         PlayEventRepository,
         RecordingRepository,
         ReleaseRepository,
         ReleaseSetRepository,
+        UserRepository,
     )
 
     _session_stub = cast("Session", object())
@@ -200,3 +239,5 @@ if TYPE_CHECKING:
     _release_set_repo: ReleaseSetRepository = SqlAlchemyReleaseSetRepository(_session_stub)
     _release_repo: ReleaseRepository = SqlAlchemyReleaseRepository(_session_stub)
     _recording_repo: RecordingRepository = SqlAlchemyRecordingRepository(_session_stub)
+    _user_repo: UserRepository = SqlAlchemyUserRepository(_session_stub)
+    _library_item_repo: LibraryItemRepository = SqlAlchemyLibraryItemRepository(_session_stub)

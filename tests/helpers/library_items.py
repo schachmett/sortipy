@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
+    EntityType,
+    IdentifiedEntity,
     LibraryItem,
+    Namespace,
     Provider,
     Recording,
+    Release,
     ReleaseSet,
     User,
 )
@@ -17,6 +22,8 @@ from sortipy.domain.ports.fetching import LibraryItemFetcher, LibraryItemFetchRe
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from sortipy.domain.ingest_pipeline.context import NormalizationData
 
 
 def make_recording_library_item(user: User | None = None) -> LibraryItem:
@@ -73,3 +80,90 @@ class FakeLibraryItemSource(LibraryItemFetcher):
             }
         )
         return LibraryItemFetchResult(library_items=list(self._items))
+
+
+class FakeLibraryItemRepository:
+    """Simple in-memory repository for library items."""
+
+    def __init__(self, initial: Iterable[LibraryItem] | None = None) -> None:
+        self.items: list[LibraryItem] = list(initial or [])
+
+    def add(self, entity: LibraryItem) -> None:
+        self.items.append(entity)
+
+
+class _NullCanonicalRepository[TCanonical]:
+    def add(self, entity: TCanonical) -> None:
+        _ = entity
+
+    def get_by_external_id(self, namespace: Namespace, value: str) -> TCanonical | None:
+        _ = (namespace, value)
+        return None
+
+
+class _NullSidecarRepository:
+    def save(
+        self,
+        entity: IdentifiedEntity,
+        data: NormalizationData[IdentifiedEntity],
+    ) -> None:  # pragma: no cover - trivial
+        _ = (entity, data)
+
+    def find_by_keys(
+        self,
+        entity_type: EntityType,
+        keys: tuple[tuple[object, ...], ...],
+    ) -> dict[tuple[object, ...], IdentifiedEntity]:
+        _ = (entity_type, keys)
+        return {}
+
+
+@dataclass(slots=True)
+class _FakeLibraryItemRepositories:
+    library_items: FakeLibraryItemRepository
+    artists: _NullCanonicalRepository[Artist]
+    release_sets: _NullCanonicalRepository[ReleaseSet]
+    releases: _NullCanonicalRepository[Release]
+    recordings: _NullCanonicalRepository[Recording]
+    normalization_sidecars: _NullSidecarRepository
+
+
+class FakeIngestUnitOfWork:
+    """Unit of work capturing library-item persistence interactions."""
+
+    def __init__(self, repository: FakeLibraryItemRepository) -> None:
+        self.repositories = _FakeLibraryItemRepositories(
+            library_items=repository,
+            artists=_NullCanonicalRepository[Artist](),
+            release_sets=_NullCanonicalRepository[ReleaseSet](),
+            releases=_NullCanonicalRepository[Release](),
+            recordings=_NullCanonicalRepository[Recording](),
+            normalization_sidecars=_NullSidecarRepository(),
+        )
+        self.committed = False
+        self.rollback_called = False
+
+    def __enter__(self) -> FakeIngestUnitOfWork:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> Literal[False]:
+        if exc_type is not None:
+            self.rollback()
+        return False
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def rollback(self) -> None:
+        self.rollback_called = True
+
+
+if TYPE_CHECKING:
+    from sortipy.domain.ports.persistence import LibraryItemRepository
+
+    _check_repo: LibraryItemRepository = FakeLibraryItemRepository()

@@ -23,7 +23,10 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sortipy.domain.ingest_pipeline.context import EntityCounters
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
+    from sortipy.domain.ingest_pipeline.ingest_ports import (
+        LibraryItemSyncUnitOfWork,
+        PlayEventSyncUnitOfWork,
+    )
     from sortipy.domain.model import LibraryItem, PlayEvent, User
     from sortipy.domain.ports.fetching import (
         LibraryItemFetcher,
@@ -56,7 +59,8 @@ class SyncLibraryItemsResult:
 def sync_play_events(
     *,
     fetcher: PlayEventFetcher,
-    unit_of_work_factory: Callable[[], IngestUnitOfWork],
+    user: User,
+    unit_of_work_factory: Callable[[], PlayEventSyncUnitOfWork],
     batch_size: int = DEFAULT_SYNC_BATCH_SIZE,
     max_events: int | None = None,
     from_timestamp: datetime | None = None,
@@ -81,6 +85,7 @@ def sync_play_events(
             effective_cutoff = repository.latest_timestamp()
 
         result = fetcher(
+            user=user,
             batch_size=batch_size,
             since=effective_cutoff,
             until=to_timestamp,
@@ -114,7 +119,7 @@ def sync_play_events(
 def sync_library_items(
     *,
     fetcher: LibraryItemFetcher,
-    unit_of_work_factory: Callable[[], IngestUnitOfWork],
+    unit_of_work_factory: Callable[[], LibraryItemSyncUnitOfWork],
     user: User,
     batch_size: int = 50,
     max_tracks: int | None = None,
@@ -154,7 +159,7 @@ def sync_library_items(
 
 
 def _persist_library_items(
-    uow: IngestUnitOfWork,
+    uow: LibraryItemSyncUnitOfWork,
     items: list[LibraryItem],
 ) -> int:
     """Persist library items once repository support is added."""
@@ -190,7 +195,7 @@ def _filter_new_events(
 
 
 def _persist_events(
-    uow: IngestUnitOfWork,
+    uow: PlayEventSyncUnitOfWork,
     events: list[PlayEvent],
     pipeline: IngestionPipeline,
     *,

@@ -8,6 +8,7 @@ from sortipy.domain.model import (
     Artist,
     ExternallyIdentifiable,
     Label,
+    LibraryItem,
     Namespace,
     PlayEvent,
     Provider,
@@ -75,3 +76,8 @@ class LabelRepository(CanonicalEntityRepository[Label], Protocol):
 @runtime_checkable
 class UserRepository(Repository[User], Protocol):
     """Repository contract for users."""
+
+
+@runtime_checkable
+class LibraryItemRepository(Repository[LibraryItem], Protocol):
+    """Repository contract for saved library items."""

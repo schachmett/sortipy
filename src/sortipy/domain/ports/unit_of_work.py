@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -10,7 +9,6 @@ if TYPE_CHECKING:
 
     from sortipy.domain.ports.persistence import (
         ArtistRepository,
-        PlayEventRepository,
         RecordingRepository,
         ReleaseRepository,
         ReleaseSetRepository,
@@ -43,15 +41,15 @@ class UnitOfWork[TRepositories: RepositoryCollection](Protocol):
     def rollback(self) -> None: ...
 
 
-@dataclass(slots=True)
-class PlayEventRepositories(RepositoryCollection):
-    """Repositories required to persist play events."""
+@runtime_checkable
+class CatalogRepositories(RepositoryCollection, Protocol):
+    """Repositories for canonical catalog entities."""
 
-    play_events: PlayEventRepository
-    artists: ArtistRepository
-    release_sets: ReleaseSetRepository
-    releases: ReleaseRepository
-    recordings: RecordingRepository
-
-
-type PlayEventUnitOfWork = UnitOfWork[PlayEventRepositories]
+    @property
+    def artists(self) -> ArtistRepository: ...
+    @property
+    def release_sets(self) -> ReleaseSetRepository: ...
+    @property
+    def releases(self) -> ReleaseRepository: ...
+    @property
+    def recordings(self) -> RecordingRepository: ...

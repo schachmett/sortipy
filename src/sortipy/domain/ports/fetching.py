@@ -27,6 +27,7 @@ class PlayEventFetcher(Protocol):
     def __call__(
         self,
         *,
+        user: User,
         batch_size: int = 200,
         since: datetime | None = None,
         until: datetime | None = None,

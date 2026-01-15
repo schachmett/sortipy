@@ -439,10 +439,12 @@ def start_mappers() -> orm.registry:
             "_release_set": relationship(
                 ReleaseSet,
                 back_populates="_contributions",
+                cascade="none",
             ),
             "_artist": relationship(
                 Artist,
                 back_populates="_release_set_contributions",
+                cascade="none",
             ),
             "_provenance": _provenance_relationship(
                 release_set_contribution_table,
@@ -458,10 +460,12 @@ def start_mappers() -> orm.registry:
             "_recording": relationship(
                 Recording,
                 back_populates="_contributions",
+                cascade="none",
             ),
             "_artist": relationship(
                 Artist,
                 back_populates="_recording_contributions",
+                cascade="none",
             ),
             "_provenance": _provenance_relationship(
                 recording_contribution_table,
@@ -488,6 +492,7 @@ def start_mappers() -> orm.registry:
             "_release_set": relationship(
                 ReleaseSet,
                 back_populates="_releases",
+                cascade="none",
             ),
             "release_date": composite(
                 PartialDate,
@@ -543,10 +548,12 @@ def start_mappers() -> orm.registry:
             "_release": relationship(
                 Release,
                 back_populates="_tracks",
+                cascade="none",
             ),
             "_recording": relationship(
                 Recording,
                 back_populates="_release_tracks",
+                cascade="none",
             ),
         },
     )
@@ -558,6 +565,7 @@ def start_mappers() -> orm.registry:
             "_user": relationship(
                 User,
                 back_populates="_library_items",
+                cascade="none",
             ),
             "_provenance": _provenance_relationship(library_item_table, EntityType.LIBRARY_ITEM),
         },
@@ -571,14 +579,17 @@ def start_mappers() -> orm.registry:
             "_user": relationship(
                 User,
                 back_populates="_play_events",
+                cascade="none",
             ),
             "_track": relationship(
                 ReleaseTrack,
                 foreign_keys=[play_event_table.c.track_id],
+                cascade="none",
             ),
             "_recording_ref": relationship(
                 Recording,
                 foreign_keys=[play_event_table.c.recording_id],
+                cascade="none",
             ),
             "_provenance": _provenance_relationship(play_event_table, EntityType.PLAY_EVENT),
         },

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Callable  # noqa: UP035
 
@@ -8,7 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
-from sortipy.adapters.lastfm import LastFmFetcher, RecentTracksResponse
+from sortipy.adapters.lastfm import LastFmClient, RecentTracksResponse, fetch_play_events
 from sortipy.common.config import LastFmConfig
 from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.model import (
@@ -23,7 +24,7 @@ from sortipy.domain.model import (
 from tests.helpers.play_events import FakePlayEventSource
 
 if TYPE_CHECKING:
-    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyIngestUnitOfWork
+    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
 
 
 def _make_client_factory(
@@ -43,7 +44,7 @@ def _make_client_factory(
 @pytest.mark.integration
 @pytest.mark.parametrize("recent_tracks_payload", range(4), indirect=True)
 def test_sync_play_events_persists_payload(
-    sqlite_unit_of_work: Callable[[], SqlAlchemyIngestUnitOfWork],
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
     recent_tracks_payload: RecentTracksResponse,
 ) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -51,12 +52,19 @@ def test_sync_play_events_persists_payload(
 
     total_expected = len(_extract_names(recent_tracks_payload))
 
-    fetcher = LastFmFetcher(
+    user = User(display_name="Last.fm")
+    with sqlite_unit_of_work() as uow:
+        uow.repositories.users.add(user)
+        uow.commit()
+
+    client = LastFmClient(
         config=LastFmConfig(api_key="demo", user_name="demo-user"),
         client_factory=_make_client_factory(handler),
     )
+    fetcher = functools.partial(fetch_play_events, client=client)
     result = sync_play_events(
         fetcher=fetcher,
+        user=user,
         unit_of_work_factory=sqlite_unit_of_work,
         batch_size=5,
         max_events=total_expected,
@@ -84,6 +92,7 @@ def _make_play_event(
     artist_name: str,
     release_title: str,
     timestamp: datetime,
+    user: User | None = None,
 ) -> PlayEvent:
     artist = Artist(name=artist_name)
     release_set = ReleaseSet(title=f"{artist_name} Collection")
@@ -94,8 +103,8 @@ def _make_play_event(
     release_set.add_artist(artist, role=ArtistRole.PRIMARY)
     recording.add_artist(artist, role=ArtistRole.PRIMARY)
 
-    user = User(display_name="Test User")
-    return user.log_play(
+    owner = user or User(display_name="Test User")
+    return owner.log_play(
         played_at=timestamp,
         source=Provider.LASTFM,
         recording=recording,
@@ -105,24 +114,32 @@ def _make_play_event(
 
 @pytest.mark.integration
 def test_sync_play_events_stores_tracks_with_same_name_different_artists(
-    sqlite_unit_of_work: Callable[[], SqlAlchemyIngestUnitOfWork],
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
 ) -> None:
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
+    user = User(display_name="Test User")
+    with sqlite_unit_of_work() as uow:
+        uow.repositories.users.add(user)
+        uow.commit()
+
     first = _make_play_event(
         track_name="Common Title",
         artist_name="First Artist",
         release_title="First Release",
         timestamp=base_time,
+        user=user,
     )
     second = _make_play_event(
         track_name="Common Title",
         artist_name="Second Artist",
         release_title="Second Release",
         timestamp=base_time + timedelta(seconds=30),
+        user=user,
     )
 
     result = sync_play_events(
         fetcher=FakePlayEventSource([[first, second]]),
+        user=user,
         unit_of_work_factory=sqlite_unit_of_work,
         batch_size=5,
     )

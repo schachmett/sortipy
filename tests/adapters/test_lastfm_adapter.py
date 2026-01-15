@@ -8,13 +8,15 @@ import pytest
 
 from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
 from sortipy.adapters.lastfm import (
-    LastFmFetcher,
+    LastFmClient,
     RecentTracksResponse,
     TrackPayload,
+    fetch_play_events,
     parse_play_event,
 )
+from sortipy.adapters.lastfm.fetcher import _get_default_client
 from sortipy.common.config import LastFmConfig, MissingConfigurationError
-from sortipy.domain.model import Provider
+from sortipy.domain.model import Provider, User
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -55,8 +57,16 @@ def sample_payload() -> dict[str, object]:
     }
 
 
-def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, object]) -> None:
-    event = parse_play_event(sample_payload)
+@pytest.fixture
+def user() -> User:
+    return User(display_name="Listener", lastfm_user="listener")
+
+
+def test_parse_play_event_creates_canonical_entities(
+    sample_payload: dict[str, object],
+    user: User,
+) -> None:
+    event = parse_play_event(sample_payload, user=user)
     validated = TrackPayload.model_validate(sample_payload)
 
     track = event.track
@@ -98,8 +108,9 @@ def test_parse_play_event_creates_canonical_entities(sample_payload: dict[str, o
 
 def test_parse_play_event_model_creates_domain_model_entities(
     sample_payload: dict[str, object],
+    user: User,
 ) -> None:
-    event = parse_play_event(sample_payload)
+    event = parse_play_event(sample_payload, user=user)
     validated = TrackPayload.model_validate(sample_payload)
 
     track = event.track
@@ -146,15 +157,21 @@ def test_parse_play_event_model_creates_domain_model_entities(
     }
 
 
-def test_parse_play_event_without_date_raises(sample_payload: dict[str, object]) -> None:
+def test_parse_play_event_without_date_raises(
+    sample_payload: dict[str, object],
+    user: User,
+) -> None:
     payload = sample_payload.copy()
     payload.pop("date", None)
 
     with pytest.raises(ValueError, match="Invalid scrobble"):
-        parse_play_event(payload)
+        parse_play_event(payload, user=user)
 
 
-def test_http_source_fetches_play_events(sample_payload: dict[str, object]) -> None:
+def test_http_source_fetches_play_events(
+    sample_payload: dict[str, object],
+    user: User,
+) -> None:
     payload = sample_payload.copy()
     now_playing_payload = sample_payload.copy()
     now_playing_payload.pop("date", None)
@@ -179,11 +196,13 @@ def test_http_source_fetches_play_events(sample_payload: dict[str, object]) -> N
             },
         )
 
-    fetcher = LastFmFetcher(
+    client = LastFmClient(
         config=LastFmConfig(api_key="demo", user_name="demo-user"),
         client_factory=_make_client_factory(handler),
     )
-    result = fetcher(
+    result = fetch_play_events(
+        client=client,
+        user=user,
         batch_size=5,
         since=datetime.fromtimestamp(1700000000, tz=UTC),
         until=datetime.fromtimestamp(1800000000, tz=UTC),
@@ -196,23 +215,34 @@ def test_http_source_fetches_play_events(sample_payload: dict[str, object]) -> N
     assert result.now_playing is not None
 
 
-def test_http_source_raises_when_credentials_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_http_source_raises_when_credentials_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    user: User,
+) -> None:
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
     monkeypatch.delenv("LASTFM_USER_NAME", raising=False)
+    _get_default_client.cache_clear()
 
     with pytest.raises(MissingConfigurationError):
-        LastFmFetcher()
+        fetch_play_events(user=user)
 
 
-def test_http_source_raises_when_credentials_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_http_source_raises_when_credentials_blank(
+    monkeypatch: pytest.MonkeyPatch,
+    user: User,
+) -> None:
     monkeypatch.setenv("LASTFM_API_KEY", "   ")
     monkeypatch.setenv("LASTFM_USER_NAME", "   ")
+    _get_default_client.cache_clear()
 
     with pytest.raises(MissingConfigurationError):
-        LastFmFetcher()
+        fetch_play_events(user=user)
 
 
-def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_http_source_reads_credentials_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    user: User,
+) -> None:
     monkeypatch.setenv("LASTFM_API_KEY", "env-key")
     monkeypatch.setenv("LASTFM_USER_NAME", "env-user")
 
@@ -237,8 +267,11 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
             },
         )
 
-    fetcher = LastFmFetcher(client_factory=_make_client_factory(handler))
-    fetcher()
+    client = LastFmClient(
+        config=LastFmConfig.from_environment(),
+        client_factory=_make_client_factory(handler),
+    )
+    fetch_play_events(user=user, client=client)
 
     assert captured["api_key"] == "env-key"
     assert captured["user"] == "env-user"
@@ -246,6 +279,7 @@ def test_http_source_reads_credentials_from_environment(monkeypatch: pytest.Monk
 
 def test_http_source_handles_multiple_pages_from_recording(
     recent_tracks_payloads: Sequence[RecentTracksResponse],
+    user: User,
 ) -> None:
     responses = recent_tracks_payloads
 
@@ -255,11 +289,16 @@ def test_http_source_handles_multiple_pages_from_recording(
         payload = responses[index]
         return httpx.Response(status_code=200, json=payload.model_dump(by_alias=True))
 
-    fetcher = LastFmFetcher(
+    client = LastFmClient(
         config=LastFmConfig(api_key="demo", user_name="demo-user"),
         client_factory=_make_client_factory(handler),
     )
-    result = fetcher(batch_size=5, max_events=10)
+    result = fetch_play_events(
+        client=client,
+        user=user,
+        batch_size=5,
+        max_events=10,
+    )
 
     names = [event.recording.title for event in result.events]
     expected_names: list[str] = []

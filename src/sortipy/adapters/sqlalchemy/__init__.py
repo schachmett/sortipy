@@ -13,15 +13,16 @@ from .mappings import (
 )
 from .repositories import (
     SqlAlchemyArtistRepository,
+    SqlAlchemyLibraryItemRepository,
     SqlAlchemyNormalizationSidecarRepository,
     SqlAlchemyPlayEventRepository,
     SqlAlchemyRecordingRepository,
     SqlAlchemyReleaseRepository,
     SqlAlchemyReleaseSetRepository,
+    SqlAlchemyUserRepository,
 )
 from .unit_of_work import (
-    SqlAlchemyIngestUnitOfWork,
-    SqlAlchemyPlayEventUnitOfWork,
+    SqlAlchemyUnitOfWork,
     startup,
 )
 
@@ -29,13 +30,14 @@ __all__ = [
     "CLASS_BY_ENTITY_TYPE",
     "ENTITY_TYPE_BY_CLASS",
     "SqlAlchemyArtistRepository",
-    "SqlAlchemyIngestUnitOfWork",
+    "SqlAlchemyLibraryItemRepository",
     "SqlAlchemyNormalizationSidecarRepository",
     "SqlAlchemyPlayEventRepository",
-    "SqlAlchemyPlayEventUnitOfWork",
     "SqlAlchemyRecordingRepository",
     "SqlAlchemyReleaseRepository",
     "SqlAlchemyReleaseSetRepository",
+    "SqlAlchemyUnitOfWork",
+    "SqlAlchemyUserRepository",
     "mapper_registry",
     "start_mappers",
     "startup",

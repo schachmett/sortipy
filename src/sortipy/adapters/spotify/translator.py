@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 def translate_saved_track(
     track: SpotifyTrack,
     *,
-    user: User | None = None,
+    user: User,
 ) -> LibraryItem:
-    active_user = user or User(display_name="Spotify")
+    active_user = user
     artists = [_build_artist(artist) for artist in track.artists]
 
     release_set, release = _build_release_set_and_release(track.album)
@@ -43,9 +43,9 @@ def translate_saved_track(
 def translate_saved_album(
     album: SpotifyAlbum,
     *,
-    user: User | None = None,
+    user: User,
 ) -> LibraryItem:
-    active_user = user or User(display_name="Spotify")
+    active_user = user
     artists = [_build_artist(artist) for artist in album.artists]
     release_set, _release = _build_release_set_and_release(album)
 
@@ -58,9 +58,9 @@ def translate_saved_album(
 def translate_followed_artist(
     artist: SpotifyArtist,
     *,
-    user: User | None = None,
+    user: User,
 ) -> LibraryItem:
-    active_user = user or User(display_name="Spotify")
+    active_user = user
     entity = _build_artist(artist)
 
     return active_user.save_entity(entity, source=Provider.SPOTIFY)

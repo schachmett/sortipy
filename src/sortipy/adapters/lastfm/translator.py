@@ -50,7 +50,7 @@ def parse_play_event(
     scrobble: TrackPayloadInput,
     *,
     played_at: datetime | None = None,
-    user: User | None = None,
+    user: User,
 ) -> PlayEvent:
     """Return a domain.model PlayEvent.
 
@@ -65,7 +65,7 @@ def parse_play_event(
             "No album title given for Recording %s by Artist %s", payload.name, payload.artist.name
         )
 
-    active_user = user or User(display_name="Last.fm")
+    active_user = user
     artist = _build_artist(payload)
     release_set, release = _build_release_set_and_release(payload)
     recording = _build_recording(payload)

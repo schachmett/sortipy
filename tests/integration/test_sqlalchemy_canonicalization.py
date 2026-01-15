@@ -16,7 +16,7 @@ from sortipy.domain.model import Artist, ExternalNamespace
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyIngestUnitOfWork
+    from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
 
 
 def _pipeline() -> IngestionPipeline:
@@ -24,7 +24,7 @@ def _pipeline() -> IngestionPipeline:
 
 
 def test_canonicalization_matches_existing_external_id(
-    sqlite_unit_of_work: Callable[[], SqlAlchemyIngestUnitOfWork],
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
 ) -> None:
     existing = Artist(name="Radiohead")
     existing.add_external_id(ExternalNamespace.MUSICBRAINZ_ARTIST, "mbid-1")
@@ -49,7 +49,7 @@ def test_canonicalization_matches_existing_external_id(
 
 
 def test_canonicalization_matches_sidecar_keys(
-    sqlite_unit_of_work: Callable[[], SqlAlchemyIngestUnitOfWork],
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
 ) -> None:
     existing = Artist(name="Kendrick Lamar")
     state = NormalizationState()

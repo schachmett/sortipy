@@ -23,7 +23,7 @@ if TYPE_CHECKING:
         ReleaseNormalizationData,
         ReleaseSetNormalizationData,
     )
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
+    from sortipy.domain.ingest_pipeline.ingest_ports import IngestionUnitOfWork
 
 
 type NormKey = tuple[object, ...]
@@ -124,7 +124,7 @@ class PipelineContext:
 
     batch_id: str | None = None
     normalization_state: NormalizationState | None = None
-    ingest_uow: IngestUnitOfWork | None = None
+    ingest_uow: IngestionUnitOfWork | None = None
     counters: EntityCounters = field(default_factory=EntityCounters)
 
 

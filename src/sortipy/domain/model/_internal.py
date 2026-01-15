@@ -16,7 +16,7 @@ if TYPE_CHECKING:
         ReleaseTrack,
     )
     from sortipy.domain.model.music import Artist, Recording, Release, ReleaseSet
-    from sortipy.domain.model.user import PlayEvent
+    from sortipy.domain.model.user import LibraryItem, PlayEvent, User
 
 
 def set_release_release_set(release: Release, release_set: ReleaseSet) -> None:
@@ -68,6 +68,14 @@ def set_play_event_recording_ref(
     recording: Recording | None,
 ) -> None:
     event._recording_ref = recording
+
+
+def set_play_event_user(event: PlayEvent, user: User) -> None:
+    event._user = user
+
+
+def set_library_item_user(item: LibraryItem, user: User) -> None:
+    item._user = user
 
 
 def attach_release_set_contribution_to_release_set(

@@ -6,17 +6,18 @@ from collections.abc import Callable
 from logging import getLogger
 from typing import TYPE_CHECKING
 
-from sortipy.adapters.lastfm import LastFmFetcher
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyIngestUnitOfWork, startup
+from sortipy.adapters.lastfm import fetch_play_events
+from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, startup
 from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
-from sortipy.domain.ingest_pipeline.ingest_ports import IngestUnitOfWork
+from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
 
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from sortipy.domain.model import User
     from sortipy.domain.ports.fetching import PlayEventFetcher
 
-UnitOfWorkFactory = Callable[[], IngestUnitOfWork]
+UnitOfWorkFactory = Callable[[], PlayEventSyncUnitOfWork]
 
 
 log = getLogger(__name__)
@@ -25,6 +26,7 @@ log = getLogger(__name__)
 def sync_lastfm_play_events(
     *,
     source: PlayEventFetcher | None = None,
+    user: User,
     unit_of_work_factory: UnitOfWorkFactory | None = None,
     batch_size: int = 200,
     max_events: int | None = None,
@@ -34,8 +36,8 @@ def sync_lastfm_play_events(
     """Synchronise Last.fm play events using the configured adapters."""
 
     startup()
-    effective_source = source or LastFmFetcher()
-    effective_uow = unit_of_work_factory or SqlAlchemyIngestUnitOfWork
+    effective_source = source or fetch_play_events
+    effective_uow = unit_of_work_factory or SqlAlchemyUnitOfWork
     log.info(
         "Starting Last.fm sync: batch_size=%s, max_events=%s, from=%s, to=%s",
         batch_size,
@@ -46,6 +48,7 @@ def sync_lastfm_play_events(
 
     result = sync_play_events(
         fetcher=effective_source,
+        user=user,
         unit_of_work_factory=effective_uow,
         batch_size=batch_size,
         max_events=max_events,

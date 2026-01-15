@@ -81,6 +81,20 @@ class User(ProvenanceTrackedMixin):
             raise ValueError("library item not owned by this user")
         self._library_items.remove(item)
 
+    def rehydrate_library_item(self, item: LibraryItem) -> None:
+        """Attach a library item to this user instance.
+
+        Used by persistence adapters to re-bind detached items when crossing
+        session boundaries. This keeps the domain invariant intact: a library
+        item must always belong to its owning user.
+        """
+        if item.user is not self:
+            if item.user.id != self.id:
+                raise ValueError("library item belongs to a different user")
+            internal.set_library_item_user(item, self)
+        if item not in self._library_items:
+            self._library_items.append(item)
+
     def log_play(
         self,
         *,
@@ -107,6 +121,20 @@ class User(ProvenanceTrackedMixin):
         if event.user is not self:
             raise ValueError("play event not owned by this user")
         self._play_events.remove(event)
+
+    def rehydrate_play_event(self, event: PlayEvent) -> None:
+        """Attach a play event to this user instance.
+
+        Used by persistence adapters to re-bind detached events when crossing
+        session boundaries. This keeps the domain invariant intact: a play
+        event must always belong to its owning user.
+        """
+        if event.user is not self:
+            if event.user.id != self.id:
+                raise ValueError("play event belongs to a different user")
+            internal.set_play_event_user(event, self)
+        if event not in self._play_events:
+            self._play_events.append(event)
 
     def link_play_to_track(self, event: PlayEvent, track: ReleaseTrack) -> None:
         if event.user is not self:
