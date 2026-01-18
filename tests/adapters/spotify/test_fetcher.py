@@ -9,12 +9,16 @@ from sortipy.domain.model import User
 
 if TYPE_CHECKING:
     from sortipy.adapters.spotify.client import SpotifyClient
+    from sortipy.config.spotify import SpotifyConfig
 
 
-def test_fetch_library_items_combines_sources(spotipy_client: SpotifyClient) -> None:
+def test_fetch_library_items_combines_sources(
+    spotipy_client: SpotifyClient, spotify_config: SpotifyConfig
+) -> None:
     user = User(display_name="Spotify Smoke")
     result = fetch_library_items(
         client=spotipy_client,
+        config=spotify_config,
         user=user,
         max_tracks=1,
         max_albums=1,

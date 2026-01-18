@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-
-from sortipy.common.config import require_env_vars
 
 from .schema import (
     FollowedArtistsResponse,
@@ -22,57 +19,7 @@ from .schema import (
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-
-DEFAULT_SPOTIFY_SCOPES = (
-    "user-library-read",
-    "user-follow-read",
-)
-
-
-@dataclass(frozen=True)
-class SpotifyScopes:
-    library: tuple[str, ...] = DEFAULT_SPOTIFY_SCOPES
-    recently_played: tuple[str, ...] = ("user-read-recently-played",)
-    currently_playing: tuple[str, ...] = (
-        "user-read-currently-playing",
-        "user-read-playback-state",
-    )
-
-    @staticmethod
-    def merge(*scopes: tuple[str, ...]) -> tuple[str, ...]:
-        merged: list[str] = []
-        for scope_list in scopes:
-            for scope in scope_list:
-                if scope not in merged:
-                    merged.append(scope)
-        return tuple(merged)
-
-
-@dataclass(frozen=True)
-class SpotifyConfig:
-    client_id: str
-    client_secret: str
-    redirect_uri: str
-    scope: tuple[str, ...] = field(default_factory=lambda: SpotifyScopes.library)
-    cache_handler: spotipy.CacheFileHandler | None = None
-
-    @classmethod
-    def from_environment(cls, *, scope: tuple[str, ...] | None = None) -> SpotifyConfig:
-        values = require_env_vars(
-            (
-                "SPOTIFY_CLIENT_ID",
-                "SPOTIFY_CLIENT_SECRET",
-                "SPOTIFY_REDIRECT_URI",
-                "SPOTIFY_CACHE_PATH",
-            )
-        )
-        return cls(
-            client_id=values["SPOTIFY_CLIENT_ID"],
-            client_secret=values["SPOTIFY_CLIENT_SECRET"],
-            redirect_uri=values["SPOTIFY_REDIRECT_URI"],
-            scope=scope or SpotifyScopes.library,
-            cache_handler=spotipy.CacheFileHandler(values["SPOTIFY_CACHE_PATH"]),
-        )
+    from sortipy.config.spotify import SpotifyConfig
 
 
 class SpotifyApiClient(Protocol):
@@ -90,12 +37,17 @@ class SpotifyClient:
 
     def __init__(self, *, config: SpotifyConfig, client: SpotifyApiClient | None = None) -> None:
         if client is None:
+            cache_handler = (
+                spotipy.CacheFileHandler(config.cache_path)
+                if config.cache_path is not None
+                else None
+            )
             auth_manager = SpotifyOAuth(
                 client_id=config.client_id,
                 client_secret=config.client_secret,
                 redirect_uri=config.redirect_uri,
                 scope=" ".join(config.scope),
-                cache_handler=config.cache_handler,
+                cache_handler=cache_handler,
             )
             client = spotipy.Spotify(auth_manager=auth_manager)
         self._client: SpotifyApiClient = client

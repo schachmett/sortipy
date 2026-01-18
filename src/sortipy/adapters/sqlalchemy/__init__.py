@@ -23,7 +23,7 @@ from .repositories import (
 )
 from .unit_of_work import (
     SqlAlchemyUnitOfWork,
-    startup,
+    create_unit_of_work_factory,
 )
 
 __all__ = [
@@ -38,7 +38,7 @@ __all__ = [
     "SqlAlchemyReleaseSetRepository",
     "SqlAlchemyUnitOfWork",
     "SqlAlchemyUserRepository",
+    "create_unit_of_work_factory",
     "mapper_registry",
     "start_mappers",
-    "startup",
 ]

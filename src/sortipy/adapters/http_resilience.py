@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Concatenate,
-    Literal,
     TypedDict,
     Unpack,
 )
@@ -19,9 +16,8 @@ from hishel._policies import BaseFilter
 from hishel.httpx import AsyncCacheClient
 from httpx_retries import Retry, RetryTransport
 
-from sortipy.common.storage import get_http_cache_path
-
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from types import TracebackType
 
     from httpx._client import UseClientDefault
@@ -38,79 +34,13 @@ if TYPE_CHECKING:
         URLTypes,
     )
 
-ResponseHook = Callable[[httpx.Response], Awaitable[None] | None]
-ShouldCacheHook = Callable[[object], bool]
-
-
-class RetryablePayloadError(httpx.HTTPError):
-    """Raised by response hooks when a payload-level condition should trigger a retry."""
-
-    def __init__(self, message: str, *, response: httpx.Response) -> None:
-        super().__init__(message)
-        self.response = response
-
-
-@dataclass(slots=True, frozen=True)
-class RetryPolicy:
-    total: int = 4
-    backoff_factor: float = 0.5
-    max_backoff_wait: float = 60.0
-    respect_retry_after_header: bool = True
-    allowed_methods: frozenset[str] = field(
-        default_factory=lambda: frozenset(
-            {"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}
-        )
+    from sortipy.config.http_resilience import (
+        CacheConfig,
+        ResilienceConfig,
+        ResponseHook,
+        RetryPolicy,
+        ShouldCacheHook,
     )
-    status_forcelist: frozenset[int] = field(
-        default_factory=lambda: frozenset({429, 500, 502, 503, 504})
-    )
-    retry_on_exceptions: tuple[type[httpx.HTTPError], ...] = (
-        httpx.TimeoutException,
-        httpx.NetworkError,
-        httpx.RemoteProtocolError,
-        RetryablePayloadError,
-    )
-    backoff_jitter: float = 1.0
-
-    def build(self) -> Retry:
-        return Retry(
-            total=self.total,
-            backoff_factor=self.backoff_factor,
-            max_backoff_wait=self.max_backoff_wait,
-            respect_retry_after_header=self.respect_retry_after_header,
-            allowed_methods=tuple(self.allowed_methods),
-            status_forcelist=tuple(self.status_forcelist),
-            retry_on_exceptions=self.retry_on_exceptions,
-            backoff_jitter=self.backoff_jitter,
-        )
-
-
-@dataclass(slots=True, frozen=True)
-class RateLimit:
-    max_calls: int
-    per_seconds: float
-
-
-@dataclass(slots=True, frozen=True)
-class CacheConfig:
-    enabled: bool = True
-    backend: Literal["sqlite", "memory"] = "sqlite"
-    sqlite_path: str | None = None
-    default_ttl_seconds: float | None = None
-    refresh_ttl_on_access: bool = True
-    should_cache: ShouldCacheHook | None = None
-
-
-@dataclass(slots=True, frozen=True)
-class ResilienceConfig:
-    name: str
-    base_url: str | None = None
-    timeout_seconds: float = 30.0
-    retry: RetryPolicy = field(default_factory=RetryPolicy)
-    ratelimit: RateLimit | None = None
-    cache: CacheConfig | None = field(default_factory=CacheConfig)
-    response_hooks: tuple[ResponseHook, ...] = field(default_factory=tuple)
-    default_headers: Mapping[str, str] | None = None
 
 
 class RequestOptions(TypedDict, total=False):
@@ -144,7 +74,7 @@ class ResilientClient:
             else None
         )
 
-        retry_transport = RetryTransport(retry=config.retry.build())
+        retry_transport = RetryTransport(retry=_build_retry(config.retry))
 
         storage, policy = _build_cache_components(config.cache)
 
@@ -243,7 +173,9 @@ def _build_cache_components(
         raise ValueError(msg)
 
     if config.backend == "sqlite":
-        database_path = config.sqlite_path or str(get_http_cache_path())
+        if config.sqlite_path is None:
+            raise ValueError("sqlite cache backend requires sqlite_path")
+        database_path = config.sqlite_path
     else:
         database_path = ":memory:"
     storage = AsyncSqliteStorage(
@@ -257,6 +189,20 @@ def _build_cache_components(
         policy = FilterPolicy(response_filters=[_ShouldCacheResponseFilter(config.should_cache)])
 
     return storage, policy
+
+
+def _build_retry(policy: RetryPolicy) -> Retry:
+    retry_policy = policy
+    return Retry(
+        total=retry_policy.total,
+        backoff_factor=retry_policy.backoff_factor,
+        max_backoff_wait=retry_policy.max_backoff_wait,
+        respect_retry_after_header=retry_policy.respect_retry_after_header,
+        allowed_methods=tuple(retry_policy.allowed_methods),
+        status_forcelist=tuple(retry_policy.status_forcelist),
+        retry_on_exceptions=retry_policy.retry_on_exceptions,
+        backoff_jitter=retry_policy.backoff_jitter,
+    )
 
 
 async def http_get_resilient(

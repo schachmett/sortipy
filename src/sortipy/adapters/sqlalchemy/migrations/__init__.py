@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Final
 from alembic import command
 from alembic.config import Config
 
-from sortipy.common.storage import get_database_uri
+from sortipy.config import get_database_config
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[5]
 PYPROJECT_PATH: Final[Path] = PROJECT_ROOT / "pyproject.toml"
@@ -77,5 +77,5 @@ def upgrade_head(*, engine: Engine | None = None, database_uri: str | None = Non
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
         return
-    config.set_main_option("sqlalchemy.url", database_uri or get_database_uri())
+    config.set_main_option("sqlalchemy.url", database_uri or get_database_config().uri)
     command.upgrade(config, "head")

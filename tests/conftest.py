@@ -11,8 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from sortipy.adapters.lastfm import RecentTracksResponse
 from sortipy.adapters.sqlalchemy import start_mappers
-from sortipy.adapters.sqlalchemy.migrations import upgrade_head
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, shutdown, startup
+from sortipy.adapters.sqlalchemy.mappings import create_all_tables
+from sortipy.adapters.sqlalchemy.unit_of_work import (
+    SqlAlchemyUnitOfWork,
+    create_unit_of_work_factory,
+)
 
 os.environ.setdefault("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
@@ -38,7 +41,6 @@ def recent_tracks_payload(
 def sqlite_engine() -> Iterator[Engine]:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     start_mappers()
-    upgrade_head(engine=engine)
     try:
         yield engine
     finally:
@@ -47,6 +49,7 @@ def sqlite_engine() -> Iterator[Engine]:
 
 @pytest.fixture
 def sqlite_session(sqlite_engine: Engine) -> Iterator[Session]:
+    create_all_tables(sqlite_engine)
     session_factory = sessionmaker(bind=sqlite_engine, future=True)
     session = session_factory()
     try:
@@ -58,13 +61,5 @@ def sqlite_session(sqlite_engine: Engine) -> Iterator[Session]:
 @pytest.fixture
 def sqlite_unit_of_work(
     sqlite_engine: Engine,
-) -> Iterator[Callable[[], SqlAlchemyUnitOfWork]]:
-    startup(engine=sqlite_engine, force=True)
-
-    def factory() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork()
-
-    try:
-        yield factory
-    finally:
-        shutdown()
+) -> Callable[[], SqlAlchemyUnitOfWork]:
+    return create_unit_of_work_factory(engine=sqlite_engine)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .client import SpotifyClient, SpotifyConfig, SpotifyScopes
+from .client import SpotifyClient
 from .fetcher import fetch_library_items
 from .schema import (
     SavedAlbumItem,
@@ -23,8 +23,6 @@ __all__ = [
     "SpotifyAlbum",
     "SpotifyArtist",
     "SpotifyClient",
-    "SpotifyConfig",
-    "SpotifyScopes",
     "SpotifyTrack",
     "fetch_library_items",
     "translate_followed_artist",

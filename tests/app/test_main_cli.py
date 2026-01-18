@@ -11,6 +11,9 @@ from sortipy.ui import cli as main_module
 
 def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
+    monkeypatch.setenv("LASTFM_API_KEY", "demo-key")
+    monkeypatch.setenv("LASTFM_USER_NAME", "demo-user")
+    monkeypatch.setenv("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
     def fake_sync(**kwargs: object) -> None:
         captured.update(kwargs)
@@ -29,6 +32,9 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
+    monkeypatch.setenv("LASTFM_API_KEY", "demo-key")
+    monkeypatch.setenv("LASTFM_USER_NAME", "demo-user")
+    monkeypatch.setenv("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
     def fake_sync(**kwargs: object) -> None:
         captured.update(kwargs)
@@ -65,6 +71,9 @@ def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
+    monkeypatch.setenv("LASTFM_API_KEY", "demo-key")
+    monkeypatch.setenv("LASTFM_USER_NAME", "demo-user")
+    monkeypatch.setenv("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
     with pytest.raises(SystemExit) as excinfo:
         main_module.main(["--user-name", "Listener", "--start", "not-a-date"])

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import functools
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Callable  # noqa: UP035
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
 from sqlalchemy import select
 
-from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
+from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.adapters.lastfm import LastFmClient, RecentTracksResponse, fetch_play_events
-from sortipy.common.config import LastFmConfig
+from sortipy.config import CacheConfig, LastFmConfig, RateLimit, ResilienceConfig
+from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS
 from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.model import (
     Artist,
@@ -24,7 +24,21 @@ from sortipy.domain.model import (
 from tests.helpers.play_events import FakePlayEventSource
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
+    from sortipy.domain.ports.fetching import PlayEventFetchResult
+
+
+def _make_lastfm_config() -> LastFmConfig:
+    resilience = ResilienceConfig(
+        name="lastfm",
+        base_url=LASTFM_BASE_URL,
+        timeout_seconds=LASTFM_TIMEOUT_SECONDS,
+        ratelimit=RateLimit(max_calls=4, per_seconds=1.0),
+        cache=CacheConfig(backend="memory"),
+    )
+    return LastFmConfig(api_key="demo", user_name="demo-user", resilience=resilience)
 
 
 def _make_client_factory(
@@ -35,7 +49,9 @@ def _make_client_factory(
 
     def factory(resilience: ResilienceConfig) -> ResilientClient:
         client = ResilientClient(resilience)
-        client._client = httpx.AsyncClient(transport=httpx.MockTransport(async_handler))  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+        client._client = httpx.AsyncClient(  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+            transport=httpx.MockTransport(async_handler),
+        )
         return client
 
     return factory
@@ -48,7 +64,10 @@ def test_sync_play_events_persists_payload(
     recent_tracks_payload: RecentTracksResponse,
 ) -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status_code=200, json=recent_tracks_payload.model_dump(by_alias=True))
+        return httpx.Response(
+            status_code=200,
+            json=recent_tracks_payload.model_dump(by_alias=True),
+        )
 
     total_expected = len(_extract_names(recent_tracks_payload))
 
@@ -57,11 +76,27 @@ def test_sync_play_events_persists_payload(
         uow.repositories.users.add(user)
         uow.commit()
 
-    client = LastFmClient(
-        config=LastFmConfig(api_key="demo", user_name="demo-user"),
-        client_factory=_make_client_factory(handler),
-    )
-    fetcher = functools.partial(fetch_play_events, client=client)
+    config = _make_lastfm_config()
+    client = LastFmClient(config=config, client_factory=_make_client_factory(handler))
+
+    def fetcher(
+        *,
+        user: User,
+        batch_size: int = 200,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        max_events: int | None = None,
+    ) -> PlayEventFetchResult:
+        return fetch_play_events(
+            config=config,
+            client=client,
+            user=user,
+            batch_size=batch_size,
+            since=since,
+            until=until,
+            max_events=max_events,
+        )
+
     result = sync_play_events(
         fetcher=fetcher,
         user=user,

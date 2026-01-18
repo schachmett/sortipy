@@ -9,54 +9,37 @@ from sqlalchemy import create_engine
 from sortipy.adapters.sqlalchemy.unit_of_work import (
     SqlAlchemyUnitOfWork,
     StartupError,
-    configured_engine,
-    shutdown,
-    startup,
+    create_unit_of_work_factory,
 )
 from tests.helpers.play_events import make_play_event
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from sqlalchemy.engine import Engine
 
 
-@pytest.fixture(autouse=True)
-def reset_unit_of_work_state() -> Iterator[None]:
-    shutdown()
-    yield
-    shutdown()
-
-
-def test_sqlalchemy_unit_of_work_requires_startup() -> None:
+def test_unit_of_work_factory_requires_engine_or_uri() -> None:
     with pytest.raises(StartupError):
-        SqlAlchemyUnitOfWork()
+        create_unit_of_work_factory()
 
 
-def test_startup_requires_force_for_reconfiguration() -> None:
-    engine_a = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    engine_b = create_engine("sqlite+pysqlite:///:memory:", future=True)
-
-    startup(engine=engine_a, force=True)
-
-    with pytest.raises(StartupError):
-        startup(engine=engine_b)
-
-    startup(engine=engine_b, force=True)
-    assert configured_engine() is engine_b
+def test_unit_of_work_factory_accepts_engine() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    factory = create_unit_of_work_factory(engine=engine)
+    uow = factory()
+    assert isinstance(uow, SqlAlchemyUnitOfWork)
 
 
 def test_unit_of_work_persists_events(sqlite_engine: Engine) -> None:
-    startup(engine=sqlite_engine, force=True)
+    factory = create_unit_of_work_factory(engine=sqlite_engine)
 
-    with SqlAlchemyUnitOfWork() as uow:
+    with factory() as uow:
         event = make_play_event("Persisted", timestamp=datetime.now(tz=UTC))
         uow.repositories.users.add(event.user)
         uow.repositories.play_events.add(event)
         uow.commit()
         played_at = event.played_at
 
-    with SqlAlchemyUnitOfWork() as uow:
+    with factory() as uow:
         repo = uow.repositories.play_events
         assert repo.latest_timestamp() is not None
         assert repo.exists(user_id=event.user.id, source=event.source, played_at=played_at)

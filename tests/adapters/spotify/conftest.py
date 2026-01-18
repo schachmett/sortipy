@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from sortipy.adapters.spotify.client import SpotifyClient, SpotifyConfig
+from sortipy.adapters.spotify.client import SpotifyClient
+from sortipy.config.spotify import SpotifyConfig
 
 SpotifyPayload = dict[str, object]
 FIXTURES = Path("tests/data/spotify")

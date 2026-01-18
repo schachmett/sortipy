@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
 from sortipy.app import sync_lastfm_play_events
-from sortipy.common.logging import configure_logging
+from sortipy.config.logging import configure_logging
 from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
 from sortipy.domain.model import User
 

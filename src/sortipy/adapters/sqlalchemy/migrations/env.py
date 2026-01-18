@@ -5,17 +5,12 @@ from __future__ import annotations
 import logging
 from logging.config import fileConfig
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from alembic import context
 from sqlalchemy import create_engine, pool
 
 from sortipy.adapters.sqlalchemy import mapper_registry, start_mappers
-from sortipy.adapters.sqlalchemy.unit_of_work import configured_engine
-from sortipy.common.storage import get_database_uri
-
-if TYPE_CHECKING:
-    from sqlalchemy.engine import Engine
+from sortipy.config import get_database_config
 
 config = context.config
 
@@ -38,7 +33,7 @@ target_metadata = mapper_registry.metadata
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
 
-    url = get_database_uri()
+    url = get_database_config().uri
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -69,18 +64,14 @@ def run_migrations_online() -> None:
             context.run_migrations()
         return
 
-    engine: Engine | None = configured_engine()
-    cleanup = False
-
-    if engine is None:
-        main_url = get_database_uri()
-        engine = create_engine(
-            main_url,
-            # prefix="sqlalchemy.",
-            poolclass=pool.NullPool,
-            future=True,
-        )
-        cleanup = True
+    main_url = get_database_config().uri
+    engine = create_engine(
+        main_url,
+        # prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+        future=True,
+    )
+    cleanup = True
 
     try:
         with engine.connect() as connection:

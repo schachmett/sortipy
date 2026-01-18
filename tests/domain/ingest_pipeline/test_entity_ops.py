@@ -122,8 +122,7 @@ def test_absorb_release_set_moves_contributions_and_releases() -> None:
     assert duplicate_release in primary.releases
     assert all(c.release_set is primary for c in primary.contributions)
     assert any(
-        ext.namespace == ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP
-        and ext.value == "mbid-dup"
+        ext.namespace == ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP and ext.value == "mbid-dup"
         for ext in primary.external_ids
     )
     assert primary.provenance is not None

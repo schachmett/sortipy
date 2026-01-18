@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from sortipy.common.config import MissingConfigurationError, require_env_var, require_env_vars
+from sortipy.config.env import MissingConfigurationError, require_env_vars
 
 
 def test_require_env_vars_returns_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -28,12 +28,12 @@ def test_require_env_var_handles_blank_values(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("EXAMPLE_VAR", "   ")
 
     with pytest.raises(MissingConfigurationError):
-        require_env_var("EXAMPLE_VAR")
+        require_env_vars(["EXAMPLE_VAR"])
 
 
 def test_require_env_vars_restores_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEMP_VAR", "123")
 
     assert os.getenv("TEMP_VAR") == "123"
-    result = require_env_var("TEMP_VAR")
-    assert result == "123"
+    result = require_env_vars(["TEMP_VAR"])
+    assert result["TEMP_VAR"] == "123"

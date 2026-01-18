@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from logging import getLogger
 from typing import TYPE_CHECKING
 
-from sortipy.adapters.lastfm import fetch_play_events
-from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork, startup
+from sortipy.adapters.lastfm import fetch_play_events, should_cache_recent_tracks
+from sortipy.adapters.sqlalchemy.unit_of_work import create_unit_of_work_factory
+from sortipy.config import get_database_config, get_lastfm_config
 from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
-from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
 
 if TYPE_CHECKING:
     from datetime import datetime
 
     from sortipy.domain.model import User
-    from sortipy.domain.ports.fetching import PlayEventFetcher
-
-UnitOfWorkFactory = Callable[[], PlayEventSyncUnitOfWork]
+    from sortipy.domain.ports.fetching import PlayEventFetchResult
 
 
 log = getLogger(__name__)
@@ -25,9 +22,7 @@ log = getLogger(__name__)
 
 def sync_lastfm_play_events(
     *,
-    source: PlayEventFetcher | None = None,
     user: User,
-    unit_of_work_factory: UnitOfWorkFactory | None = None,
     batch_size: int = 200,
     max_events: int | None = None,
     from_timestamp: datetime | None = None,
@@ -35,9 +30,27 @@ def sync_lastfm_play_events(
 ) -> SyncPlayEventsResult:
     """Synchronise Last.fm play events using the configured adapters."""
 
-    startup()
-    effective_source = source or fetch_play_events
-    effective_uow = unit_of_work_factory or SqlAlchemyUnitOfWork
+    lastfm_config = get_lastfm_config(cache_predicate=should_cache_recent_tracks)
+    database_config = get_database_config()
+    unit_of_work_factory = create_unit_of_work_factory(database_uri=database_config.uri)
+
+    def _fetcher(
+        *,
+        user: User,
+        batch_size: int = 200,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        max_events: int | None = None,
+    ) -> PlayEventFetchResult:
+        return fetch_play_events(
+            config=lastfm_config,
+            user=user,
+            batch_size=batch_size,
+            since=since,
+            until=until,
+            max_events=max_events,
+        )
+
     log.info(
         "Starting Last.fm sync: batch_size=%s, max_events=%s, from=%s, to=%s",
         batch_size,
@@ -47,9 +60,9 @@ def sync_lastfm_play_events(
     )
 
     result = sync_play_events(
-        fetcher=effective_source,
+        fetcher=_fetcher,
         user=user,
-        unit_of_work_factory=effective_uow,
+        unit_of_work_factory=unit_of_work_factory,
         batch_size=batch_size,
         max_events=max_events,
         from_timestamp=from_timestamp,

@@ -9,12 +9,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from sortipy.adapters.http_resilience import (
-    CacheConfig,
-    RateLimit,
-    ResilienceConfig,
-    ResilientClient,
-)
+from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.domain.ports.fetching import PlayEventFetchResult
 
 from .schema import ErrorResponse, RecentTracksResponse, ResponseAttr, TrackPayload
@@ -23,38 +18,17 @@ from .translator import parse_play_event
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from sortipy.common.config import LastFmConfig
+    from sortipy.config.http_resilience import ResilienceConfig
+    from sortipy.config.lastfm import LastFmConfig
     from sortipy.domain.model import PlayEvent, User
 
 log = getLogger(__name__)
-
-LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
-_DEFAULT_TIMEOUT_SECONDS = 10.0
 
 
 def _datetime_to_epoch_seconds(value: datetime) -> int:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return int(value.astimezone(UTC).timestamp())
-
-
-def _should_cache_payload(payload: object) -> bool:
-    response = RecentTracksResponse.model_validate(payload)
-    return not any(track.is_now_playing for track in response.recenttracks.track)
-
-
-def _default_resilience_config() -> ResilienceConfig:
-    return ResilienceConfig(
-        name="lastfm",
-        base_url=LASTFM_BASE_URL,
-        timeout_seconds=_DEFAULT_TIMEOUT_SECONDS,
-        ratelimit=RateLimit(max_calls=4, per_seconds=1.0),
-        cache=CacheConfig(backend="memory", should_cache=_should_cache_payload),
-    )
-
-
-def _default_client_factory(config: ResilienceConfig) -> ResilientClient:
-    return ResilientClient(config)
 
 
 class LastFmAPIError(RuntimeError):
@@ -72,12 +46,11 @@ class LastFmClient:
         self,
         *,
         config: LastFmConfig,
-        resilience: ResilienceConfig | None = None,
         client_factory: Callable[[ResilienceConfig], ResilientClient] | None = None,
     ) -> None:
         self._config = config
-        self._resilience = resilience or _default_resilience_config()
-        self._client_factory = client_factory or _default_client_factory
+        self._resilience = config.resilience
+        self._client_factory = client_factory or ResilientClient
 
     def fetch_play_events(
         self,
@@ -181,7 +154,9 @@ class LastFmClient:
         client: ResilientClient,
         params: httpx.QueryParams,
     ) -> RecentTracksResponse:
-        base_url = self._resilience.base_url or LASTFM_BASE_URL
+        base_url = self._resilience.base_url
+        if base_url is None:
+            raise LastFmAPIError("Missing Last.fm base_url in resilience configuration")
         response = await client.get(base_url, params=params)
         response.raise_for_status()
 
@@ -195,3 +170,10 @@ class LastFmClient:
             raise LastFmAPIError("Unexpected Last.fm response payload")
 
         return RecentTracksResponse.model_validate(payload)
+
+
+def should_cache_recent_tracks(payload: object) -> bool:
+    """Skip caching responses that contain now-playing items."""
+
+    response = RecentTracksResponse.model_validate(payload)
+    return not any(track.is_now_playing for track in response.recenttracks.track)

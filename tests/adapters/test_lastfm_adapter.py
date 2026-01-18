@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 
-from sortipy.adapters.http_resilience import ResilienceConfig, ResilientClient
+from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.adapters.lastfm import (
     LastFmClient,
     RecentTracksResponse,
@@ -14,8 +14,14 @@ from sortipy.adapters.lastfm import (
     fetch_play_events,
     parse_play_event,
 )
-from sortipy.adapters.lastfm.fetcher import _get_default_client
-from sortipy.common.config import LastFmConfig, MissingConfigurationError
+from sortipy.config import (
+    CacheConfig,
+    LastFmConfig,
+    MissingConfigurationError,
+    RateLimit,
+    ResilienceConfig,
+)
+from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS, get_lastfm_config
 from sortipy.domain.model import Provider, User
 
 if TYPE_CHECKING:
@@ -30,10 +36,27 @@ def _make_client_factory(
 
     def factory(resilience: ResilienceConfig) -> ResilientClient:
         client = ResilientClient(resilience)
-        client._client = httpx.AsyncClient(transport=httpx.MockTransport(async_handler))  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+        client._client = httpx.AsyncClient(  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+            transport=httpx.MockTransport(async_handler),
+        )
         return client
 
     return factory
+
+
+def _make_lastfm_config(
+    *,
+    api_key: str = "demo",
+    user_name: str = "demo-user",
+) -> LastFmConfig:
+    resilience = ResilienceConfig(
+        name="lastfm",
+        base_url=LASTFM_BASE_URL,
+        timeout_seconds=LASTFM_TIMEOUT_SECONDS,
+        ratelimit=RateLimit(max_calls=4, per_seconds=1.0),
+        cache=CacheConfig(backend="memory"),
+    )
+    return LastFmConfig(api_key=api_key, user_name=user_name, resilience=resilience)
 
 
 @pytest.fixture
@@ -196,11 +219,13 @@ def test_http_source_fetches_play_events(
             },
         )
 
+    config = _make_lastfm_config()
     client = LastFmClient(
-        config=LastFmConfig(api_key="demo", user_name="demo-user"),
+        config=config,
         client_factory=_make_client_factory(handler),
     )
     result = fetch_play_events(
+        config=config,
         client=client,
         user=user,
         batch_size=5,
@@ -217,26 +242,22 @@ def test_http_source_fetches_play_events(
 
 def test_http_source_raises_when_credentials_missing(
     monkeypatch: pytest.MonkeyPatch,
-    user: User,
 ) -> None:
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
     monkeypatch.delenv("LASTFM_USER_NAME", raising=False)
-    _get_default_client.cache_clear()
 
     with pytest.raises(MissingConfigurationError):
-        fetch_play_events(user=user)
+        get_lastfm_config()
 
 
 def test_http_source_raises_when_credentials_blank(
     monkeypatch: pytest.MonkeyPatch,
-    user: User,
 ) -> None:
     monkeypatch.setenv("LASTFM_API_KEY", "   ")
     monkeypatch.setenv("LASTFM_USER_NAME", "   ")
-    _get_default_client.cache_clear()
 
     with pytest.raises(MissingConfigurationError):
-        fetch_play_events(user=user)
+        get_lastfm_config()
 
 
 def test_http_source_reads_credentials_from_environment(
@@ -267,11 +288,12 @@ def test_http_source_reads_credentials_from_environment(
             },
         )
 
+    config = get_lastfm_config()
     client = LastFmClient(
-        config=LastFmConfig.from_environment(),
+        config=config,
         client_factory=_make_client_factory(handler),
     )
-    fetch_play_events(user=user, client=client)
+    fetch_play_events(config=config, user=user, client=client)
 
     assert captured["api_key"] == "env-key"
     assert captured["user"] == "env-user"
@@ -289,11 +311,13 @@ def test_http_source_handles_multiple_pages_from_recording(
         payload = responses[index]
         return httpx.Response(status_code=200, json=payload.model_dump(by_alias=True))
 
+    config = _make_lastfm_config()
     client = LastFmClient(
-        config=LastFmConfig(api_key="demo", user_name="demo-user"),
+        config=config,
         client_factory=_make_client_factory(handler),
     )
     result = fetch_play_events(
+        config=config,
         client=client,
         user=user,
         batch_size=5,

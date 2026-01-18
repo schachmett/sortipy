@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from sortipy.domain.ports.fetching import LibraryItemFetchResult
 
-from .client import SpotifyClient, SpotifyConfig
+from .client import SpotifyClient
 from .translator import translate_followed_artist, translate_saved_album, translate_saved_track
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from sortipy.config.spotify import SpotifyConfig
     from sortipy.domain.model import LibraryItem, User
-
-@lru_cache(maxsize=1)
-def _get_default_client() -> SpotifyClient:
-    return SpotifyClient(config=SpotifyConfig.from_environment())
 
 
 def fetch_library_items(
     *,
+    config: SpotifyConfig,
     client: SpotifyClient | None = None,
     user: User,
     batch_size: int = 50,
@@ -31,29 +28,10 @@ def fetch_library_items(
 ) -> LibraryItemFetchResult:
     """Fetch Spotify library items and translate them into domain entities."""
 
-    active_client = client or _get_default_client()
-    return _fetch_library_items(
-        active_client,
-        user=user,
-        batch_size=batch_size,
-        max_tracks=max_tracks,
-        max_albums=max_albums,
-        max_artists=max_artists,
-    )
-
-
-def _fetch_library_items(
-    client: SpotifyClient,
-    *,
-    user: User,
-    batch_size: int,
-    max_tracks: int | None,
-    max_albums: int | None,
-    max_artists: int | None,
-) -> LibraryItemFetchResult:
+    active_client = client or SpotifyClient(config=config)
     return LibraryItemFetchResult(
         library_items=_iter_library_items(
-            client,
+            active_client,
             user=user,
             batch_size=batch_size,
             max_tracks=max_tracks,
