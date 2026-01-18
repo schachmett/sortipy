@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
 from sortipy.app import sync_lastfm_play_events
-from sortipy.config.logging import configure_logging
-from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
+from sortipy.config import configure_logging
 from sortipy.domain.model import User
 
 if TYPE_CHECKING:
@@ -35,8 +34,8 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=DEFAULT_SYNC_BATCH_SIZE,
-        help="Number of events to request per API call (default: %(default)s)",
+        default=None,
+        help="Number of events to request per API call (defaults to config)",
     )
     parser.add_argument(
         "--user-name",

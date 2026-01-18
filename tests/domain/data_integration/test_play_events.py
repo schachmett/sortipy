@@ -38,6 +38,7 @@ def test_sync_play_events_skips_commit_when_empty() -> None:
         fetcher=FakePlayEventSource([[]]),
         user=user,
         unit_of_work_factory=lambda: uow,
+        batch_size=5,
     )
 
     assert result.stored == 0
@@ -53,6 +54,7 @@ def test_sync_play_events_skips_existing_timestamps() -> None:
         fetcher=FakePlayEventSource([[event]]),
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
     )
 
     assert result.stored == 0
@@ -71,6 +73,7 @@ def test_sync_play_events_respects_from_timestamp() -> None:
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
         from_timestamp=older.played_at,
     )
 
@@ -89,6 +92,7 @@ def test_sync_play_events_returns_now_playing_without_persisting() -> None:
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
     )
 
     assert result.now_playing is in_progress
@@ -108,6 +112,7 @@ def test_sync_play_events_respects_to_timestamp_upper_bound() -> None:
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
         to_timestamp=window_end,
     )
 
@@ -126,6 +131,7 @@ def test_sync_play_events_reports_latest_timestamp_from_new_data() -> None:
         fetcher=FakePlayEventSource([[first, second]]),
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
     )
 
     assert result.latest_timestamp == second.played_at
@@ -142,6 +148,7 @@ def test_sync_play_events_uses_repository_latest_timestamp_when_request_missing_
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
     )
 
     assert result.stored == 1
@@ -162,6 +169,7 @@ def test_sync_play_events_honours_max_events_limit() -> None:
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
         max_events=2,
     )
 
@@ -181,6 +189,7 @@ def test_sync_play_events_skips_commit_when_upper_bound_filters_all_events() -> 
         fetcher=FakePlayEventSource([[out_of_range]]),
         user=user,
         unit_of_work_factory=lambda: uow,
+        batch_size=5,
         to_timestamp=window_end,
     )
 
@@ -199,6 +208,7 @@ def test_sync_play_events_deduplicates_events_with_same_timestamp_in_batch() -> 
         fetcher=FakePlayEventSource([[duplicate_a, duplicate_b]]),
         user=user,
         unit_of_work_factory=lambda: FakeIngestUnitOfWork(repo),
+        batch_size=5,
     )
 
     assert result.stored == 1

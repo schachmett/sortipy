@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sortipy.domain.model.enums import EntityType, MergeReason
+from .enums import EntityType, MergeReason
 
 if TYPE_CHECKING:
     from uuid import UUID

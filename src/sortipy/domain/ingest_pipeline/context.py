@@ -17,13 +17,13 @@ from sortipy.domain.model import (
 )
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.entity_ops import (
+    from .entity_ops import (
         ArtistNormalizationData,
         RecordingNormalizationData,
         ReleaseNormalizationData,
         ReleaseSetNormalizationData,
     )
-    from sortipy.domain.ingest_pipeline.ingest_ports import IngestionUnitOfWork
+    from .ingest_ports import IngestionUnitOfWork
 
 
 type NormKey = tuple[object, ...]

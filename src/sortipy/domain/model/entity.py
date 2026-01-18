@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
-    from sortipy.domain.model import EntityType
+    from .enums import EntityType
 
 
 def new_id() -> UUID:

@@ -10,22 +10,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from sortipy.adapters.sqlalchemy import (
+from sortipy.domain.ports import RepositoryCollection
+
+from .mappings import start_mappers
+from .migrations import upgrade_head
+from .repositories import (
+    MissingParentError,
     SqlAlchemyArtistRepository,
+    SqlAlchemyLibraryItemRepository,
+    SqlAlchemyNormalizationSidecarRepository,
     SqlAlchemyPlayEventRepository,
     SqlAlchemyRecordingRepository,
     SqlAlchemyReleaseRepository,
     SqlAlchemyReleaseSetRepository,
-    start_mappers,
-)
-from sortipy.adapters.sqlalchemy.migrations import upgrade_head
-from sortipy.adapters.sqlalchemy.repositories import (
-    MissingParentError,
-    SqlAlchemyLibraryItemRepository,
-    SqlAlchemyNormalizationSidecarRepository,
     SqlAlchemyUserRepository,
 )
-from sortipy.domain.ports.unit_of_work import RepositoryCollection
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -157,7 +156,7 @@ def create_unit_of_work_factory(
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from sortipy.domain.ingest_pipeline.ingest_ports import (
+    from sortipy.domain.ingest_pipeline import (
         IngestionUnitOfWork,
         LibraryItemSyncUnitOfWork,
         PlayEventSyncUnitOfWork,

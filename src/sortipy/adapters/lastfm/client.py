@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from sortipy.adapters.http_resilience import ResilientClient
-from sortipy.domain.ports.fetching import PlayEventFetchResult
+from sortipy.domain.ports import PlayEventFetchResult
 
 from .schema import ErrorResponse, RecentTracksResponse, ResponseAttr, TrackPayload
 from .translator import parse_play_event

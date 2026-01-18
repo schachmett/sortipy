@@ -6,8 +6,9 @@ import uuid
 
 from sqlalchemy import Column, Enum, Index, String, Table, UniqueConstraint
 
-from sortipy.adapters.sqlalchemy.mappings import UUIDColumnType, mapper_registry
 from sortipy.domain.model import EntityType
+
+from .mappings import UUIDColumnType, mapper_registry
 
 normalization_sidecar_table = Table(
     "normalization_sidecar",

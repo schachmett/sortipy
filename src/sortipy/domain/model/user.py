@@ -5,18 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from sortipy.domain.model.enums import EntityType, Provider
-from sortipy.domain.model.provenance import ProvenanceTrackedMixin
-
 from . import _internal as internal
+from .enums import EntityType, Provider
+from .provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
-    from sortipy.domain.model.associations import ReleaseTrack
-    from sortipy.domain.model.entity import IdentifiedEntity
-    from sortipy.domain.model.music import Recording, Release
+    from .associations import ReleaseTrack
+    from .entity import IdentifiedEntity
+    from .music import Recording, Release
 
 
 @dataclass(eq=False, kw_only=True)

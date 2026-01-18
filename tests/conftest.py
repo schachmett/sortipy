@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine  # noqa: TC002
 from sqlalchemy.orm import Session, sessionmaker
 
-from sortipy.adapters.lastfm import RecentTracksResponse
+from sortipy.adapters.lastfm.client import RecentTracksResponse
 from sortipy.adapters.sqlalchemy import start_mappers
 from sortipy.adapters.sqlalchemy.mappings import create_all_tables
 from sortipy.adapters.sqlalchemy.unit_of_work import (
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture(scope="session")
 def recent_tracks_payloads() -> tuple[RecentTracksResponse, ...]:
-    path = Path(__file__).resolve().parent / "data" / "lastfm_recent_tracks.jsonl"
+    path = Path(__file__).resolve().parent / "data" / "lastfm" / "lastfm_recent_tracks.jsonl"
     with path.open() as handle:
         return tuple(RecentTracksResponse.model_validate_json(line) for line in handle)
 

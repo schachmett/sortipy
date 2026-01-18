@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from sortipy.domain.ports.unit_of_work import (
-    CatalogRepositories,
-    UnitOfWork,
-)
+from sortipy.domain.ports import CatalogRepositories, UnitOfWork
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.context import NormalizationData
-    from sortipy.domain.ingest_pipeline.entity_ops import NormKey, NormKeySeq
     from sortipy.domain.model import EntityType, IdentifiedEntity
-    from sortipy.domain.ports.persistence import LibraryItemRepository, PlayEventRepository
+    from sortipy.domain.ports import LibraryItemRepository, PlayEventRepository
+
+    from .context import NormalizationData
+    from .entity_ops import NormKey, NormKeySeq
 
 
 @runtime_checkable

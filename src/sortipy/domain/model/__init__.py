@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from sortipy.domain.model.associations import (
+from .associations import (
     RecordingContribution,
     ReleaseSetContribution,
     ReleaseTrack,
 )
-from sortipy.domain.model.audit import EntityMerge
-from sortipy.domain.model.entity import Entity, IdentifiedEntity
-from sortipy.domain.model.enums import (
+from .audit import EntityMerge
+from .entity import Entity, IdentifiedEntity
+from .enums import (
     ArtistRole,
     EntityType,
     ExternalNamespace,
@@ -17,15 +17,15 @@ from sortipy.domain.model.enums import (
     Provider,
     ReleaseSetType,
 )
-from sortipy.domain.model.external_ids import (
+from .external_ids import (
     ExternalID,
     ExternalIdCollection,
     ExternallyIdentifiable,
     Namespace,
     provider_for,
 )
-from sortipy.domain.model.music import Artist, Label, Recording, Release, ReleaseSet
-from sortipy.domain.model.primitives import (
+from .music import Artist, Label, Recording, Release, ReleaseSet
+from .primitives import (
     Barcode,
     CatalogNumber,
     CountryCode,
@@ -34,8 +34,8 @@ from sortipy.domain.model.primitives import (
     Mbid,
     PartialDate,
 )
-from sortipy.domain.model.provenance import Provenance, Provenanced, ProvenanceTracked
-from sortipy.domain.model.user import LibraryItem, PlayEvent, User
+from .provenance import Provenance, Provenanced, ProvenanceTracked
+from .user import LibraryItem, PlayEvent, User
 
 __all__ = [  # noqa: RUF022
     # base

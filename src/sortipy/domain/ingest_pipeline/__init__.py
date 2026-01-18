@@ -9,10 +9,16 @@ rules remain explicit and adapter-free.
 from __future__ import annotations
 
 from .canonicalization import CanonicalizationPhase
-from .context import IngestGraph, NormalizationState, PipelineContext
+from .context import (
+    EntityCounters,
+    IngestGraph,
+    NormalizationData,
+    PipelineContext,
+)
 from .deduplication import DeduplicationPhase
 from .ingest_ports import (
     IngestionRepositories,
+    IngestionUnitOfWork,
     LibraryItemSyncRepositories,
     LibraryItemSyncUnitOfWork,
     NormalizationSidecarRepository,
@@ -22,7 +28,6 @@ from .ingest_ports import (
 from .normalization import NormalizationPhase
 from .orchestrator import (
     IngestionPipeline,
-    PipelinePhase,
     ingest_graph_from_events,
     ingest_graph_from_library_items,
 )
@@ -30,16 +35,17 @@ from .orchestrator import (
 __all__ = [
     "CanonicalizationPhase",
     "DeduplicationPhase",
+    "EntityCounters",
     "IngestGraph",
     "IngestionPipeline",
     "IngestionRepositories",
+    "IngestionUnitOfWork",
     "LibraryItemSyncRepositories",
     "LibraryItemSyncUnitOfWork",
+    "NormalizationData",
     "NormalizationPhase",
     "NormalizationSidecarRepository",
-    "NormalizationState",
     "PipelineContext",
-    "PipelinePhase",
     "PlayEventSyncRepositories",
     "PlayEventSyncUnitOfWork",
     "ingest_graph_from_events",

@@ -8,9 +8,16 @@ import pytest
 from sqlalchemy import select
 
 from sortipy.adapters.http_resilience import ResilientClient
-from sortipy.adapters.lastfm import LastFmClient, RecentTracksResponse, fetch_play_events
-from sortipy.config import CacheConfig, LastFmConfig, RateLimit, ResilienceConfig
-from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS
+from sortipy.adapters.lastfm import fetch_play_events
+from sortipy.adapters.lastfm.client import LastFmClient, RecentTracksResponse
+from sortipy.config.lastfm import (
+    LASTFM_BASE_URL,
+    LASTFM_TIMEOUT_SECONDS,
+    CacheConfig,
+    LastFmConfig,
+    RateLimit,
+    ResilienceConfig,
+)
 from sortipy.domain.data_integration import sync_play_events
 from sortipy.domain.model import (
     Artist,

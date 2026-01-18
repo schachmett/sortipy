@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
     from sortipy.config.lastfm import LastFmConfig
     from sortipy.domain.model import User
-    from sortipy.domain.ports.fetching import PlayEventFetchResult
+    from sortipy.domain.ports import PlayEventFetchResult
 
 
 def fetch_play_events(

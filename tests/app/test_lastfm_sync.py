@@ -4,8 +4,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from sortipy.app import sync_lastfm_play_events
-from sortipy.config import CacheConfig, DatabaseConfig, RateLimit, ResilienceConfig
+from sortipy.config.http_resilience import CacheConfig, RateLimit, ResilienceConfig
 from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS, LastFmConfig
+from sortipy.config.storage import DatabaseConfig
 from sortipy.domain.data_integration import SyncPlayEventsResult
 from sortipy.domain.model import User
 from tests.helpers.play_events import (

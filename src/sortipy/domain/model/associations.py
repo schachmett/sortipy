@@ -11,13 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from sortipy.domain.model.enums import ArtistRole, EntityType
-from sortipy.domain.model.external_ids import ExternallyIdentifiableMixin
-from sortipy.domain.model.provenance import ProvenanceTrackedMixin
+from .enums import ArtistRole, EntityType
+from .external_ids import ExternallyIdentifiableMixin
+from .provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
-    from sortipy.domain.model.music import Artist, Recording, Release, ReleaseSet
-    from sortipy.domain.model.primitives import DurationMs
+    from .music import Artist, Recording, Release, ReleaseSet
+    from .primitives import DurationMs
 
 
 @dataclass(eq=False, kw_only=True)

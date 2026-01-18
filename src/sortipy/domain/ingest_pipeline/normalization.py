@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sortipy.domain.ingest_pipeline.context import NormalizationState, PipelineContext
-from sortipy.domain.ingest_pipeline.entity_ops import ops_for
-from sortipy.domain.ingest_pipeline.orchestrator import PipelinePhase
+from .context import NormalizationState, PipelineContext
+from .entity_ops import ops_for
+from .orchestrator import PipelinePhase
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from sortipy.domain.ingest_pipeline.context import IngestGraph
     from sortipy.domain.model import IdentifiedEntity
+
+    from .context import IngestGraph
 
 
 class NormalizationPhase(PipelinePhase):

@@ -7,21 +7,23 @@ import httpx
 import pytest
 
 from sortipy.adapters.http_resilience import ResilientClient
-from sortipy.adapters.lastfm import (
+from sortipy.adapters.lastfm import fetch_play_events
+from sortipy.adapters.lastfm.client import (
     LastFmClient,
     RecentTracksResponse,
     TrackPayload,
-    fetch_play_events,
     parse_play_event,
 )
-from sortipy.config import (
+from sortipy.config import MissingConfigurationError
+from sortipy.config.lastfm import (
+    LASTFM_BASE_URL,
+    LASTFM_TIMEOUT_SECONDS,
     CacheConfig,
     LastFmConfig,
-    MissingConfigurationError,
     RateLimit,
     ResilienceConfig,
+    get_lastfm_config,
 )
-from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS, get_lastfm_config
 from sortipy.domain.model import Provider, User
 
 if TYPE_CHECKING:

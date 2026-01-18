@@ -16,24 +16,22 @@ from sortipy.domain.ingest_pipeline import (
     ingest_graph_from_library_items,
 )
 
-DEFAULT_SYNC_BATCH_SIZE = 200
-
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from datetime import datetime
 
-    from sortipy.domain.ingest_pipeline.context import EntityCounters
-    from sortipy.domain.ingest_pipeline.ingest_ports import (
+    from sortipy.domain.ingest_pipeline import (
+        EntityCounters,
         LibraryItemSyncUnitOfWork,
         PlayEventSyncUnitOfWork,
     )
     from sortipy.domain.model import LibraryItem, PlayEvent, User
-    from sortipy.domain.ports.fetching import (
+    from sortipy.domain.ports import (
         LibraryItemFetcher,
         LibraryItemFetchResult,
         PlayEventFetcher,
+        PlayEventRepository,
     )
-    from sortipy.domain.ports.persistence import PlayEventRepository
 
 
 @dataclass(slots=True)
@@ -61,7 +59,7 @@ def sync_play_events(
     fetcher: PlayEventFetcher,
     user: User,
     unit_of_work_factory: Callable[[], PlayEventSyncUnitOfWork],
-    batch_size: int = DEFAULT_SYNC_BATCH_SIZE,
+    batch_size: int,
     max_events: int | None = None,
     from_timestamp: datetime | None = None,
     to_timestamp: datetime | None = None,

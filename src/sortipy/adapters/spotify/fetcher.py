@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sortipy.domain.ports.fetching import LibraryItemFetchResult
+from sortipy.domain.ports import LibraryItemFetchResult
 
 from .client import SpotifyClient
 from .translator import translate_followed_artist, translate_saved_album, translate_saved_track

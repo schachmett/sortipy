@@ -10,8 +10,8 @@ from abc import ABC
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final, Protocol
 
-from sortipy.domain.model.entity import Entity
-from sortipy.domain.model.enums import EntityType, ExternalNamespace, Provider
+from .entity import Entity
+from .enums import EntityType, ExternalNamespace, Provider
 
 if TYPE_CHECKING:
     from datetime import datetime

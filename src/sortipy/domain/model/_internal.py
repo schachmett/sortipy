@@ -10,13 +10,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from sortipy.domain.model.associations import (
+    from .associations import (
         RecordingContribution,
         ReleaseSetContribution,
         ReleaseTrack,
     )
-    from sortipy.domain.model.music import Artist, Recording, Release, ReleaseSet
-    from sortipy.domain.model.user import LibraryItem, PlayEvent, User
+    from .music import Artist, Recording, Release, ReleaseSet
+    from .user import LibraryItem, PlayEvent, User
 
 
 def set_release_release_set(release: Release, release_set: ReleaseSet) -> None:

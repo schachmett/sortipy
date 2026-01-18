@@ -8,14 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
-from sortipy.adapters.sqlalchemy.mappings import (
-    CLASS_BY_ENTITY_TYPE,
-    ENTITY_TYPE_BY_CLASS,
-    external_id_table,
-    play_event_table,
-)
-from sortipy.adapters.sqlalchemy.sidecar_mappings import normalization_sidecar_table
-from sortipy.domain.ingest_pipeline.ingest_ports import NormalizationSidecarRepository
+from sortipy.domain.ingest_pipeline import NormalizationSidecarRepository
 from sortipy.domain.model import (
     Artist,
     EntityType,
@@ -31,12 +24,20 @@ from sortipy.domain.model import (
     User,
 )
 
+from .mappings import (
+    CLASS_BY_ENTITY_TYPE,
+    ENTITY_TYPE_BY_CLASS,
+    external_id_table,
+    play_event_table,
+)
+from .sidecar_mappings import normalization_sidecar_table
+
 if TYPE_CHECKING:
     from datetime import datetime
 
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
-    from sortipy.domain.ingest_pipeline.context import NormalizationData
+    from sortipy.domain.ingest_pipeline import NormalizationData
 
 
 class MissingParentError(Exception): ...
@@ -223,7 +224,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
 
 
 if TYPE_CHECKING:
-    from sortipy.domain.ports.persistence import (
+    from sortipy.domain.ports import (
         ArtistRepository,
         LibraryItemRepository,
         PlayEventRepository,

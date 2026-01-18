@@ -6,12 +6,6 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from sortipy.domain.ingest_pipeline.context import (
-    NormalizationData,
-    NormalizationState,
-    NormKey,
-    NormKeySeq,
-)
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
@@ -26,6 +20,8 @@ from sortipy.domain.model import (
     ReleaseSet,
     User,
 )
+
+from .context import NormalizationData, NormalizationState, NormKey, NormKeySeq
 
 if TYPE_CHECKING:
     from collections.abc import Callable

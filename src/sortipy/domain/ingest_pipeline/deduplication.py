@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sortipy.domain.ingest_pipeline.entity_ops import ops_for
-from sortipy.domain.ingest_pipeline.orchestrator import PipelinePhase
+from .entity_ops import ops_for
+from .orchestrator import PipelinePhase
 
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.context import (
+    from sortipy.domain.model import IdentifiedEntity
+
+    from .context import (
         IngestGraph,
         NormalizationState,
         NormKey,
         PipelineContext,
     )
-    from sortipy.domain.model import IdentifiedEntity
 
 
 class DeduplicationPhase(PipelinePhase):

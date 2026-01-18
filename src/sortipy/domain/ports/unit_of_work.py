@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from sortipy.domain.ports.persistence import (
+    from .persistence import (
         ArtistRepository,
         RecordingRepository,
         ReleaseRepository,

@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
-from sortipy.domain.ingest_pipeline.context import IngestGraph, PipelineContext
 from sortipy.domain.model import Artist, LibraryItem, Recording, Release, ReleaseSet
+
+from .context import IngestGraph, PipelineContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence

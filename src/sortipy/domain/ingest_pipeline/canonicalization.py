@@ -6,20 +6,22 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import TYPE_CHECKING, Protocol, cast
 
-from sortipy.domain.ingest_pipeline.entity_ops import EntityOps, ops_for
-from sortipy.domain.ingest_pipeline.orchestrator import PipelinePhase
 from sortipy.domain.model import ExternallyIdentifiable, IdentifiedEntity
 
+from .entity_ops import EntityOps, ops_for
+from .orchestrator import PipelinePhase
+
 if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.context import (
+    from sortipy.domain.ports import CanonicalEntityRepository
+
+    from .context import (
         EntityCounters,
         IngestGraph,
         NormalizationData,
         NormalizationState,
         PipelineContext,
     )
-    from sortipy.domain.ingest_pipeline.ingest_ports import NormalizationSidecarRepository
-    from sortipy.domain.ports.persistence import CanonicalEntityRepository
+    from .ingest_ports import NormalizationSidecarRepository
 
 
 log = getLogger(__name__)

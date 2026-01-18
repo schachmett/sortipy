@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sortipy.domain.data_integration import DEFAULT_SYNC_BATCH_SIZE
 from sortipy.domain.model import User
 from sortipy.ui import cli as main_module
 
@@ -22,7 +21,7 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main_module.main(["--user-name", "Listener"])
 
-    assert captured["batch_size"] == DEFAULT_SYNC_BATCH_SIZE
+    assert captured["batch_size"] is None
     assert captured["max_events"] is None
     assert captured["from_timestamp"] is None
     assert captured["to_timestamp"] is None

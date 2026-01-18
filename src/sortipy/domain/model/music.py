@@ -11,22 +11,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from sortipy.domain.model.associations import (
+from . import _internal as internal
+from .associations import (
     RecordingContribution,
     ReleaseSetContribution,
     ReleaseTrack,
 )
-from sortipy.domain.model.entity import CanonicalizableMixin
-from sortipy.domain.model.enums import ArtistRole, EntityType
-from sortipy.domain.model.external_ids import ExternallyIdentifiableMixin
-from sortipy.domain.model.provenance import ProvenanceTrackedMixin
-
-from . import _internal as internal
+from .entity import CanonicalizableMixin
+from .enums import ArtistRole, EntityType
+from .external_ids import ExternallyIdentifiableMixin
+from .provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
-    from sortipy.domain.model.enums import ReleaseSetType
-    from sortipy.domain.model.primitives import CountryCode, DurationMs, PartialDate
-    from sortipy.domain.model.user import PlayEvent
+    from .enums import ReleaseSetType
+    from .primitives import CountryCode, DurationMs, PartialDate
+    from .user import PlayEvent
 
 
 class CanonicalEntity(
