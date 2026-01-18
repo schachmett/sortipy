@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from sortipy.domain.data_integration import SyncLibraryItemsResult, sync_library_items
+from sortipy.domain.data_integration import (
+    LibraryItemSyncRequest,
+    SyncLibraryItemsResult,
+    sync_library_items,
+)
 from sortipy.domain.model import User
 from tests.helpers.library_items import (
     FakeIngestUnitOfWork,
@@ -23,10 +27,10 @@ def test_sync_library_items_persists_results() -> None:
     uow = FakeIngestUnitOfWork(FakeLibraryItemRepository())
 
     result = sync_library_items(
+        request=LibraryItemSyncRequest(batch_size=10),
         fetcher=fetcher,
         unit_of_work_factory=lambda: uow,
         user=user,
-        batch_size=10,
     )
 
     assert isinstance(result, SyncLibraryItemsResult)
@@ -41,6 +45,7 @@ def test_sync_library_items_skips_commit_when_empty() -> None:
     uow = FakeIngestUnitOfWork(FakeLibraryItemRepository())
 
     result = sync_library_items(
+        request=LibraryItemSyncRequest(batch_size=10),
         fetcher=fetcher,
         unit_of_work_factory=lambda: uow,
         user=user,

@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 from sortipy.adapters.lastfm import fetch_play_events, should_cache_recent_tracks
 from sortipy.adapters.sqlalchemy import create_unit_of_work_factory
 from sortipy.config import get_database_config, get_lastfm_config, get_sync_config
-from sortipy.domain.data_integration import SyncPlayEventsResult, sync_play_events
+from sortipy.domain.data_integration import (
+    PlayEventSyncRequest,
+    SyncPlayEventsResult,
+    sync_play_events,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -61,14 +65,17 @@ def sync_lastfm_play_events(
         to_timestamp,
     )
 
-    result = sync_play_events(
-        fetcher=_fetcher,
-        user=user,
-        unit_of_work_factory=unit_of_work_factory,
+    request = PlayEventSyncRequest(
         batch_size=effective_batch_size,
         max_events=max_events,
         from_timestamp=from_timestamp,
         to_timestamp=to_timestamp,
+    )
+    result = sync_play_events(
+        request=request,
+        fetcher=_fetcher,
+        user=user,
+        unit_of_work_factory=unit_of_work_factory,
     )
 
     log.info(

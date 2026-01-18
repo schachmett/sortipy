@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sortipy.domain.ingest_pipeline.orchestrator import (
-    IngestGraph,
-    ingest_graph_from_events,
-)
+from sortipy.domain.ingest_pipeline import ingest_graph_from_events
+from sortipy.domain.ingest_pipeline.orchestrator import IngestGraph
 from sortipy.domain.model import Artist, ArtistRole, Provider, Recording, ReleaseSet, User
 
 

@@ -5,11 +5,7 @@ from typing import TYPE_CHECKING, Literal
 
 import pytest
 
-from sortipy.domain.ingest_pipeline import (
-    CanonicalizationPhase,
-    IngestionPipeline,
-    NormalizationPhase,
-)
+from sortipy.domain.ingest_pipeline.canonicalization import CanonicalizationPhase
 from sortipy.domain.ingest_pipeline.context import (
     IngestGraph,
     NormalizationState,
@@ -18,6 +14,8 @@ from sortipy.domain.ingest_pipeline.context import (
     PipelineContext,
 )
 from sortipy.domain.ingest_pipeline.entity_ops import normalize_artist
+from sortipy.domain.ingest_pipeline.normalization import NormalizationPhase
+from sortipy.domain.ingest_pipeline.orchestrator import IngestionPipeline
 from sortipy.domain.model import (
     Artist,
     EntityType,

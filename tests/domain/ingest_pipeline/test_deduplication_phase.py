@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from sortipy.domain.ingest_pipeline import DeduplicationPhase, NormalizationPhase
 from sortipy.domain.ingest_pipeline.context import IngestGraph, PipelineContext
+from sortipy.domain.ingest_pipeline.deduplication import DeduplicationPhase
+from sortipy.domain.ingest_pipeline.normalization import NormalizationPhase
 from sortipy.domain.model import (
     Artist,
     ArtistRole,

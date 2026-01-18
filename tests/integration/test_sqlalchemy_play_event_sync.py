@@ -18,7 +18,7 @@ from sortipy.config.lastfm import (
     RateLimit,
     ResilienceConfig,
 )
-from sortipy.domain.data_integration import sync_play_events
+from sortipy.domain.data_integration import PlayEventSyncRequest, sync_play_events
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
@@ -105,11 +105,10 @@ def test_sync_play_events_persists_payload(
         )
 
     result = sync_play_events(
+        request=PlayEventSyncRequest(batch_size=5, max_events=total_expected),
         fetcher=fetcher,
         user=user,
         unit_of_work_factory=sqlite_unit_of_work,
-        batch_size=5,
-        max_events=total_expected,
     )
 
     assert result.stored == total_expected
@@ -180,10 +179,10 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
     )
 
     result = sync_play_events(
+        request=PlayEventSyncRequest(batch_size=5),
         fetcher=FakePlayEventSource([[first, second]]),
         user=user,
         unit_of_work_factory=sqlite_unit_of_work,
-        batch_size=5,
     )
 
     assert result.stored == 2

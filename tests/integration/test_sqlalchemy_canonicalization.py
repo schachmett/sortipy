@@ -4,12 +4,8 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from sortipy.domain.ingest_pipeline import (
-    CanonicalizationPhase,
-    IngestionPipeline,
-    NormalizationPhase,
-)
-from sortipy.domain.ingest_pipeline.context import IngestGraph, NormalizationState, PipelineContext
+from sortipy.domain.ingest_pipeline import IngestGraph, run_ingest_pipeline
+from sortipy.domain.ingest_pipeline.context import NormalizationState
 from sortipy.domain.ingest_pipeline.entity_ops import normalize_artist
 from sortipy.domain.model import Artist, ExternalNamespace
 
@@ -17,10 +13,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
-
-
-def _pipeline() -> IngestionPipeline:
-    return IngestionPipeline(phases=(NormalizationPhase(), CanonicalizationPhase()))
 
 
 def test_canonicalization_matches_existing_external_id(
@@ -38,8 +30,7 @@ def test_canonicalization_matches_existing_external_id(
     graph = IngestGraph(artists=[ingest_artist])
 
     with sqlite_unit_of_work() as uow:
-        context = PipelineContext(ingest_uow=uow)
-        _pipeline().run(graph, context=context)
+        run_ingest_pipeline(graph=graph, uow=uow)
 
     assert graph.artists[0].id == existing.id
 
@@ -64,7 +55,6 @@ def test_canonicalization_matches_sidecar_keys(
     graph = IngestGraph(artists=[ingest_artist])
 
     with sqlite_unit_of_work() as uow:
-        context = PipelineContext(ingest_uow=uow)
-        _pipeline().run(graph, context=context)
+        run_ingest_pipeline(graph=graph, uow=uow)
 
     assert graph.artists[0].id == existing.id

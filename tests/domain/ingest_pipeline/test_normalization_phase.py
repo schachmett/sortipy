@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sortipy.domain.ingest_pipeline import NormalizationPhase
 from sortipy.domain.ingest_pipeline.context import PipelineContext
-from sortipy.domain.ingest_pipeline.orchestrator import ingest_graph_from_events
+from sortipy.domain.ingest_pipeline.normalization import NormalizationPhase
+from sortipy.domain.ingest_pipeline.runner import ingest_graph_from_events
 from tests.helpers.play_events import make_play_event
 
 
