@@ -2,14 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Sortipy",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/sortipy/main.py",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
             "name": "Python: Current File",
             "type": "debugpy",
             "request": "launch",
@@ -26,6 +18,44 @@
                 "debug-test"
             ],
             "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: CLI (Spotify library)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "sortipy.ui.cli",
+            "args": [
+                "spotify-library",
+                "--user-id",
+                "bd5da5deb191439295f1d039382266ac",
+                "--batch-size",
+                "5",
+                "--max-tracks",
+                "5",
+                "--max-albums",
+                "5",
+                "--max-artists",
+                "5",
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: CLI (Last.fm)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "sortipy.ui.cli",
+            "args": [
+                "lastfm",
+                "--user-id",
+                "bd5da5deb191439295f1d039382266ac",
+                "--max-events",
+                "10"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
             "justMyCode": false
         }
     ]
