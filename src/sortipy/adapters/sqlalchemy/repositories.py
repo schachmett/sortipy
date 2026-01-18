@@ -136,6 +136,9 @@ class SqlAlchemyUserRepository:
     def add(self, entity: User) -> None:
         self.session.add(entity)
 
+    def get(self, user_id: uuid.UUID) -> User | None:
+        return self.session.get(User, user_id)
+
 
 class SqlAlchemyLibraryItemRepository:
     def __init__(self, session: Session) -> None:

@@ -77,6 +77,8 @@ class LabelRepository(CanonicalEntityRepository[Label], Protocol):
 class UserRepository(Repository[User], Protocol):
     """Repository contract for users."""
 
+    def get(self, user_id: UUID) -> User | None: ...
+
 
 @runtime_checkable
 class LibraryItemRepository(Repository[LibraryItem], Protocol):

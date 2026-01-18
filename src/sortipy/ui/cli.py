@@ -8,12 +8,12 @@ import sys
 from datetime import UTC, datetime, timedelta
 from signal import SIGINT, signal
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from dotenv import load_dotenv
 
-from sortipy.app import sync_lastfm_play_events, sync_spotify_library_items
+from sortipy.app import create_user, load_user, sync_lastfm_play_events, sync_spotify_library_items
 from sortipy.config import configure_logging
-from sortipy.domain.model import User
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -36,8 +36,12 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     lastfm.add_argument(
         "--user-name",
         type=str,
-        required=True,
         help="Display name / Last.fm username to attach to imported play events",
+    )
+    lastfm.add_argument(
+        "--user-id",
+        type=str,
+        help="Existing user id to attach to imported play events",
     )
     lastfm.add_argument(
         "--max-events",
@@ -70,8 +74,12 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     spotify.add_argument(
         "--user-name",
         type=str,
-        required=True,
         help="Display name to attach to imported library items",
+    )
+    spotify.add_argument(
+        "--user-id",
+        type=str,
+        help="Existing user id to attach to imported library items",
     )
     spotify.add_argument(
         "--spotify-user-id",
@@ -94,6 +102,31 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Maximum number of followed artists to fetch before stopping",
     )
 
+    user = subparsers.add_parser("user", help="User management commands")
+    user_sub = user.add_subparsers(dest="user_command", required=True)
+    user_create = user_sub.add_parser("create", help="Create a user")
+    user_create.add_argument(
+        "--display-name",
+        type=str,
+        required=True,
+        help="Display name for the user",
+    )
+    user_create.add_argument(
+        "--email",
+        type=str,
+        help="Optional email address",
+    )
+    user_create.add_argument(
+        "--lastfm-user",
+        type=str,
+        help="Optional Last.fm username to store on the user",
+    )
+    user_create.add_argument(
+        "--spotify-user-id",
+        type=str,
+        help="Optional Spotify user id to store on the user",
+    )
+
     return parser.parse_args(list(argv))
 
 
@@ -112,6 +145,13 @@ def _parse_iso_datetime(value: str) -> datetime:
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _parse_uuid(value: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid UUID: {value}") from exc
 
 
 def _compute_time_bounds(
@@ -158,30 +198,39 @@ def main(argv: Sequence[str] | None = None) -> None:
         log.exception("CLI validation error")
         sys.exit(2)
 
-    if parsed_args.command not in ("lastfm", "spotify-library"):
-        log.exception("CLI command validation error")
-        sys.exit(2)
-
     try:
         if parsed_args.command == "lastfm":
+            if parsed_args.user_id is None:
+                raise ValueError("Missing --user-id (create a user first)")  # noqa: TRY301
+            user = load_user(user_id=_parse_uuid(parsed_args.user_id))
             sync_lastfm_play_events(
-                user=User(display_name=parsed_args.user_name, lastfm_user=parsed_args.user_name),
+                user=user,
                 batch_size=parsed_args.batch_size,
                 max_events=parsed_args.max_events,
                 from_timestamp=start,
                 to_timestamp=end,
             )
         elif parsed_args.command == "spotify-library":
+            if parsed_args.user_id is None:
+                raise ValueError("Missing --user-id (create a user first)")  # noqa: TRY301
+            user = load_user(user_id=_parse_uuid(parsed_args.user_id))
             sync_spotify_library_items(
-                user=User(
-                    display_name=parsed_args.user_name,
-                    spotify_user_id=parsed_args.spotify_user_id,
-                ),
+                user=user,
                 batch_size=parsed_args.batch_size,
                 max_tracks=parsed_args.max_tracks,
                 max_albums=parsed_args.max_albums,
                 max_artists=parsed_args.max_artists,
             )
+        elif parsed_args.command == "user" and parsed_args.user_command == "create":
+            user = create_user(
+                display_name=parsed_args.display_name,
+                email=parsed_args.email,
+                lastfm_user=parsed_args.lastfm_user,
+                spotify_user_id=parsed_args.spotify_user_id,
+            )
+            log.info("Created user %s", user.id)
+        else:
+            raise ValueError(f"Unsupported command: {parsed_args.command}")  # noqa: TRY301
 
     except Exception:
         log.exception("Fatal error during sync")

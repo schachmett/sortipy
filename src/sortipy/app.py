@@ -22,15 +22,58 @@ from sortipy.domain.data_integration import (
     sync_library_items,
     sync_play_events,
 )
+from sortipy.domain.model import User
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from uuid import UUID
 
-    from sortipy.domain.model import User
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
 
 
 log = getLogger(__name__)
+
+
+def create_user(
+    *,
+    display_name: str,
+    email: str | None = None,
+    lastfm_user: str | None = None,
+    spotify_user_id: str | None = None,
+) -> User:
+    """Create and persist a user via the configured database."""
+
+    database_config = get_database_config()
+    unit_of_work_factory = create_unit_of_work_factory(database_uri=database_config.uri)
+    user = User(
+        display_name=display_name,
+        email=email,
+        lastfm_user=lastfm_user,
+        spotify_user_id=spotify_user_id,
+    )
+    with unit_of_work_factory() as uow:
+        uow.repositories.users.add(user)
+        uow.commit()
+    return user
+
+
+def load_user(*, user_id: UUID) -> User:
+    """Load an existing user from the configured database."""
+
+    database_config = get_database_config()
+    unit_of_work_factory = create_unit_of_work_factory(database_uri=database_config.uri)
+    with unit_of_work_factory() as uow:
+        user = uow.repositories.users.get(user_id)
+    if user is None:
+        raise ValueError(f"User {user_id} not found")
+    # Return a detached domain copy to avoid ORM session coupling in adapters.
+    return User(
+        id=user.id,
+        display_name=user.display_name,
+        email=user.email,
+        lastfm_user=user.lastfm_user,
+        spotify_user_id=user.spotify_user_id,
+    )
 
 
 def sync_lastfm_play_events(
