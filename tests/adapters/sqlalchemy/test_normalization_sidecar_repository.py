@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session  # noqa: TC002
 
+from sortipy.adapters.sqlalchemy.mappings import normalization_sidecar_table
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
-from sortipy.adapters.sqlalchemy.sidecar_mappings import normalization_sidecar_table
 from sortipy.domain.ingest_pipeline.context import NormalizationData
 from sortipy.domain.model import Artist, EntityType
 

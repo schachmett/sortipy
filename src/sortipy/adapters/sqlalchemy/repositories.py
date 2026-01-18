@@ -27,9 +27,9 @@ from .mappings import (
     CLASS_BY_ENTITY_TYPE,
     ENTITY_TYPE_BY_CLASS,
     external_id_table,
+    normalization_sidecar_table,
     play_event_table,
 )
-from .sidecar_mappings import normalization_sidecar_table
 
 if TYPE_CHECKING:
     from datetime import datetime

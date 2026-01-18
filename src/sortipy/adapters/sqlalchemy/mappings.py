@@ -137,6 +137,17 @@ label_table = Table(
     Column("country", String(3), nullable=True),
 )
 
+normalization_sidecar_table = Table(
+    "normalization_sidecar",
+    mapper_registry.metadata,
+    Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
+    Column("entity_type", Enum(EntityType, native_enum=False), nullable=False),
+    Column("entity_id", UUIDColumnType, nullable=False),
+    Column("key", String, nullable=False),
+    UniqueConstraint("entity_type", "key"),
+    Index("ix_normalization_sidecar_entity_key", "entity_type", "key"),
+)
+
 release_set_table = Table(
     "release_set",
     mapper_registry.metadata,

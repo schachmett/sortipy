@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from . import (
-    sidecar_mappings as _sidecar_mappings,  # noqa: F401  # pyright: ignore[reportUnusedImport]
-)
 from .mappings import mapper_registry, start_mappers
 from .unit_of_work import create_unit_of_work_factory
 
