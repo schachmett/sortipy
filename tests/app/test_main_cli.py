@@ -19,7 +19,7 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
 
-    main_module.main(["--user-name", "Listener"])
+    main_module.main(["lastfm", "--user-name", "Listener"])
 
     assert captured["batch_size"] is None
     assert captured["max_events"] is None
@@ -42,6 +42,7 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main_module.main(
         [
+            "lastfm",
             "--user-name",
             "Listener",
             "--batch-size",

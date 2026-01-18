@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from sortipy.app import sync_lastfm_play_events
+from sortipy.app import sync_lastfm_play_events, sync_spotify_library_items
 from sortipy.config import configure_logging
 from sortipy.domain.model import User
 
@@ -22,47 +22,78 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# def display_albums(albums: list[LastFMAlbum]) -> None:
-#     """Display the albums in a formatted manner."""
-#     sorted_albums = sorted(albums, key=lambda x: x.release_date, reverse=True)
-#     for album in sorted_albums:
-#         print(str(album))
-
-
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Synchronise Last.fm scrobbles")
-    parser.add_argument(
+    parser = argparse.ArgumentParser(description="Synchronise Sortipy data")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    lastfm = subparsers.add_parser("lastfm", help="Sync Last.fm play events")
+    lastfm.add_argument(
         "--batch-size",
         type=int,
         default=None,
         help="Number of events to request per API call (defaults to config)",
     )
-    parser.add_argument(
+    lastfm.add_argument(
         "--user-name",
         type=str,
         required=True,
         help="Display name / Last.fm username to attach to imported play events",
     )
-    parser.add_argument(
+    lastfm.add_argument(
         "--max-events",
         type=int,
         help="Maximum number of events to fetch before stopping",
     )
-    parser.add_argument(
+    lastfm.add_argument(
         "--start",
         type=str,
         help="ISO-8601 timestamp (UTC) marking the inclusive start of the window",
     )
-    parser.add_argument(
+    lastfm.add_argument(
         "--end",
         type=str,
         help="ISO-8601 timestamp (UTC) marking the inclusive end of the window",
     )
-    parser.add_argument(
+    lastfm.add_argument(
         "--lookback-hours",
         type=float,
         help="Relative lookback window in hours (overrides start if larger)",
     )
+
+    spotify = subparsers.add_parser("spotify-library", help="Sync Spotify library items")
+    spotify.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Number of items to request per API call (defaults to config)",
+    )
+    spotify.add_argument(
+        "--user-name",
+        type=str,
+        required=True,
+        help="Display name to attach to imported library items",
+    )
+    spotify.add_argument(
+        "--spotify-user-id",
+        type=str,
+        help="Optional Spotify user id to store on the user entity",
+    )
+    spotify.add_argument(
+        "--max-tracks",
+        type=int,
+        help="Maximum number of saved tracks to fetch before stopping",
+    )
+    spotify.add_argument(
+        "--max-albums",
+        type=int,
+        help="Maximum number of saved albums to fetch before stopping",
+    )
+    spotify.add_argument(
+        "--max-artists",
+        type=int,
+        help="Maximum number of followed artists to fetch before stopping",
+    )
+
     return parser.parse_args(list(argv))
 
 
@@ -120,19 +151,37 @@ def main(argv: Sequence[str] | None = None) -> None:
     args_list = list(argv) if argv is not None else list(sys.argv[1:])
     try:
         parsed_args = _parse_args(args_list)
-        start, end = _compute_time_bounds(parsed_args)
+        start, end = (None, None)
+        if parsed_args.command == "lastfm":
+            start, end = _compute_time_bounds(parsed_args)
     except ValueError:
         log.exception("CLI validation error")
         sys.exit(2)
 
+    if parsed_args.command not in ("lastfm", "spotify-library"):
+        log.exception("CLI command validation error")
+        sys.exit(2)
+
     try:
-        sync_lastfm_play_events(
-            user=User(display_name=parsed_args.user_name, lastfm_user=parsed_args.user_name),
-            batch_size=parsed_args.batch_size,
-            max_events=parsed_args.max_events,
-            from_timestamp=start,
-            to_timestamp=end,
-        )
+        if parsed_args.command == "lastfm":
+            sync_lastfm_play_events(
+                user=User(display_name=parsed_args.user_name, lastfm_user=parsed_args.user_name),
+                batch_size=parsed_args.batch_size,
+                max_events=parsed_args.max_events,
+                from_timestamp=start,
+                to_timestamp=end,
+            )
+        elif parsed_args.command == "spotify-library":
+            sync_spotify_library_items(
+                user=User(
+                    display_name=parsed_args.user_name,
+                    spotify_user_id=parsed_args.spotify_user_id,
+                ),
+                batch_size=parsed_args.batch_size,
+                max_tracks=parsed_args.max_tracks,
+                max_albums=parsed_args.max_albums,
+                max_artists=parsed_args.max_artists,
+            )
 
     except Exception:
         log.exception("Fatal error during sync")
