@@ -282,6 +282,7 @@ def upgrade() -> None:
         sa.Column(
             "role",
             sa.Enum(
+                "UNKNOWN",
                 "PRIMARY",
                 "FEATURED",
                 "PRODUCER",
@@ -337,6 +338,7 @@ def upgrade() -> None:
         sa.Column(
             "role",
             sa.Enum(
+                "UNKNOWN",
                 "PRIMARY",
                 "FEATURED",
                 "PRODUCER",

@@ -56,6 +56,7 @@ class EntityType(StrEnum):
 
 
 class ArtistRole(StrEnum):
+    UNKNOWN = "unknown"
     PRIMARY = "primary"
     FEATURED = "featured"
     PRODUCER = "producer"

@@ -33,9 +33,10 @@ def translate_saved_track(
     release_track = release.add_track(recording)
     release_track.add_source(Provider.SPOTIFY)
 
-    for artist in artists:
-        release_set.add_artist(artist, role=ArtistRole.PRIMARY)
-        recording.add_artist(artist, role=ArtistRole.PRIMARY)
+    for index, artist in enumerate(artists):
+        role = ArtistRole.PRIMARY if index == 0 else ArtistRole.UNKNOWN
+        release_set.add_artist(artist, role=role)
+        recording.add_artist(artist, role=role)
 
     return active_user.save_entity(recording, source=Provider.SPOTIFY)
 
@@ -49,8 +50,9 @@ def translate_saved_album(
     artists = [_build_artist(artist) for artist in album.artists]
     release_set, _release = _build_release_set_and_release(album)
 
-    for artist in artists:
-        release_set.add_artist(artist, role=ArtistRole.PRIMARY)
+    for index, artist in enumerate(artists):
+        role = ArtistRole.PRIMARY if index == 0 else ArtistRole.UNKNOWN
+        release_set.add_artist(artist, role=role)
 
     return active_user.save_entity(release_set, source=Provider.SPOTIFY)
 
