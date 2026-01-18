@@ -11,7 +11,6 @@ from sortipy.domain.model import (
     LibraryItem,
     Namespace,
     PlayEvent,
-    Provider,
     Recording,
     Release,
     ReleaseSet,
@@ -34,7 +33,7 @@ class Repository[TEntity](Protocol):
 class PlayEventRepository(Repository[PlayEvent], Protocol):
     """Persistence contract for play events."""
 
-    def exists(self, *, user_id: UUID, source: Provider, played_at: datetime) -> bool: ...
+    def exists(self, event: PlayEvent) -> bool: ...
 
     def latest_timestamp(self) -> datetime | None: ...
 

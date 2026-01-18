@@ -17,7 +17,6 @@ from sortipy.domain.model import (
     LibraryItem,
     Namespace,
     PlayEvent,
-    Provider,
     Recording,
     Release,
     ReleaseSet,
@@ -55,12 +54,12 @@ class SqlAlchemyPlayEventRepository:
         self._prepare_event(entity)
         self.session.add(entity)
 
-    def exists(self, *, user_id: uuid.UUID, source: Provider, played_at: datetime) -> bool:
+    def exists(self, event: PlayEvent) -> bool:
         stmt = (
             select(PlayEvent)
-            .where(play_event_table.c.user_id == user_id)
-            .where(play_event_table.c.source == source)
-            .where(play_event_table.c.played_at == played_at)
+            .where(play_event_table.c.user_id == event.user.id)
+            .where(play_event_table.c.source == event.source)
+            .where(play_event_table.c.played_at == event.played_at)
         )
         return self.session.execute(stmt).scalar_one_or_none() is not None
 

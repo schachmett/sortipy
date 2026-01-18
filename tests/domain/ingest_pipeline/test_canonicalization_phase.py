@@ -22,7 +22,6 @@ from sortipy.domain.model import (
     ExternalNamespace,
     IdentifiedEntity,
     PlayEvent,
-    Provider,
     Recording,
     Release,
     ReleaseSet,
@@ -31,7 +30,6 @@ from sortipy.domain.ports.persistence import PlayEventRepository
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from uuid import UUID
 
     from sortipy.domain.ingest_pipeline.context import NormalizationData
 
@@ -50,8 +48,8 @@ class _FakePlayEventRepository(PlayEventRepository):
     def add(self, entity: PlayEvent) -> None:
         _ = entity
 
-    def exists(self, *, user_id: UUID, source: Provider, played_at: datetime) -> bool:
-        _ = (user_id, source, played_at)
+    def exists(self, event: PlayEvent) -> bool:
+        _ = event
         return False
 
     def latest_timestamp(self) -> datetime | None:

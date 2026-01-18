@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session  # noqa: TC002
 
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyPlayEventRepository
-from sortipy.domain.model import Provider
 from tests.helpers.play_events import make_play_event
 
 
@@ -25,10 +24,8 @@ def test_play_event_repository_tracks_latest_timestamp(sqlite_session: Session) 
     repository.add(second)
     sqlite_session.commit()
 
-    assert repository.exists(user_id=first.user.id, source=first.source, played_at=base_time)
-    assert repository.exists(
-        user_id=second.user.id, source=second.source, played_at=second.played_at
-    )
+    assert repository.exists(first)
+    assert repository.exists(second)
     assert repository.latest_timestamp() == second.played_at
 
 
@@ -44,11 +41,6 @@ def test_play_event_repository_exists_returns_false_for_missing_rows(
     repository = SqlAlchemyPlayEventRepository(sqlite_session)
     timestamp = datetime.now(tz=UTC)
 
-    assert (
-        repository.exists(
-            user_id=uuid.uuid4(),
-            source=Provider.LASTFM,
-            played_at=timestamp,
-        )
-        is False
-    )
+    missing = make_play_event("Missing", timestamp=timestamp)
+    missing._user.id = uuid.uuid4()  # noqa: SLF001
+    assert repository.exists(missing) is False

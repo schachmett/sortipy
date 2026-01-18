@@ -37,9 +37,8 @@ def test_unit_of_work_persists_events(sqlite_engine: Engine) -> None:
         uow.repositories.users.add(event.user)
         uow.repositories.play_events.add(event)
         uow.commit()
-        played_at = event.played_at
 
     with factory() as uow:
         repo = uow.repositories.play_events
         assert repo.latest_timestamp() is not None
-        assert repo.exists(user_id=event.user.id, source=event.source, played_at=played_at)
+        assert repo.exists(event)

@@ -23,7 +23,6 @@ from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from uuid import UUID
 
     from sortipy.domain.ingest_pipeline.context import NormalizationData
 
@@ -115,9 +114,11 @@ class FakePlayEventRepository:
     def add(self, entity: PlayEvent) -> None:
         self.items.append(entity)
 
-    def exists(self, *, user_id: UUID, source: Provider, played_at: datetime) -> bool:
+    def exists(self, event: PlayEvent) -> bool:
         return any(
-            item.user.id == user_id and item.source == source and item.played_at == played_at
+            item.user.id == event.user.id
+            and item.source == event.source
+            and item.played_at == event.played_at
             for item in self.items
         )
 

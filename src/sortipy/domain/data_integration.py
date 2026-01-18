@@ -207,7 +207,7 @@ def _filter_new_events(
             continue
         if upper and played_at > upper:
             continue
-        if repository.exists(user_id=event.user.id, source=event.source, played_at=played_at):
+        if repository.exists(event):
             continue
         if played_at in seen_timestamps:
             continue
