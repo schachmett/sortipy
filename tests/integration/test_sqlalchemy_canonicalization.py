@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from sortipy.domain.ingest_pipeline import IngestGraph, run_ingest_pipeline
+from sortipy.domain.ingest_pipeline import run_ingest_pipeline
 from sortipy.domain.ingest_pipeline.context import NormalizationState
 from sortipy.domain.ingest_pipeline.entity_ops import normalize_artist
+from sortipy.domain.ingest_pipeline.orchestrator import IngestGraph
 from sortipy.domain.model import Artist, ExternalNamespace
 
 if TYPE_CHECKING:

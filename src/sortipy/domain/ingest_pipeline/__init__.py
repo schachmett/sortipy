@@ -8,7 +8,7 @@ rules remain explicit and adapter-free.
 
 from __future__ import annotations
 
-from .context import EntityCounters, IngestGraph, NormalizationData
+from .context import NormalizationData
 from .ingest_ports import (
     IngestionRepositories,
     IngestionUnitOfWork,
@@ -21,8 +21,6 @@ from .ingest_ports import (
 from .runner import ingest_graph_from_events, ingest_graph_from_library_items, run_ingest_pipeline
 
 __all__ = [
-    "EntityCounters",
-    "IngestGraph",
     "IngestionRepositories",
     "IngestionUnitOfWork",
     "LibraryItemSyncRepositories",

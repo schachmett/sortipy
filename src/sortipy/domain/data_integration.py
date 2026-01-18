@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sortipy.domain.ingest_pipeline import (
-    EntityCounters,
     ingest_graph_from_events,
     ingest_graph_from_library_items,
     run_ingest_pipeline,
 )
+from sortipy.domain.model import EntityType
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
         LibraryItemSyncUnitOfWork,
         PlayEventSyncUnitOfWork,
     )
-    from sortipy.domain.model import LibraryItem, PlayEvent, User
+    from sortipy.domain.model import PlayEvent, User
     from sortipy.domain.ports import (
         LibraryItemFetcher,
         LibraryItemFetchResult,
@@ -30,23 +30,28 @@ if TYPE_CHECKING:
 
 
 @dataclass(slots=True)
-class SyncPlayEventsResult:
-    """Outcome of a play-event sync operation."""
-
-    stored: int
-    fetched: int
-    latest_timestamp: datetime | None
-    now_playing: PlayEvent | None
-    counters: EntityCounters
-
-
-@dataclass(slots=True)
-class SyncLibraryItemsResult:
+class SyncResult:
     """Outcome of a library-items sync operation."""
 
     stored: int
     fetched: int
-    counters: EntityCounters
+    normalized: dict[EntityType, int] = field(default_factory=dict[EntityType, int])
+    dedup_collapsed: dict[EntityType, int] = field(default_factory=dict[EntityType, int])
+    persisted_new: dict[EntityType, int] = field(default_factory=dict[EntityType, int])
+    merged: dict[EntityType, int] = field(default_factory=dict[EntityType, int])
+
+
+@dataclass(slots=True)
+class SyncPlayEventsResult(SyncResult):
+    """Outcome of a play-event sync operation."""
+
+    latest_timestamp: datetime | None = None
+    now_playing: PlayEvent | None = None
+
+
+@dataclass(slots=True)
+class SyncLibraryItemsResult(SyncResult):
+    """Outcome of a library-items sync operation."""
 
 
 @dataclass(slots=True)
@@ -111,13 +116,18 @@ def sync_play_events(
             latest_seen = max(latest_seen or newest_observed, newest_observed)
 
         if not new_events:
-            counters = EntityCounters()
-        else:
-            graph = ingest_graph_from_events(new_events)
-            counters = run_ingest_pipeline(graph=graph, uow=uow)
-            for event in graph.play_events:
-                uow.repositories.play_events.add(event)
-            uow.commit()
+            return SyncPlayEventsResult(
+                stored=0,
+                fetched=fetched,
+                latest_timestamp=latest_seen or effective_cutoff,
+                now_playing=result.now_playing,
+            )
+
+        graph = ingest_graph_from_events(new_events)
+        counters = run_ingest_pipeline(graph=graph, uow=uow)
+        for event in graph.play_events:
+            uow.repositories.play_events.add(event)
+        uow.commit()
         stored = len(new_events)
 
     return SyncPlayEventsResult(
@@ -125,7 +135,10 @@ def sync_play_events(
         fetched=fetched,
         latest_timestamp=latest_seen or effective_cutoff,
         now_playing=result.now_playing,
-        counters=counters,
+        normalized=counters.normalized if counters else {},
+        dedup_collapsed=counters.dedup_collapsed,
+        persisted_new=counters.persisted_new,
+        merged=counters.merged,
     )
 
 
@@ -156,26 +169,27 @@ def sync_library_items(
             return SyncLibraryItemsResult(
                 stored=0,
                 fetched=0,
-                counters=EntityCounters(),
+                normalized={},
+                dedup_collapsed={},
+                persisted_new={},
+                merged={},
             )
 
         graph = ingest_graph_from_library_items(items)
         counters = run_ingest_pipeline(graph=graph, uow=uow)
-        stored = _persist_library_items(uow, items)
+        for item in items:
+            uow.repositories.library_items.add(item)
+        stored = len(items)
         uow.commit()
 
-    return SyncLibraryItemsResult(stored=stored, fetched=fetched, counters=counters)
-
-
-def _persist_library_items(
-    uow: LibraryItemSyncUnitOfWork,
-    items: list[LibraryItem],
-) -> int:
-    """Persist library items once repository support is added."""
-
-    _ = uow
-    # TODO(sortipy): persist library items once repositories exist.  # noqa: FIX002
-    return len(items)
+    return SyncLibraryItemsResult(
+        stored=stored,
+        fetched=fetched,
+        normalized=counters.normalized,
+        dedup_collapsed=counters.dedup_collapsed,
+        persisted_new=counters.persisted_new,
+        merged=counters.merged,
+    )
 
 
 def _filter_new_events(
