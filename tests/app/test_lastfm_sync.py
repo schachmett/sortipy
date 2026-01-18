@@ -18,6 +18,7 @@ from tests.helpers.play_events import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from uuid import UUID
 
     from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
     from sortipy.domain.ports.fetching import PlayEventFetchResult
@@ -43,6 +44,7 @@ def _patch_lastfm_sync(
     *,
     source: FakePlayEventSource,
     repository: FakePlayEventRepository,
+    user: User,
 ) -> None:
     def fake_fetch_play_events(
         *,
@@ -65,6 +67,9 @@ def _patch_lastfm_sync(
     def fake_uow_factory(**_: object) -> Callable[[], PlayEventSyncUnitOfWork]:
         return lambda: FakeIngestUnitOfWork(repository)
 
+    def fake_load_user(*, user_id: UUID) -> User:  # noqa: ARG001
+        return user
+
     monkeypatch.setattr("sortipy.app.fetch_play_events", fake_fetch_play_events)
     monkeypatch.setattr("sortipy.app.create_unit_of_work_factory", fake_uow_factory)
     monkeypatch.setattr("sortipy.app.get_lastfm_config", _make_lastfm_config)
@@ -72,6 +77,7 @@ def _patch_lastfm_sync(
         "sortipy.app.get_database_config",
         lambda: DatabaseConfig(uri="sqlite+pysqlite:///:memory:"),
     )
+    monkeypatch.setattr("sortipy.app.load_user", fake_load_user)
 
 
 def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPatch) -> None:
@@ -83,10 +89,10 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
     source = FakePlayEventSource([[play_event]])
     repository = FakePlayEventRepository()
 
-    _patch_lastfm_sync(monkeypatch, source=source, repository=repository)
+    _patch_lastfm_sync(monkeypatch, source=source, repository=repository, user=user)
 
     result = sync_lastfm_play_events(
-        user=user,
+        user_id=user.id,
         batch_size=1,
     )
 
@@ -105,10 +111,10 @@ def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPa
 
     repository = FakePlayEventRepository([existing])
     source = FakePlayEventSource([[existing, newer]])
-    _patch_lastfm_sync(monkeypatch, source=source, repository=repository)
+    _patch_lastfm_sync(monkeypatch, source=source, repository=repository, user=user)
 
     result = sync_lastfm_play_events(
-        user=user,
+        user_id=user.id,
         batch_size=2,
     )
 
@@ -126,10 +132,10 @@ def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatc
 
     repository = FakePlayEventRepository()
     source = FakePlayEventSource([[older, recent]])
-    _patch_lastfm_sync(monkeypatch, source=source, repository=repository)
+    _patch_lastfm_sync(monkeypatch, source=source, repository=repository, user=user)
 
     result = sync_lastfm_play_events(
-        user=user,
+        user_id=user.id,
         batch_size=5,
         from_timestamp=now - lookback,
         to_timestamp=now,

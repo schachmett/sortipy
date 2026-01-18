@@ -12,7 +12,7 @@ from uuid import UUID
 
 from dotenv import load_dotenv
 
-from sortipy.app import create_user, load_user, sync_lastfm_play_events, sync_spotify_library_items
+from sortipy.app import create_user, sync_lastfm_play_events, sync_spotify_library_items
 from sortipy.config import configure_logging
 
 if TYPE_CHECKING:
@@ -32,11 +32,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         default=None,
         help="Number of events to request per API call (defaults to config)",
-    )
-    lastfm.add_argument(
-        "--user-name",
-        type=str,
-        help="Display name / Last.fm username to attach to imported play events",
     )
     lastfm.add_argument(
         "--user-id",
@@ -70,11 +65,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         default=None,
         help="Number of items to request per API call (defaults to config)",
-    )
-    spotify.add_argument(
-        "--user-name",
-        type=str,
-        help="Display name to attach to imported library items",
     )
     spotify.add_argument(
         "--user-id",
@@ -202,9 +192,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         if parsed_args.command == "lastfm":
             if parsed_args.user_id is None:
                 raise ValueError("Missing --user-id (create a user first)")  # noqa: TRY301
-            user = load_user(user_id=_parse_uuid(parsed_args.user_id))
             sync_lastfm_play_events(
-                user=user,
+                user_id=_parse_uuid(parsed_args.user_id),
                 batch_size=parsed_args.batch_size,
                 max_events=parsed_args.max_events,
                 from_timestamp=start,
@@ -213,9 +202,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif parsed_args.command == "spotify-library":
             if parsed_args.user_id is None:
                 raise ValueError("Missing --user-id (create a user first)")  # noqa: TRY301
-            user = load_user(user_id=_parse_uuid(parsed_args.user_id))
             sync_spotify_library_items(
-                user=user,
+                user_id=_parse_uuid(parsed_args.user_id),
                 batch_size=parsed_args.batch_size,
                 max_tracks=parsed_args.max_tracks,
                 max_albums=parsed_args.max_albums,

@@ -17,11 +17,7 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_sync(**kwargs: object) -> None:
         captured.update(kwargs)
 
-    def fake_load_user(*, user_id: object) -> object:
-        return {"user_id": user_id}
-
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
-    monkeypatch.setattr(main_module, "load_user", fake_load_user)
 
     main_module.main(["lastfm", "--user-id", "00000000-0000-0000-0000-000000000001"])
 
@@ -29,7 +25,7 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["max_events"] is None
     assert captured["from_timestamp"] is None
     assert captured["to_timestamp"] is None
-    assert captured["user"] == {"user_id": UUID("00000000-0000-0000-0000-000000000001")}
+    assert captured["user_id"] == UUID("00000000-0000-0000-0000-000000000001")
 
 
 def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -41,11 +37,7 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_sync(**kwargs: object) -> None:
         captured.update(kwargs)
 
-    def fake_load_user(*, user_id: object) -> object:
-        return {"user_id": user_id}
-
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
-    monkeypatch.setattr(main_module, "load_user", fake_load_user)
 
     main_module.main(
         [
@@ -69,18 +61,14 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["max_events"] == 3
     assert captured["from_timestamp"] == datetime(2025, 1, 1, 21, 30, tzinfo=UTC)
     assert captured["to_timestamp"] == datetime(2025, 1, 2, 0, 0, tzinfo=UTC)
-    assert captured["user"] == {"user_id": UUID("00000000-0000-0000-0000-000000000001")}
+    assert captured["user_id"] == UUID("00000000-0000-0000-0000-000000000001")
 
 
 def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_sync(*_: object, **__: object) -> None:
         return None
 
-    def fake_load_user(*, user_id: object) -> object:
-        return {"user_id": user_id}
-
     monkeypatch.setattr(main_module, "sync_lastfm_play_events", fake_sync)
-    monkeypatch.setattr(main_module, "load_user", fake_load_user)
     monkeypatch.setenv("LASTFM_API_KEY", "demo-key")
     monkeypatch.setenv("LASTFM_USER_NAME", "demo-user")
     monkeypatch.setenv("DATABASE_URI", "sqlite+pysqlite:///:memory:")

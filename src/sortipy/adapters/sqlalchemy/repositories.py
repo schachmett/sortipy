@@ -137,7 +137,16 @@ class SqlAlchemyUserRepository:
         self.session.add(entity)
 
     def get(self, user_id: uuid.UUID) -> User | None:
-        return self.session.get(User, user_id)
+        user = self.session.get(User, user_id)
+        if user is None:
+            return None
+        return User(
+            id=user.id,
+            display_name=user.display_name,
+            email=user.email,
+            lastfm_user=user.lastfm_user,
+            spotify_user_id=user.spotify_user_id,
+        )
 
 
 class SqlAlchemyLibraryItemRepository:

@@ -66,19 +66,12 @@ def load_user(*, user_id: UUID) -> User:
         user = uow.repositories.users.get(user_id)
     if user is None:
         raise ValueError(f"User {user_id} not found")
-    # Return a detached domain copy to avoid ORM session coupling in adapters.
-    return User(
-        id=user.id,
-        display_name=user.display_name,
-        email=user.email,
-        lastfm_user=user.lastfm_user,
-        spotify_user_id=user.spotify_user_id,
-    )
+    return user
 
 
 def sync_lastfm_play_events(
     *,
-    user: User,
+    user_id: UUID,
     batch_size: int | None = None,
     max_events: int | None = None,
     from_timestamp: datetime | None = None,
@@ -86,6 +79,7 @@ def sync_lastfm_play_events(
 ) -> SyncPlayEventsResult:
     """Synchronise Last.fm play events using the configured adapters."""
 
+    user = load_user(user_id=user_id)
     lastfm_config = get_lastfm_config(cache_predicate=should_cache_recent_tracks)
     sync_config = get_sync_config()
     database_config = get_database_config()
@@ -140,7 +134,7 @@ def sync_lastfm_play_events(
 
 def sync_spotify_library_items(
     *,
-    user: User,
+    user_id: UUID,
     batch_size: int | None = None,
     max_tracks: int | None = None,
     max_albums: int | None = None,
@@ -148,6 +142,7 @@ def sync_spotify_library_items(
 ) -> SyncLibraryItemsResult:
     """Synchronise Spotify library items using the configured adapters."""
 
+    user = load_user(user_id=user_id)
     spotify_config = get_spotify_config()
     sync_config = get_sync_config()
     database_config = get_database_config()
@@ -202,3 +197,4 @@ def sync_spotify_library_items(
     )
 
     return result
+
