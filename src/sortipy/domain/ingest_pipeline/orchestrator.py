@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
-from .context import IngestGraph, PipelineContext
+from .context import PipelineContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from .context import IngestGraph
 
 
 class PipelinePhase(Protocol):
@@ -48,4 +49,3 @@ class IngestionPipeline:
         for phase in self.phases:
             phase.run(graph, context=active_context)
         return graph
-

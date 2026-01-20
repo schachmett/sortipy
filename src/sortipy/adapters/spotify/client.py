@@ -9,17 +9,20 @@ from spotipy.oauth2 import SpotifyOAuth
 
 from .schema import (
     FollowedArtistsResponse,
-    SavedAlbumItem,
     SavedAlbumsPage,
-    SavedTrackItem,
     SavedTracksPage,
-    SpotifyArtist,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from sortipy.config.spotify import SpotifyConfig
+
+    from .schema import (
+        SavedAlbumItem,
+        SavedTrackItem,
+        SpotifyArtist,
+    )
 
 
 class SpotifyApiClient(Protocol):

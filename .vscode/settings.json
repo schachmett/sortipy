@@ -9,8 +9,6 @@
         ".ruff_cache": true,
         ".pytest_cache": true,
         ".coverage": true,
-        "htmlcov": true,
-        "lcov.info": true
     },
     // Python
     "python.defaultInterpreterPath": ".venv/bin/python",

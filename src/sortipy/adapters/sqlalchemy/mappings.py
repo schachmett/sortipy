@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from sqlalchemy import (
     Column,
     DateTime,
-    Dialect,
     Enum,
     ForeignKey,
     Index,
@@ -34,7 +33,6 @@ from sortipy.domain.model import (
     EntityMerge,
     EntityType,
     ExternalID,
-    IdentifiedEntity,
     Label,
     LibraryItem,
     MergeReason,
@@ -53,7 +51,14 @@ from sortipy.domain.model import (
 )
 
 if TYPE_CHECKING:
+    from sqlalchemy import (
+        Dialect,
+    )
     from sqlalchemy.engine import Engine
+
+    from sortipy.domain.model import (
+        IdentifiedEntity,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +102,7 @@ class ProviderSetType(TypeDecorator[set[Provider]]):
         loaded = json.loads(value)
         if not isinstance(loaded, list):
             return set()
-        items = cast(list[Any], loaded)
+        items = cast("list[Any]", loaded)
         providers: set[Provider] = set()
         for item in items:
             if isinstance(item, str):

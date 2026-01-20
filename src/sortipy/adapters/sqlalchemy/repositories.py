@@ -11,11 +11,8 @@ from sqlalchemy import select
 from sortipy.domain.ingest_pipeline import NormalizationSidecarRepository
 from sortipy.domain.model import (
     Artist,
-    EntityType,
     IdentifiedEntity,
     Label,
-    LibraryItem,
-    Namespace,
     PlayEvent,
     Recording,
     Release,
@@ -37,6 +34,11 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
     from sortipy.domain.ingest_pipeline import NormalizationData
+    from sortipy.domain.model import (
+        EntityType,
+        LibraryItem,
+        Namespace,
+    )
 
 
 class MissingParentError(Exception): ...
@@ -230,7 +232,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
         loaded_raw = json.loads(value)
         if not isinstance(loaded_raw, list):
             raise TypeError("Invalid key format")
-        loaded = cast(list[object], loaded_raw)
+        loaded = cast("list[object]", loaded_raw)
         return tuple(loaded)
 
 

@@ -7,13 +7,12 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine  # noqa: TC002
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from sortipy.adapters.lastfm.client import RecentTracksResponse
 from sortipy.adapters.sqlalchemy import start_mappers
 from sortipy.adapters.sqlalchemy.mappings import create_all_tables
 from sortipy.adapters.sqlalchemy.unit_of_work import (
-    SqlAlchemyUnitOfWork,
     create_unit_of_work_factory,
 )
 
@@ -21,6 +20,12 @@ os.environ.setdefault("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+    from sqlalchemy.orm import Session
+
+    from sortipy.adapters.sqlalchemy.unit_of_work import (
+        SqlAlchemyUnitOfWork,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -34,7 +39,7 @@ def recent_tracks_payloads() -> tuple[RecentTracksResponse, ...]:
 def recent_tracks_payload(
     request: pytest.FixtureRequest, recent_tracks_payloads: tuple[RecentTracksResponse, ...]
 ) -> RecentTracksResponse:
-    return recent_tracks_payloads[cast(int, request.param)]
+    return recent_tracks_payloads[cast("int", request.param)]
 
 
 @pytest.fixture

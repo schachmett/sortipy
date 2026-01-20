@@ -1,19 +1,27 @@
 repos:
   - repo: local
     hooks:
-      - id: ruff-check
-        name: Ruff Check
-        entry: .venv/bin/ruff check
-        language: system
-        types_or: [python]
-        pass_filenames: true
-      - id: pyright
-        name: Pyright
-        entry: .venv/bin/pyright
+      - id: poe-format-check
+        name: Poe Format Check
+        entry: uv run poe format_check
         language: system
         pass_filenames: false
-      - id: pytest
-        name: Pytest
-        entry: .venv/bin/pytest
+        always_run: true
+      - id: poe-lint
+        name: Poe Lint
+        entry: uv run poe lint
         language: system
         pass_filenames: false
+        always_run: true
+      - id: poe-typecheck
+        name: Poe Typecheck
+        entry: uv run poe typecheck
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: poe-test
+        name: Poe Test
+        entry: uv run poe test
+        language: system
+        pass_filenames: false
+        always_run: true

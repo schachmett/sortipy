@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .context import NormalizationState, PipelineContext
+from .context import NormalizationState
 from .entity_ops import ops_for
 from .orchestrator import PipelinePhase
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from sortipy.domain.model import IdentifiedEntity
 
-    from .context import IngestGraph
+    from .context import IngestGraph, PipelineContext
 
 
 class NormalizationPhase(PipelinePhase):

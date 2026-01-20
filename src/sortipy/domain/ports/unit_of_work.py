@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from types import TracebackType
-
     from .persistence import (
         ArtistRepository,
         RecordingRepository,
@@ -33,7 +31,7 @@ class UnitOfWork[TRepositories: RepositoryCollection](Protocol):
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: TracebackType | None,
+        traceback: object,
     ) -> Literal[False]: ...
 
     def commit(self) -> None: ...

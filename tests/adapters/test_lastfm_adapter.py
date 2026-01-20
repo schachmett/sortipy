@@ -10,10 +10,9 @@ from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.adapters.lastfm import fetch_play_events
 from sortipy.adapters.lastfm.client import (
     LastFmClient,
-    RecentTracksResponse,
-    TrackPayload,
     parse_play_event,
 )
+from sortipy.adapters.lastfm.schema import TrackPayload
 from sortipy.config import MissingConfigurationError
 from sortipy.config.lastfm import (
     LASTFM_BASE_URL,
@@ -29,6 +28,10 @@ from sortipy.domain.model import Provider, User
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from sortipy.adapters.lastfm.schema import (
+        RecentTracksResponse,
+    )
+
 
 def _make_client_factory(
     handler: Callable[[httpx.Request], httpx.Response],
@@ -38,7 +41,7 @@ def _make_client_factory(
 
     def factory(resilience: ResilienceConfig) -> ResilientClient:
         client = ResilientClient(resilience)
-        client._client = httpx.AsyncClient(  # noqa: SLF001  # type: ignore[reportPrivateUsage]
+        client._client = httpx.AsyncClient(
             transport=httpx.MockTransport(async_handler),
         )
         return client

@@ -6,7 +6,6 @@
 .session_key*
 
 # Infrastructure
-.tox
 .venv
 dependencies/
 typings
@@ -21,11 +20,10 @@ lcov.info
 **/__pycache__
 **/.cache
 **/.pytest_cache
-**/.mypy_cache
 **/.ruff_cache
 .pre-commit-cache/
 
 # Generated on packaging
 # requirements.txt
 *.egg-info
-dist
+dist/

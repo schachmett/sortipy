@@ -10,151 +10,133 @@ requires-python = ">= 3.12"
 readme = "README.md"
 dependencies = [
     "spotipy",
-    "python-dotenv",
     "httpx",
     "httpx-retries",
     "sqlalchemy",
     "aiolimiter",
-    "hishel",
     "hishel[async]",
     "pydantic>=2.8,<3",
+    "alembic"
 ]
-optional-dependencies = { dev = ["pytest", "pytest-cov", "pytest-asyncio", "ruff", "pyright", "alembic"] }
+scripts.sortipy = "sortipy.ui.cli:main"
 
-[project.scripts]
-sortipy = "sortipy.ui.cli:main"
+
+[dependency-groups]
+dev = [
+  "coverage[toml]",
+  "poethepoet>=0.40.0",
+  "pytest>=9.0.0",
+  "pytest-asyncio>=1.3.0",
+  "pytest-cov",
+  "python-dotenv>=1.2.1",
+  "ruff>=0.14.13",
+  "pyright",
+]
+
 
 [build-system]
-requires = ["setuptools>=71", "setuptools-scm>=8", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
-[tool.setuptools]
-packages.find = { where = ["src"] }
-zip-safe = false
-include-package-data = true
-# the sdist still contains .tox and similar stuff - could be solved with a MANIFEST.in
 
-[tool.setuptools_scm]
+[tool.hatch]
+version.source = "vcs"
+
+
+[tool.poe.tasks]
+format = "ruff format"
+format_check = "ruff format --check"
+lint_fix = "ruff check --fix"
+lint = "ruff check"
+typecheck = "pyright"
+test = "pytest"
+test_cov = "pytest --cov --cov-report=term --cov-report=html"
+fix = ["format", "lint_fix"]
+check = ["format_check", "lint", "typecheck", "test_cov"]
+
 
 [tool.pytest]
-ini_options.asyncio_mode = "strict"
-ini_options.asyncio_default_fixture_loop_scope = "function"
-ini_options.addopts = "--log-level DEBUG --cov --cov-report=lcov:lcov.info"
-ini_options.testpaths = ["tests"]
-ini_options.pythonpath = ["src"]
-ini_options.markers = ["integration: test is an integration test"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+strict = true
+addopts = ["--log-level=DEBUG", "--color=yes", "--exitfirst", "--failed-first"]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["integration: test is an integration test"]
+
 
 [tool.coverage]
 run.source = ["src"]
+run.branch = true
+run.parallel = true
 report.exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:"
 ]
+report.skip_covered = true
+report.precision = 1
+report.fail_under = 0
+html.directory = "htmlcov"
+
 
 [tool.ruff]
 line-length = 100
-lint.select = [
-    "F",
-    "E",
-    # "W", # don't use, overlaps with formatter
-    "C90",
-    "I",
-    "N",
-    # "D", # don't use, ignore docstyling
-    "UP",
-    "YTT",
-    "ANN",
-    "ASYNC",
-    "S",
-    "BLE",
-    "FBT",
-    "B",
-    "A",
-    "COM",
-    "C4",
-    "DTZ",
-    "T10",
-    # "DJ", # we don't use Django
-    # "EM", # our exceptions can use f-strings
-    # "EXE", # not necessary, we don't have shebangs
-    "FA",
-    "ISC",
-    "ICN",
-    "LOG",
-    "G",
-    "INP",
-    "PIE",
-    "T20",
-    # "PYI", # only necessary for stub files
-    "PT",
-    "Q",
-    "RSE",
-    "RET",
-    "SLF",
-    "SLOT",
-    "SIM",
-    "TID",
-    "TC",
-    "INT",
-    "ARG",
-    "PTH",
-    # "TD", # don't need todo formatting
-    "FIX",
-    # "ERA", # commented out code: don't care
-    # "PD", # pandas not used
-    "PGH",
-    "PL",
-    "TRY",
-    "FLY",
-    # "NPY", # numpy not used
-    # "FAST", # FastAPI not used
-    # "AIR", # Airflow not used
-    "PERF",
-    "FURB",
-    # "DOC", # no docstring linting
-    "RUF",
-]
-lint.extend-fixable = ["TC003"]
+src = ["src", "tests"]
+lint.select = ["ALL"]
+lint.extend-safe-fixes = ["TC001", "TC002", "TC003", "TC004"]
+lint.future-annotations = true
 lint.ignore = [
-    "G004",   # log with f-strings
-    "TRY003", # use f-strings in exception constructors
-    "S603",   # allow subprocess calls
-    # see https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules:
-    "E111",
-    "E114",
-    "E117",
-    "D206",
-    "D300",
-    "Q000",
-    "Q001",
-    "Q002",
-    "Q003",
-    "COM812",
-    "COM819",
-    "ISC001",
-    "ISC002",
-    "TC006"
+  "CPY",    # missing copyright notice
+  "G004",   # f-strings in log messages
+  "FIX",    # presence of todo
+  "TD",     # formatting of todo
+  "EM",     # error message formatting
+  "DOC",    # pydoclint
+  "D",      # pydocstyle
+  "TRY003", # long exception message
+  # see https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules:
+  "W191",
+  "E111",
+  "E114",
+  "E117",
+  "D206",
+  "D300",
+  "Q000",
+  "Q001",
+  "Q002",
+  "Q003",
+  "COM812",
+  "COM819",
 ]
-lint.per-file-ignores = { "tests/**/*.py" = [
-    "S101",    # allow assert
-    "PLR2004", # allow magic values
+lint.per-file-ignores = { "tests/*" = [
+  "INP001",  # missing _init_.py
+  "ARG002",  # unused method argument
+  "S101",    # asserts in tests
+  "ANN001",  # missing arg type in tests
+  "ANN201",  # missing return type in tests
+  "ANN202",  # missing return type for private funcs in tests
+  "SLF001",  # private access
+  "PLR2004", # magic values
 ], "src/sortipy/adapters/sqlalchemy/migrations/versions/*.py" = [
     "I001", # generated migration import ordering
 ] }
-lint.isort.required-imports = ["from __future__ import annotations"]
+lint.flake8-type-checking.runtime-evaluated-base-classes = [
+  "pydantic.BaseModel"
+]
 lint.pylint.max-args = 7
+
 
 [tool.pyright] # see https://github.com/microsoft/pyright/blob/main/docs/configuration.md
 include = ["src", "tests"]
-ignore = ["**/__pycache__", ".venv", ".tox"]
-reportPrivateUsage = "none"
+ignore = ["**/__pycache__", ".venv"]
+reportPrivateUsage = "none"  # handled by ruff
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
 venvPath = "."
 venv = ".venv"
 
+
 [tool.alembic]
 script_location = "%(here)s/src/sortipy/adapters/sqlalchemy/migrations"
 prepend_sys_path = ["%(here)s/src"]   # statt "."
-# path_separator = "os"

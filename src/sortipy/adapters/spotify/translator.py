@@ -8,15 +8,18 @@ from sortipy.domain.model import (
     Artist,
     ArtistRole,
     ExternalNamespace,
-    LibraryItem,
     Provider,
     Recording,
-    Release,
     ReleaseSet,
-    User,
 )
 
 if TYPE_CHECKING:
+    from sortipy.domain.model import (
+        LibraryItem,
+        Release,
+        User,
+    )
+
     from .schema import SpotifyAlbum, SpotifyArtist, SpotifyTrack
 
 

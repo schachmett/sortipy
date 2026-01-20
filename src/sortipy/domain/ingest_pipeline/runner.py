@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sortipy.domain.model import Artist, LibraryItem, Recording, Release, ReleaseSet
+from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
 
 from .canonicalization import CanonicalizationPhase
-from .context import EntityCounters, IngestGraph, PipelineContext
+from .context import IngestGraph, PipelineContext
 from .deduplication import DeduplicationPhase
 from .normalization import NormalizationPhase
 from .orchestrator import IngestionPipeline
@@ -15,8 +15,9 @@ from .orchestrator import IngestionPipeline
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from sortipy.domain.model import PlayEvent
+    from sortipy.domain.model import LibraryItem, PlayEvent
 
+    from .context import EntityCounters
     from .ingest_ports import IngestionUnitOfWork
 
 

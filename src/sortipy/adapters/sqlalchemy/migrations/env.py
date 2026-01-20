@@ -67,7 +67,6 @@ def run_migrations_online() -> None:
     main_url = get_database_config().uri
     engine = create_engine(
         main_url,
-        # prefix="sqlalchemy.",
         poolclass=pool.NullPool,
         future=True,
     )

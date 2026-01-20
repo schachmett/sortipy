@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .env import require_env_vars
-from .http_resilience import CacheConfig, RateLimit, ResilienceConfig, ShouldCacheHook
+from .http_resilience import CacheConfig, RateLimit, ResilienceConfig
+
+if TYPE_CHECKING:
+    from .http_resilience import ShouldCacheHook
 
 LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 LASTFM_TIMEOUT_SECONDS = 10.0

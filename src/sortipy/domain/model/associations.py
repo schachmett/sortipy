@@ -11,11 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from .enums import ArtistRole, EntityType
+from .enums import EntityType
 from .external_ids import ExternallyIdentifiableMixin
 from .provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
+    from .enums import ArtistRole
     from .music import Artist, Recording, Release, ReleaseSet
     from .primitives import DurationMs
 

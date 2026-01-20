@@ -13,22 +13,26 @@ from sortipy.domain.model import (
     ExternalNamespace,
     IdentifiedEntity,
     PlayEvent,
-    Provenanced,
-    ProvenanceTracked,
     Recording,
     Release,
     ReleaseSet,
     User,
 )
 
-from .context import NormalizationData, NormalizationState, NormKey, NormKeySeq
+from .context import NormalizationData
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
     from uuid import UUID
 
-    from sortipy.domain.model import ExternallyIdentifiable
+    from sortipy.domain.model import (
+        ExternallyIdentifiable,
+        Provenanced,
+        ProvenanceTracked,
+    )
+
+    from .context import NormalizationState, NormKey, NormKeySeq
 
 
 @dataclass(slots=True)

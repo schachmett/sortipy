@@ -28,7 +28,6 @@ from .repositories import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from types import TracebackType
 
     from sqlalchemy.engine import Engine
 
@@ -56,7 +55,7 @@ class BaseSqlAlchemyUnitOfWork[TRepositories: RepositoryCollection](ABC):
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: TracebackType | None,
+        traceback: object,
     ) -> Literal[False]:
         if exc_type is not None:
             self.rollback()

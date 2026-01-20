@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.adapters.lastfm import fetch_play_events
-from sortipy.adapters.lastfm.client import LastFmClient, RecentTracksResponse
+from sortipy.adapters.lastfm.client import LastFmClient
 from sortipy.config.lastfm import (
     LASTFM_BASE_URL,
     LASTFM_TIMEOUT_SECONDS,
@@ -33,6 +33,7 @@ from tests.helpers.play_events import FakePlayEventSource
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sortipy.adapters.lastfm.client import RecentTracksResponse
     from sortipy.adapters.sqlalchemy.unit_of_work import SqlAlchemyUnitOfWork
     from sortipy.domain.ports.fetching import PlayEventFetchResult
 
@@ -56,9 +57,7 @@ def _make_client_factory(
 
     def factory(resilience: ResilienceConfig) -> ResilientClient:
         client = ResilientClient(resilience)
-        client._client = httpx.AsyncClient(  # noqa: SLF001  # type: ignore[reportPrivateUsage]
-            transport=httpx.MockTransport(async_handler),
-        )
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(async_handler))
         return client
 
     return factory

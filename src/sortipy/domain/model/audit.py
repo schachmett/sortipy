@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from .enums import EntityType, MergeReason
+from .enums import MergeReason
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from .enums import EntityType
 
 
 @dataclass(eq=False)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC
 from logging import getLogger
 from typing import TYPE_CHECKING
 
@@ -12,15 +12,18 @@ import httpx
 from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.domain.ports import PlayEventFetchResult
 
-from .schema import ErrorResponse, RecentTracksResponse, ResponseAttr, TrackPayload
+from .schema import ErrorResponse, RecentTracksResponse
 from .translator import parse_play_event
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from datetime import datetime
 
     from sortipy.config.http_resilience import ResilienceConfig
     from sortipy.config.lastfm import LastFmConfig
     from sortipy.domain.model import PlayEvent, User
+
+    from .schema import ResponseAttr, TrackPayload
 
 log = getLogger(__name__)
 

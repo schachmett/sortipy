@@ -17,8 +17,6 @@ from sortipy.config import (
 from sortipy.domain.data_integration import (
     LibraryItemSyncRequest,
     PlayEventSyncRequest,
-    SyncLibraryItemsResult,
-    SyncPlayEventsResult,
     sync_library_items,
     sync_play_events,
 )
@@ -28,6 +26,10 @@ if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
+    from sortipy.domain.data_integration import (
+        SyncLibraryItemsResult,
+        SyncPlayEventsResult,
+    )
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
 
 
@@ -197,4 +199,3 @@ def sync_spotify_library_items(
     )
 
     return result
-

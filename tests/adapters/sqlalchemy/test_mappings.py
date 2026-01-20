@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import Table, func, insert, inspect, select
+from sqlalchemy import func, insert, inspect, select
 
 from sortipy.adapters.sqlalchemy.mappings import (
     artist_table,
@@ -37,6 +37,7 @@ from sortipy.domain.model import (
 )
 
 if TYPE_CHECKING:
+    from sqlalchemy import Table
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
 

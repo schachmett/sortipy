@@ -9,7 +9,6 @@ from sortipy.domain.model import (
     ExternallyIdentifiable,
     Label,
     LibraryItem,
-    Namespace,
     PlayEvent,
     Recording,
     Release,
@@ -20,6 +19,10 @@ from sortipy.domain.model import (
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
+
+    from sortipy.domain.model import (
+        Namespace,
+    )
 
 
 @runtime_checkable

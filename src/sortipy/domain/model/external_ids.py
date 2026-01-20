@@ -11,11 +11,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final, Protocol
 
 from .entity import Entity
-from .enums import EntityType, ExternalNamespace, Provider
+from .enums import ExternalNamespace, Provider
 
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
+
+    from .enums import EntityType
 
 
 type Namespace = str | ExternalNamespace
@@ -113,7 +115,7 @@ class ExternallyIdentifiableMixin(Entity, ABC):
         provider: Provider | None = None,
         replace: bool = False,
     ) -> None:
-        # owner = cast(EntityRef, self)
+        # TODO owner = cast(EntityRef, self)
         resolved_provider = provider if provider is not None else provider_for(namespace)
         ext = ExternalID(
             namespace=namespace,

@@ -8,9 +8,11 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from .enums import EntityType
 
 

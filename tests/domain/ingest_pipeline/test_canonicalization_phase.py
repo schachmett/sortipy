@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
 import pytest
 
@@ -9,8 +9,6 @@ from sortipy.domain.ingest_pipeline.canonicalization import CanonicalizationPhas
 from sortipy.domain.ingest_pipeline.context import (
     IngestGraph,
     NormalizationState,
-    NormKey,
-    NormKeySeq,
     PipelineContext,
 )
 from sortipy.domain.ingest_pipeline.entity_ops import normalize_artist
@@ -18,10 +16,7 @@ from sortipy.domain.ingest_pipeline.normalization import NormalizationPhase
 from sortipy.domain.ingest_pipeline.orchestrator import IngestionPipeline
 from sortipy.domain.model import (
     Artist,
-    EntityType,
     ExternalNamespace,
-    IdentifiedEntity,
-    PlayEvent,
     Recording,
     Release,
     ReleaseSet,
@@ -31,7 +26,16 @@ from sortipy.domain.ports.persistence import PlayEventRepository
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from sortipy.domain.ingest_pipeline.context import NormalizationData
+    from sortipy.domain.ingest_pipeline.context import (
+        NormalizationData,
+        NormKey,
+        NormKeySeq,
+    )
+    from sortipy.domain.model import (
+        EntityType,
+        IdentifiedEntity,
+        PlayEvent,
+    )
 
 
 def _pipeline() -> IngestionPipeline:
@@ -130,14 +134,14 @@ class FakeIngestUnitOfWork:
         )
         self.committed = False
 
-    def __enter__(self) -> FakeIngestUnitOfWork:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: object | None,
+        traceback: object,
     ) -> Literal[False]:
         return False
 
@@ -165,7 +169,7 @@ def test_canonicalization_matches_external_id() -> None:
     _pipeline().run(graph, context=context)
 
     assert graph.artists[0].id == existing.id
-    assert repo._items == [existing]  # pyright: ignore[reportPrivateUsage] # noqa: SLF001
+    assert repo._items == [existing]
 
 
 def test_canonicalization_matches_deterministic_keys() -> None:

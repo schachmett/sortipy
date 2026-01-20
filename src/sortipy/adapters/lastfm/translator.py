@@ -13,18 +13,22 @@ from sortipy.domain.model import (
     Artist,
     ArtistRole,
     ExternalNamespace,
-    PlayEvent,
     Provider,
     Recording,
-    Release,
     ReleaseSet,
-    User,
 )
 
-from .schema import TrackPayload, TrackPayloadInput
+from .schema import TrackPayload
 
 if TYPE_CHECKING:
-    from sortipy.domain.model import ReleaseTrack
+    from sortipy.domain.model import (
+        PlayEvent,
+        Release,
+        ReleaseTrack,
+        User,
+    )
+
+    from .schema import TrackPayloadInput
 
 
 log = getLogger(__name__)

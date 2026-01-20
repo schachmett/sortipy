@@ -42,5 +42,5 @@ def test_play_event_repository_exists_returns_false_for_missing_rows(
     timestamp = datetime.now(tz=UTC)
 
     missing = make_play_event("Missing", timestamp=timestamp)
-    missing._user.id = uuid.uuid4()  # noqa: SLF001
+    missing._user.id = uuid.uuid4()
     assert repository.exists(missing) is False

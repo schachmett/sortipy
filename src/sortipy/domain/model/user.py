@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from . import _internal as internal
-from .enums import EntityType, Provider
+from .enums import EntityType
 from .provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from .associations import ReleaseTrack
     from .entity import IdentifiedEntity
+    from .enums import Provider
     from .music import Recording, Release
 
 

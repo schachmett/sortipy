@@ -35,7 +35,7 @@ class ArtistPayload(LastFmBaseModel):
     @classmethod
     def _normalize_compact_schema(cls, value: object) -> object:
         if isinstance(value, Mapping):
-            mapping_value = cast(Mapping[str, object], value)
+            mapping_value = cast("Mapping[str, object]", value)
             if "#text" in mapping_value and "name" not in mapping_value:
                 data: dict[str, object] = dict(mapping_value)
                 text_value = data.get("#text")

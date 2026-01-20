@@ -4,6 +4,7 @@ import json
 from typing import (
     TYPE_CHECKING,
     Concatenate,
+    Self,
     TypedDict,
     Unpack,
 )
@@ -18,7 +19,6 @@ from httpx_retries import Retry, RetryTransport
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-    from types import TracebackType
 
     from httpx._client import UseClientDefault
     from httpx._types import (
@@ -97,14 +97,14 @@ class ResilientClient:
         else:
             self._client = httpx.AsyncClient(**client_kwargs)
 
-    async def __aenter__(self) -> ResilientClient:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
-        tb: TracebackType | None,
+        tb: object,
     ) -> None:
         await self.aclose()
 

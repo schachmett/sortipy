@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from sortipy.domain.model import ExternallyIdentifiable, IdentifiedEntity
 
-from .entity_ops import EntityOps, ops_for
+from .entity_ops import ops_for
 from .orchestrator import PipelinePhase
 
 if TYPE_CHECKING:
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         NormalizationState,
         PipelineContext,
     )
+    from .entity_ops import EntityOps
     from .ingest_ports import NormalizationSidecarRepository
 
 
@@ -72,7 +73,7 @@ class _Resolver[TEntity: CanonicalizableEntity]:
             candidate = matches.get(key)
             if candidate is None:
                 continue
-            typed_candidate = cast(TEntity, candidate)
+            typed_candidate = cast("TEntity", candidate)
             if typed_candidate not in candidates:
                 candidates.append(typed_candidate)
 

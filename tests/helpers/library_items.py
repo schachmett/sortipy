@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
-    EntityType,
-    IdentifiedEntity,
-    LibraryItem,
-    Namespace,
     Provider,
     Recording,
     Release,
@@ -24,6 +20,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from sortipy.domain.ingest_pipeline.context import NormalizationData
+    from sortipy.domain.model import (
+        EntityType,
+        IdentifiedEntity,
+        LibraryItem,
+        Namespace,
+    )
 
 
 def make_recording_library_item(user: User | None = None) -> LibraryItem:
@@ -143,14 +145,14 @@ class FakeIngestUnitOfWork:
         self.committed = False
         self.rollback_called = False
 
-    def __enter__(self) -> FakeIngestUnitOfWork:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: object | None,
+        traceback: object,
     ) -> Literal[False]:
         if exc_type is not None:
             self.rollback()

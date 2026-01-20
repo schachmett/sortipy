@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 class Provenance:
     _owner_type: EntityType | None = field(default=None, repr=False)
     _owner_id: UUID | None = field(default=None, repr=False)
-    # raw_payloads: list[Payload] | None = None # Payload class does not yet exist
-    # ingested_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    # TODO raw_payloads: list[Payload] | None = None # Payload class does not yet exist
+    # TODO ingested_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     sources: set[Provider] = field(default_factory=set["Provider"], repr=False)
 
     @property
