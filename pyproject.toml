@@ -6,7 +6,7 @@ dynamic = ["version"]
 authors = [{ name = "Simon Fischer", email = "sortipy@simon-fischer.info" }]
 description = "Spotify stuff"
 license = { file = "LICENSE" }
-requires-python = ">= 3.12"
+requires-python = ">= 3.14"
 readme = "README.md"
 dependencies = [
     "spotipy",
@@ -82,6 +82,7 @@ html.directory = "htmlcov"
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+target-version = "py314"
 lint.select = ["ALL"]
 lint.extend-safe-fixes = ["TC001", "TC002", "TC003", "TC004"]
 lint.future-annotations = true
@@ -131,7 +132,7 @@ include = ["src", "tests"]
 ignore = ["**/__pycache__", ".venv"]
 reportPrivateUsage = "none"  # handled by ruff
 typeCheckingMode = "strict"
-pythonVersion = "3.12"
+pythonVersion = "3.14"
 pythonPlatform = "Linux"
 venvPath = "."
 venv = ".venv"
