@@ -223,6 +223,7 @@ recording_table = Table(
     Column("title", String, nullable=False),
     Column("duration_ms", Integer, nullable=True),
     Column("version", String, nullable=True),
+    Column("disambiguation", String, nullable=True),
 )
 
 recording_contribution_table = Table(

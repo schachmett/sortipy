@@ -274,6 +274,7 @@ class Recording(CanonicalEntity):
     title: str
     duration_ms: DurationMs | None = None
     version: str | None = None
+    disambiguation: str | None = None
 
     # Owned contributions
     _contributions: list[RecordingContribution] = field(
