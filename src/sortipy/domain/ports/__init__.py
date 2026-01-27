@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from .enrichment import (
+    ArtistCreditUpdate,
+    RecordingEnrichmentFetcher,
+    RecordingEnrichmentUpdate,
+)
 from .fetching import (
     LibraryItemFetcher,
     LibraryItemFetchResult,
@@ -27,6 +32,7 @@ from .unit_of_work import (
 )
 
 __all__ = [
+    "ArtistCreditUpdate",
     "ArtistRepository",
     "CanonicalEntityRepository",
     "CatalogRepositories",
@@ -37,6 +43,8 @@ __all__ = [
     "PlayEventFetchResult",
     "PlayEventFetcher",
     "PlayEventRepository",
+    "RecordingEnrichmentFetcher",
+    "RecordingEnrichmentUpdate",
     "RecordingRepository",
     "ReleaseRepository",
     "ReleaseSetRepository",
