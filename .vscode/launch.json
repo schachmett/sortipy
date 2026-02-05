@@ -28,7 +28,7 @@
             "args": [
                 "spotify-library",
                 "--user-id",
-                "bd5da5deb191439295f1d039382266ac",
+                "623310c4-99bd-4a0b-ad7c-eb5b61d9a796",
                 "--batch-size",
                 "5",
                 "--max-tracks",
@@ -50,9 +50,23 @@
             "args": [
                 "lastfm",
                 "--user-id",
-                "bd5da5deb191439295f1d039382266ac",
+                "623310c4-99bd-4a0b-ad7c-eb5b61d9a796",
                 "--max-events",
                 "10"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: CLI (Musicbrainz Recordings)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "sortipy.ui.cli",
+            "args": [
+                "musicbrainz-recordings",
+                "--limit",
+                "2",
             ],
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/.env",

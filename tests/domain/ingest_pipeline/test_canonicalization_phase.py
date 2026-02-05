@@ -75,6 +75,11 @@ class _FakeCanonicalRepository[TEntity]:
                     return entity
         return None
 
+    def list(self, *, limit: int | None = None) -> list[TEntity]:
+        if limit is None:
+            return list(self._items)
+        return list(self._items[:limit])
+
 
 class _FakeNormalizationSidecarRepository:
     def __init__(self) -> None:

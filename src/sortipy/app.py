@@ -6,11 +6,13 @@ from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.lastfm import fetch_play_events, should_cache_recent_tracks
+from sortipy.adapters.musicbrainz import enrich_recordings as fetch_recording_enrichment
 from sortipy.adapters.spotify import fetch_library_items
 from sortipy.adapters.sqlalchemy import create_unit_of_work_factory
 from sortipy.config import (
     get_database_config,
     get_lastfm_config,
+    get_musicbrainz_config,
     get_spotify_config,
     get_sync_config,
 )
@@ -20,9 +22,18 @@ from sortipy.domain.data_integration import (
     sync_library_items,
     sync_play_events,
 )
+from sortipy.domain.enrichment import (
+    RecordingEnrichmentResult,
+    apply_recording_updates,
+    select_recording_candidates,
+)
+from sortipy.domain.enrichment import (
+    enrich_recordings as build_recording_enrichment,
+)
 from sortipy.domain.model import User
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import datetime
     from uuid import UUID
 
@@ -30,7 +41,9 @@ if TYPE_CHECKING:
         SyncLibraryItemsResult,
         SyncPlayEventsResult,
     )
+    from sortipy.domain.model import Recording
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
+    from sortipy.domain.ports.enrichment import RecordingEnrichmentUpdate
 
 
 log = getLogger(__name__)
@@ -199,3 +212,39 @@ def sync_spotify_library_items(
     )
 
     return result
+
+
+def enrich_musicbrainz_recordings(
+    *,
+    limit: int | None = None,
+) -> RecordingEnrichmentResult:
+    """Enrich recordings using MusicBrainz data."""
+
+    musicbrainz_config = get_musicbrainz_config()
+    database_config = get_database_config()
+    unit_of_work_factory = create_unit_of_work_factory(database_uri=database_config.uri)
+
+    with unit_of_work_factory() as uow:
+        recordings = uow.repositories.recordings.list(limit=limit)
+        candidates = select_recording_candidates(recordings)
+
+        if not candidates:
+            return RecordingEnrichmentResult(candidates=0, updates=0, applied=0)
+
+        def _fetcher(
+            recordings_batch: Iterable[Recording],
+        ) -> Iterable[RecordingEnrichmentUpdate]:
+            return fetch_recording_enrichment(
+                recordings_batch,
+                config=musicbrainz_config,
+            )
+
+        updates = build_recording_enrichment(candidates, fetcher=_fetcher)
+        updated = apply_recording_updates(candidates, updates)
+        uow.commit()
+
+    return RecordingEnrichmentResult(
+        candidates=len(candidates),
+        updates=len(updates),
+        applied=len(updated),
+    )

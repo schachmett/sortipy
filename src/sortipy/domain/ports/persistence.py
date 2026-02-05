@@ -69,6 +69,8 @@ class ReleaseRepository(CanonicalEntityRepository[Release], Protocol):
 class RecordingRepository(CanonicalEntityRepository[Recording], Protocol):
     """Repository contract for recordings."""
 
+    def list(self, *, limit: int | None = None) -> list[Recording]: ...
+
 
 @runtime_checkable
 class LabelRepository(CanonicalEntityRepository[Label], Protocol):

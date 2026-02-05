@@ -102,6 +102,10 @@ class _NullCanonicalRepository[TCanonical]:
         _ = (namespace, value)
         return None
 
+    def list(self, *, limit: int | None = None) -> list[TCanonical]:
+        _ = limit
+        return []
+
 
 class _NullSidecarRepository:
     def save(

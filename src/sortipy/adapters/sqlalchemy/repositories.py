@@ -124,6 +124,12 @@ class SqlAlchemyRecordingRepository(SqlAlchemyCanonicalRepository[Recording]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, Recording)
 
+    def list(self, *, limit: int | None = None) -> list[Recording]:
+        stmt = select(Recording)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars())
+
 
 class SqlAlchemyLabelRepository(SqlAlchemyCanonicalRepository[Label]):
     def __init__(self, session: Session) -> None:

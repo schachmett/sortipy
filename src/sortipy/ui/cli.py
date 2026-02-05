@@ -10,7 +10,12 @@ from uuid import UUID
 
 from dotenv import load_dotenv
 
-from sortipy.app import create_user, sync_lastfm_play_events, sync_spotify_library_items
+from sortipy.app import (
+    create_user,
+    enrich_musicbrainz_recordings,
+    sync_lastfm_play_events,
+    sync_spotify_library_items,
+)
 from sortipy.config import configure_logging
 
 if TYPE_CHECKING:
@@ -88,6 +93,16 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--max-artists",
         type=int,
         help="Maximum number of followed artists to fetch before stopping",
+    )
+
+    musicbrainz = subparsers.add_parser(
+        "musicbrainz-recordings",
+        help="Enrich recordings using MusicBrainz",
+    )
+    musicbrainz.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of recordings to enrich",
     )
 
     user = subparsers.add_parser("user", help="User management commands")
@@ -206,6 +221,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_tracks=parsed_args.max_tracks,
                 max_albums=parsed_args.max_albums,
                 max_artists=parsed_args.max_artists,
+            )
+        elif parsed_args.command == "musicbrainz-recordings":
+            result = enrich_musicbrainz_recordings(
+                limit=parsed_args.limit,
+            )
+            log.info(
+                "MusicBrainz enrichment finished: candidates=%s, updates=%s, applied=%s",
+                result.candidates,
+                result.updates,
+                result.applied,
             )
         elif parsed_args.command == "user" and parsed_args.user_command == "create":
             user = create_user(

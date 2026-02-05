@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sortipy import __version__
+
 from .env import require_env_vars
 from .http_resilience import CacheConfig, RateLimit, ResilienceConfig, RetryPolicy
 
@@ -19,7 +21,7 @@ def get_musicbrainz_config() -> MusicBrainzConfig:
     values = require_env_vars(("MUSICBRAINZ_APP_NAME", "MUSICBRAINZ_CONTACT"))
     app_name = values["MUSICBRAINZ_APP_NAME"]
     contact = values["MUSICBRAINZ_CONTACT"]
-    user_agent = f"{app_name} ({contact})"
+    user_agent = f"{app_name}/{__version__} ({contact})"
 
     resilience = ResilienceConfig(
         name="musicbrainz",
