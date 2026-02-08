@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from sortipy.app import (
     create_user,
-    enrich_musicbrainz_recordings,
+    enrich_musicbrainz_releases,
     sync_lastfm_play_events,
     sync_spotify_library_items,
 )
@@ -96,8 +96,8 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
 
     musicbrainz = subparsers.add_parser(
-        "musicbrainz-recordings",
-        help="Enrich recordings using MusicBrainz",
+        "musicbrainz-releases",
+        help="Enrich releases using MusicBrainz",
     )
     musicbrainz.add_argument(
         "--limit",
@@ -222,8 +222,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_albums=parsed_args.max_albums,
                 max_artists=parsed_args.max_artists,
             )
-        elif parsed_args.command == "musicbrainz-recordings":
-            result = enrich_musicbrainz_recordings(
+        elif parsed_args.command == "musicbrainz-releases":
+            result = enrich_musicbrainz_releases(
                 limit=parsed_args.limit,
             )
             log.info(

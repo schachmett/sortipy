@@ -5,8 +5,14 @@ Scalar aliases may be promoted to proper value objects later without changing im
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from typing import TYPE_CHECKING
+
+from .enums import AreaRole
+
+if TYPE_CHECKING:
+    from .enums import AreaType
 
 type CountryCode = str
 type CatalogNumber = str
@@ -33,3 +39,18 @@ class PartialDate:
     def __composite_values__(self) -> tuple[int | None, int | None, int | None]:
         """For SQLAlchemy composite columns (adapter-side convenience)."""
         return (self.year, self.month, self.day)
+
+
+@dataclass(frozen=True)
+class LifeSpan:
+    begin: PartialDate | None = None
+    end: PartialDate | None = None
+    ended: bool | None = None
+
+
+@dataclass(frozen=True)
+class Area:
+    name: str
+    area_type: AreaType | None = None
+    role: AreaRole = AreaRole.PRIMARY
+    country_codes: tuple[CountryCode, ...] = field(default_factory=tuple)

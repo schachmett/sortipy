@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from sortipy.domain.model import Artist, ExternalNamespace, Provider
 
 
@@ -35,13 +37,14 @@ def test_replace_external_id_replaces_by_namespace() -> None:
     assert artist.external_ids[0].value == "spotify-2"
 
 
-def test_external_ids_by_namespace_is_last_write_wins() -> None:
+def test_external_ids_write_namespace_twice_fails() -> None:
     artist = Artist(name="Radiohead")
     artist.add_external_id(ExternalNamespace.SPOTIFY_ARTIST, "spotify-1")
-    artist.add_external_id(ExternalNamespace.SPOTIFY_ARTIST, "spotify-2")
+    with pytest.raises(ValueError, match="already exists"):
+        artist.add_external_id(ExternalNamespace.SPOTIFY_ARTIST, "spotify-2")
 
     mapping = artist.external_ids_by_namespace
-    assert mapping[ExternalNamespace.SPOTIFY_ARTIST].value == "spotify-2"
+    assert mapping[ExternalNamespace.SPOTIFY_ARTIST].value == "spotify-1"
 
 
 def test_add_external_id_allows_custom_provider() -> None:

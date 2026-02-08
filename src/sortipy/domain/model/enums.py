@@ -64,14 +64,73 @@ class ArtistRole(StrEnum):
     CONDUCTOR = "conductor"
 
 
+class ArtistKind(StrEnum):
+    PERSON = "person"
+    GROUP = "group"
+    ORCHESTRA = "orchestra"
+    CHOIR = "choir"
+    OTHER = "other"
+
+
+class AreaType(StrEnum):
+    COUNTRY = "country"
+    SUBDIVISION = "subdivision"
+    CITY = "city"
+    DISTRICT = "district"
+    ISLAND = "island"
+    COUNTY = "county"
+    MUNICIPALITY = "municipality"
+    REGION = "region"
+    PROVINCE = "province"
+    STATE = "state"
+    OTHER = "other"
+
+
+class AreaRole(StrEnum):
+    PRIMARY = "primary"
+    BEGIN = "begin"
+    END = "end"
+
+
 class ReleaseSetType(StrEnum):
     ALBUM = "album"
     SINGLE = "single"
     EP = "ep"
-    LIVE = "live"
+    BROADCAST = "broadcast"
+    OTHER = "other"
+
+
+class ReleaseSetSecondaryType(StrEnum):
     COMPILATION = "compilation"
     SOUNDTRACK = "soundtrack"
+    SPOKENWORD = "spokenword"
+    INTERVIEW = "interview"
+    AUDIOBOOK = "audiobook"
+    AUDIO_DRAMA = "audio drama"
+    LIVE = "live"
+    REMIX = "remix"
+    DJMIX = "dj-mix"
     MIXTAPE = "mixtape"
+    DEMO = "demo"
+    FIELD_RECORDING = "field recording"
+
+
+class ReleaseStatus(StrEnum):
+    OFFICIAL = "official"
+    PROMOTION = "promotion"
+    BOOTLEG = "bootleg"
+    PSEUDO_RELEASE = "pseudo-release"
+    WITHDRAWN = "withdrawn"
+    EXPUNGED = "expunged"
+    CANCELLED = "cancelled"
+
+
+class ReleasePackaging(StrEnum):
+    NONE = "none"
+    JEWEL_CASE = "jewel case"
+    DIGIPAK = "digipak"
+    GATEFOLD = "gatefold cover"
+    CARDBOARD_PAPER_SLEEVE = "cardboard/paper sleeve"
     OTHER = "other"
 
 

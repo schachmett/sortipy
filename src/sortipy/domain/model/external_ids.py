@@ -126,6 +126,8 @@ class ExternallyIdentifiableMixin(Entity, ABC):
         )
         if replace:
             self._external_ids[:] = [e for e in self._external_ids if e.namespace != namespace]
+        if any(e for e in self._external_ids if e.namespace == namespace):
+            raise ValueError(f"External ID {namespace} already exists on {self}")
         self._external_ids.append(ext)
 
     @property

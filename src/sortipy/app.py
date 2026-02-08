@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.lastfm import fetch_play_events, should_cache_recent_tracks
-from sortipy.adapters.musicbrainz import enrich_recordings as fetch_recording_enrichment
+from sortipy.adapters.musicbrainz import (
+    fetch_release_candidates_from_artist,
+    fetch_release_candidates_from_recording,
+    fetch_release_candidates_from_release_set,
+    fetch_release_update,
+)
 from sortipy.adapters.spotify import fetch_library_items
 from sortipy.adapters.sqlalchemy import create_unit_of_work_factory
 from sortipy.config import (
@@ -22,15 +28,8 @@ from sortipy.domain.data_integration import (
     sync_library_items,
     sync_play_events,
 )
-from sortipy.domain.enrichment import (
-    RecordingEnrichmentResult,
-    apply_recording_updates,
-    select_recording_candidates,
-)
-from sortipy.domain.enrichment import (
-    enrich_recordings as build_recording_enrichment,
-)
-from sortipy.domain.model import User
+from sortipy.domain.entity_updates import apply_release_update, resolve_release_candidate
+from sortipy.domain.model import Provider, User
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -41,12 +40,19 @@ if TYPE_CHECKING:
         SyncLibraryItemsResult,
         SyncPlayEventsResult,
     )
-    from sortipy.domain.model import Recording
+    from sortipy.domain.entity_updates import ReleaseCandidate
+    from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
-    from sortipy.domain.ports.enrichment import RecordingEnrichmentUpdate
 
 
 log = getLogger(__name__)
+
+
+@dataclass(slots=True)
+class ReleaseEnrichmentResult:
+    candidates: int
+    updates: int
+    applied: int
 
 
 def create_user(
@@ -214,37 +220,82 @@ def sync_spotify_library_items(
     return result
 
 
-def enrich_musicbrainz_recordings(
+def enrich_musicbrainz_releases(
     *,
     limit: int | None = None,
-) -> RecordingEnrichmentResult:
-    """Enrich recordings using MusicBrainz data."""
+) -> ReleaseEnrichmentResult:
+    """Enrich releases using MusicBrainz data."""
 
     musicbrainz_config = get_musicbrainz_config()
     database_config = get_database_config()
     unit_of_work_factory = create_unit_of_work_factory(database_uri=database_config.uri)
 
     with unit_of_work_factory() as uow:
-        recordings = uow.repositories.recordings.list(limit=limit)
-        candidates = select_recording_candidates(recordings)
-
+        releases = uow.repositories.releases.list()
+        candidates = _select_release_candidates(releases, limit=limit)
         if not candidates:
-            return RecordingEnrichmentResult(candidates=0, updates=0, applied=0)
+            return ReleaseEnrichmentResult(candidates=0, updates=0, applied=0)
 
-        def _fetcher(
-            recordings_batch: Iterable[Recording],
-        ) -> Iterable[RecordingEnrichmentUpdate]:
-            return fetch_recording_enrichment(
-                recordings_batch,
+        def _from_recording(recording: Recording) -> list[ReleaseCandidate]:
+            return fetch_release_candidates_from_recording(
+                recording,
                 config=musicbrainz_config,
             )
 
-        updates = build_recording_enrichment(candidates, fetcher=_fetcher)
-        updated = apply_recording_updates(candidates, updates)
+        def _from_release_set(release_set: ReleaseSet) -> list[ReleaseCandidate]:
+            return fetch_release_candidates_from_release_set(
+                release_set,
+                config=musicbrainz_config,
+            )
+
+        def _from_artist(artist: Artist) -> list[ReleaseCandidate]:
+            return fetch_release_candidates_from_artist(
+                artist,
+                config=musicbrainz_config,
+            )
+
+        updates = 0
+        applied = 0
+
+        for release in candidates:
+            candidate = resolve_release_candidate(
+                release,
+                fetch_candidates_from_recording=_from_recording,
+                fetch_candidates_from_release_set=_from_release_set,
+                fetch_candidates_from_artist=_from_artist,
+            )
+            if candidate is None:
+                continue
+            update = fetch_release_update(candidate, config=musicbrainz_config)
+            updates += 1
+            apply_release_update(release, update)
+            applied += 1
         uow.commit()
 
-    return RecordingEnrichmentResult(
+    return ReleaseEnrichmentResult(
         candidates=len(candidates),
-        updates=len(updates),
-        applied=len(updated),
+        updates=updates,
+        applied=applied,
     )
+
+
+def _select_release_candidates(
+    releases: Iterable[Release],
+    *,
+    limit: int | None = None,
+) -> list[Release]:
+    candidates: list[Release] = []
+    for release in releases:
+        if _has_musicbrainz_source(release):
+            continue
+        candidates.append(release)
+        if limit is not None and len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _has_musicbrainz_source(release: Release) -> bool:
+    provenance = release.provenance
+    if provenance is None:
+        return False
+    return Provider.MUSICBRAINZ in provenance.sources

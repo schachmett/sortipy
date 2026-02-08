@@ -3,41 +3,61 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from uuid import NAMESPACE_URL, uuid5
 
-from sortipy.adapters.musicbrainz.fetcher import enrich_recordings
-from sortipy.adapters.musicbrainz.schema import MusicBrainzRecording, MusicBrainzRecordingSearch
+from sortipy.adapters.musicbrainz.fetcher import (
+    fetch_release_candidates_from_recording,
+    fetch_release_update,
+)
+from sortipy.adapters.musicbrainz.schema import (
+    MBRecordingSearch,
+    MBRelease,
+    MBReleaseSearch,
+)
+from sortipy.adapters.musicbrainz.translator import translate_release
+from sortipy.domain.entity_updates import ReleaseCandidate
 from sortipy.domain.model import Artist, ExternalNamespace, Recording
 
 if TYPE_CHECKING:
+    from sortipy.adapters.musicbrainz.schema import (
+        MBRecording,
+    )
     from sortipy.config.musicbrainz import MusicBrainzConfig
-    from sortipy.domain.ports.enrichment import RecordingEnrichmentUpdate
 
 
 class FakeMusicBrainzClient:
     def __init__(
         self,
-        payload: MusicBrainzRecording | dict[str, MusicBrainzRecording],
-        search_results: MusicBrainzRecordingSearch,
+        *,
+        recording_payload: MBRecording | dict[str, MBRecording] | None = None,
+        release_payloads: dict[str, MBRelease] | None = None,
+        search_results: MBRecordingSearch | None = None,
     ) -> None:
-        if isinstance(payload, dict):
-            self._payloads = payload
-            self._payload = next(iter(payload.values()))
+        if isinstance(recording_payload, dict):
+            self._recording_payloads = recording_payload
+            self._recording_payload = next(iter(recording_payload.values()))
         else:
-            self._payloads = None
-            self._payload = payload
-        self._search_results = search_results
-        self.fetch_mbid: str | None = None
+            self._recording_payloads = None
+            self._recording_payload = recording_payload
+        self._release_payloads = release_payloads or {}
+        self._search_results = search_results or MBRecordingSearch(recordings=[])
+        self.fetch_recording_mbid: str | None = None
+        self.fetch_release_mbid: str | None = None
         self.search_query: str | None = None
 
     def fetch_recording(
-        self, *, mbid: str, inc: tuple[str, ...] | None = None
-    ) -> MusicBrainzRecording:
+        self,
+        *,
+        mbid: str,
+        inc: tuple[str, ...] | None = None,
+    ) -> MBRecording:
         del inc
-        self.fetch_mbid = mbid
-        if self._payloads is None:
-            return self._payload
-        return self._payloads.get(mbid, self._payload)
+        if self._recording_payloads is not None and mbid in self._recording_payloads:
+            self.fetch_recording_mbid = mbid
+            return self._recording_payloads[mbid]
+        if self._recording_payload is not None:
+            self.fetch_recording_mbid = mbid
+            return self._recording_payload
+        raise AssertionError("recording payload not configured")
 
     def search_recordings(
         self,
@@ -46,10 +66,45 @@ class FakeMusicBrainzClient:
         limit: int = 1,
         offset: int = 0,
         inc: tuple[str, ...] | None = None,
-    ) -> MusicBrainzRecordingSearch:
+    ) -> MBRecordingSearch:
         del limit, offset, inc
         self.search_query = query
         return self._search_results
+
+    def fetch_release(
+        self,
+        *,
+        mbid: str,
+        inc: tuple[str, ...] | None = None,
+    ) -> MBRelease:
+        del inc
+        self.fetch_release_mbid = mbid
+        try:
+            return self._release_payloads[mbid]
+        except KeyError as exc:
+            raise AssertionError(f"release payload not configured for {mbid}") from exc
+
+    def browse_releases_by_release_group(
+        self,
+        *,
+        release_group_mbid: str,
+        limit: int = 25,
+        offset: int = 0,
+        inc: tuple[str, ...] | None = None,
+    ) -> MBReleaseSearch:
+        del release_group_mbid, limit, offset, inc
+        return MBReleaseSearch(releases=[])
+
+    def browse_releases_by_artist(
+        self,
+        *,
+        artist_mbid: str,
+        limit: int = 25,
+        offset: int = 0,
+        inc: tuple[str, ...] | None = None,
+    ) -> MBReleaseSearch:
+        del artist_mbid, limit, offset, inc
+        return MBReleaseSearch(releases=[])
 
 
 def _domain_recording(*, title: str, artist_name: str | None = None) -> Recording:
@@ -60,8 +115,8 @@ def _domain_recording(*, title: str, artist_name: str | None = None) -> Recordin
     return recording
 
 
-def test_enrich_recordings_prefers_mbid(
-    recordings: list[MusicBrainzRecording],
+def test_fetch_release_candidates_prefers_mbid(
+    recordings: list[MBRecording],
     musicbrainz_config: MusicBrainzConfig,
 ) -> None:
     for recording in recordings:
@@ -73,104 +128,87 @@ def test_enrich_recordings_prefers_mbid(
             replace=True,
         )
         fake = FakeMusicBrainzClient(
-            recording,
-            MusicBrainzRecordingSearch(recordings=[recording]),
+            recording_payload=recording,
+            search_results=MBRecordingSearch(recordings=[recording]),
         )
 
-        updates = enrich_recordings(
-            [domain_recording],
+        candidates = fetch_release_candidates_from_recording(
+            domain_recording,
             config=musicbrainz_config,
             client=fake,
         )
 
-        assert fake.fetch_mbid == recording.id
+        assert fake.fetch_recording_mbid == recording.id
         assert fake.search_query is None
-        assert len(updates) == 1
+        assert [candidate.mbid for candidate in candidates] == [
+            release.id for release in recording.releases
+        ]
 
 
-def test_enrich_recordings_searches_without_mbid(
-    recordings: list[MusicBrainzRecording],
+def test_fetch_release_candidates_searches_without_mbid(
+    recordings: list[MBRecording],
     musicbrainz_config: MusicBrainzConfig,
 ) -> None:
     for recording in recordings:
         artist_name = recording.artist_credit[0].artist.name if recording.artist_credit else None
         domain_recording = _domain_recording(title=recording.title, artist_name=artist_name)
         fake = FakeMusicBrainzClient(
-            recording,
-            MusicBrainzRecordingSearch(recordings=[recording]),
+            recording_payload=recording,
+            search_results=MBRecordingSearch(recordings=[recording]),
         )
 
-        updates = enrich_recordings(
-            [domain_recording],
+        candidates = fetch_release_candidates_from_recording(
+            domain_recording,
             config=musicbrainz_config,
             client=fake,
         )
 
-        assert fake.fetch_mbid is None
+        assert fake.fetch_recording_mbid is None
         assert fake.search_query is not None
         assert "recording" in fake.search_query
         if recording.artist_credit:
             assert "artist" in fake.search_query
-        assert len(updates) == 1
+        assert [candidate.mbid for candidate in candidates] == [
+            release.id for release in recording.releases
+        ]
 
 
-def test_enrich_recordings_skips_on_empty_search(
-    recordings: list[MusicBrainzRecording],
+def test_fetch_release_candidates_skips_on_empty_search(
+    recordings: list[MBRecording],
     musicbrainz_config: MusicBrainzConfig,
 ) -> None:
     for recording in recordings:
         artist_name = recording.artist_credit[0].artist.name if recording.artist_credit else None
         domain_recording = _domain_recording(title=recording.title, artist_name=artist_name)
         fake = FakeMusicBrainzClient(
-            recording,
-            MusicBrainzRecordingSearch(recordings=[]),
+            recording_payload=recording,
+            search_results=MBRecordingSearch(recordings=[]),
         )
 
-        updates = enrich_recordings(
-            [domain_recording],
+        candidates = fetch_release_candidates_from_recording(
+            domain_recording,
             config=musicbrainz_config,
             client=fake,
         )
 
-        assert updates == []
+        assert candidates == []
 
 
-def test_enrich_recordings_full_adapter(
-    recording_payloads_by_id: dict[str, dict[str, object]],
-    expected_enrichment_updates: dict[str, RecordingEnrichmentUpdate],
+def test_fetch_release_update_full_adapter(
+    release_payloads_by_id: dict[str, dict[str, object]],
     musicbrainz_config: MusicBrainzConfig,
 ) -> None:
     payloads = {
-        mbid: MusicBrainzRecording.model_validate(payload)
-        for mbid, payload in recording_payloads_by_id.items()
+        mbid: MBRelease.model_validate(payload) for mbid, payload in release_payloads_by_id.items()
     }
-    domain_recordings: list[Recording] = []
-    for mbid, payload in payloads.items():
-        artist_name = payload.artist_credit[0].artist.name if payload.artist_credit else None
-        recording_id = uuid5(NAMESPACE_URL, mbid)
-        domain_recording = Recording(id=recording_id, title=payload.title)
-        if artist_name:
-            domain_recording.add_artist(Artist(name=artist_name))
-        domain_recording.add_external_id(
-            ExternalNamespace.MUSICBRAINZ_RECORDING,
-            mbid,
-            replace=True,
-        )
-        domain_recordings.append(domain_recording)
-
     fake = FakeMusicBrainzClient(
-        payloads,
-        MusicBrainzRecordingSearch(recordings=list(payloads.values())),
+        release_payloads=payloads,
     )
 
-    updates = enrich_recordings(
-        domain_recordings,
-        config=musicbrainz_config,
-        client=fake,
-    )
-    updates_by_mbid = {update.mbid: update for update in updates if update.mbid is not None}
-
-    for mbid, expected in expected_enrichment_updates.items():
-        assert updates_by_mbid[mbid] == expected
-
-    assert updates_by_mbid == expected_enrichment_updates
+    for mbid, release in payloads.items():
+        update = fetch_release_update(
+            ReleaseCandidate(mbid=mbid),
+            config=musicbrainz_config,
+            client=fake,
+        )
+        assert update == translate_release(release)

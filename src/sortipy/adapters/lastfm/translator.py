@@ -97,8 +97,6 @@ def _build_release_set_and_release(payload: TrackPayload) -> tuple[ReleaseSet, R
     album_title = payload.album.title or payload.name
     release_set = ReleaseSet(title=album_title)
     release_set.add_source(Provider.LASTFM)
-    if payload.album.mbid:
-        release_set.add_external_id(ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP, payload.album.mbid)
 
     release = release_set.create_release(title=album_title)
     release.add_source(Provider.LASTFM)

@@ -28,7 +28,7 @@
             "args": [
                 "spotify-library",
                 "--user-id",
-                "623310c4-99bd-4a0b-ad7c-eb5b61d9a796",
+                "bd5da5deb191439295f1d039382266ac",
                 "--batch-size",
                 "5",
                 "--max-tracks",
@@ -59,12 +59,12 @@
             "justMyCode": false
         },
         {
-            "name": "Python: CLI (Musicbrainz Recordings)",
+            "name": "Python: CLI (Musicbrainz Releases)",
             "type": "debugpy",
             "request": "launch",
             "module": "sortipy.ui.cli",
             "args": [
-                "musicbrainz-recordings",
+                "musicbrainz-releases",
                 "--limit",
                 "2",
             ],

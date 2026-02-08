@@ -6,6 +6,9 @@ Aggregate roots here:
 - Release owns ReleaseTrack + labels link
 """
 
+# switch off type warnings because of default_factory=list or set
+# pyright: reportUnknownVariableType=false
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,8 +26,14 @@ from .external_ids import ExternallyIdentifiableMixin
 from .provenance import ProvenanceTrackedMixin
 
 if TYPE_CHECKING:
-    from .enums import ReleaseSetType
-    from .primitives import CountryCode, DurationMs, PartialDate
+    from .enums import (
+        ArtistKind,
+        ReleasePackaging,
+        ReleaseSetSecondaryType,
+        ReleaseSetType,
+        ReleaseStatus,
+    )
+    from .primitives import Area, CountryCode, DurationMs, LifeSpan, PartialDate
     from .user import PlayEvent
 
 
@@ -40,6 +49,10 @@ class Artist(CanonicalEntity):
     name: str
     sort_name: str | None = None
     country: CountryCode | None = None
+    kind: ArtistKind | None = None
+    life_span: LifeSpan | None = None
+    areas: list[Area] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
     formed_year: int | None = None
     disbanded_year: int | None = None
 
@@ -74,7 +87,9 @@ class ReleaseSet(CanonicalEntity):
 
     title: str
     primary_type: ReleaseSetType | None = None
+    secondary_types: list[ReleaseSetSecondaryType] = field(default_factory=list)
     first_release: PartialDate | None = None
+    aliases: list[str] = field(default_factory=list)
 
     # Owned children
     _releases: list[Release] = field(default_factory=list["Release"], repr=False)
@@ -191,6 +206,8 @@ class Release(CanonicalEntity):
     _release_set: ReleaseSet = field(repr=False)
     release_date: PartialDate | None = None
     country: CountryCode | None = None
+    status: ReleaseStatus | None = None
+    packaging: ReleasePackaging | None = None
     format: str | None = None
     medium_count: int | None = None
 
@@ -275,6 +292,7 @@ class Recording(CanonicalEntity):
     duration_ms: DurationMs | None = None
     version: str | None = None
     disambiguation: str | None = None
+    aliases: list[str] = field(default_factory=list)
 
     # Owned contributions
     _contributions: list[RecordingContribution] = field(
@@ -308,7 +326,7 @@ class Recording(CanonicalEntity):
         role: ArtistRole = ArtistRole.PRIMARY,
         credit_order: int | None = None,
         credited_as: str | None = None,
-        instrument: str | None = None,
+        join_phrase: str | None = None,
     ) -> RecordingContribution:
         c = RecordingContribution(
             _recording=self,
@@ -316,7 +334,7 @@ class Recording(CanonicalEntity):
             role=role,
             credit_order=credit_order,
             credited_as=credited_as,
-            instrument=instrument,
+            join_phrase=join_phrase,
         )
         internal.attach_recording_contribution_to_recording(self, c)
         internal.attach_recording_contribution_to_artist(artist, c)

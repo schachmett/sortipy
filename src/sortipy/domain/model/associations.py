@@ -22,10 +22,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(eq=False, kw_only=True)
-class ReleaseSetContribution(ProvenanceTrackedMixin):
-    ENTITY_TYPE: ClassVar[EntityType] = EntityType.RELEASE_SET_CONTRIBUTION
-
-    _release_set: ReleaseSet = field(repr=False)
+class _ArtistContribution(ProvenanceTrackedMixin):
     _artist: Artist = field(repr=False)
 
     role: ArtistRole | None = None
@@ -34,33 +31,30 @@ class ReleaseSetContribution(ProvenanceTrackedMixin):
     join_phrase: str | None = None
 
     @property
-    def release_set(self) -> ReleaseSet:
-        return self._release_set
-
-    @property
     def artist(self) -> Artist:
         return self._artist
 
 
 @dataclass(eq=False, kw_only=True)
-class RecordingContribution(ProvenanceTrackedMixin):
+class ReleaseSetContribution(_ArtistContribution):
+    ENTITY_TYPE: ClassVar[EntityType] = EntityType.RELEASE_SET_CONTRIBUTION
+
+    _release_set: ReleaseSet = field(repr=False)
+
+    @property
+    def release_set(self) -> ReleaseSet:
+        return self._release_set
+
+
+@dataclass(eq=False, kw_only=True)
+class RecordingContribution(_ArtistContribution):
     ENTITY_TYPE: ClassVar[EntityType] = EntityType.RECORDING_CONTRIBUTION
 
     _recording: Recording = field(repr=False)
-    _artist: Artist = field(repr=False)
-
-    role: ArtistRole | None = None
-    instrument: str | None = None
-    credit_order: int | None = None
-    credited_as: str | None = None
 
     @property
     def recording(self) -> Recording:
         return self._recording
-
-    @property
-    def artist(self) -> Artist:
-        return self._artist
 
 
 @dataclass(eq=False, kw_only=True)

@@ -10,12 +10,18 @@ from .associations import (
 from .audit import EntityMerge
 from .entity import Entity, IdentifiedEntity
 from .enums import (
+    AreaRole,
+    AreaType,
+    ArtistKind,
     ArtistRole,
     EntityType,
     ExternalNamespace,
     MergeReason,
     Provider,
+    ReleasePackaging,
+    ReleaseSetSecondaryType,
     ReleaseSetType,
+    ReleaseStatus,
 )
 from .external_ids import (
     ExternalID,
@@ -26,11 +32,13 @@ from .external_ids import (
 )
 from .music import Artist, Label, Recording, Release, ReleaseSet
 from .primitives import (
+    Area,
     Barcode,
     CatalogNumber,
     CountryCode,
     DurationMs,
     Isrc,
+    LifeSpan,
     Mbid,
     PartialDate,
 )
@@ -69,17 +77,25 @@ __all__ = [  # noqa: RUF022
     "EntityMerge",
     # enums
     "ArtistRole",
+    "ArtistKind",
     "EntityType",
     "ExternalNamespace",
     "MergeReason",
     "Provider",
+    "AreaType",
+    "AreaRole",
+    "ReleaseStatus",
+    "ReleasePackaging",
     "ReleaseSetType",
+    "ReleaseSetSecondaryType",
     # primitives
+    "Area",
     "Barcode",
     "CatalogNumber",
     "CountryCode",
     "DurationMs",
     "Isrc",
+    "LifeSpan",
     "Mbid",
     "PartialDate",
 ]

@@ -119,6 +119,12 @@ class SqlAlchemyReleaseRepository(SqlAlchemyCanonicalRepository[Release]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, Release)
 
+    def list(self, *, limit: int | None = None) -> list[Release]:
+        stmt = select(Release)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars())
+
 
 class SqlAlchemyRecordingRepository(SqlAlchemyCanonicalRepository[Recording]):
     def __init__(self, session: Session) -> None:

@@ -126,7 +126,6 @@ def test_parse_play_event_creates_canonical_entities(
     assert artist.provenance is not None
     assert Provider.LASTFM in artist.provenance.sources
     assert {eid.namespace for eid in artist.external_ids} == {"musicbrainz:artist", "lastfm:artist"}
-    assert {eid.namespace for eid in release_set.external_ids} == {"musicbrainz:release-group"}
     assert {eid.namespace for eid in release.external_ids} == {"musicbrainz:release"}
     assert {eid.namespace for eid in recording.external_ids} == {
         "musicbrainz:recording",
@@ -177,7 +176,6 @@ def test_parse_play_event_model_creates_domain_model_entities(
         "musicbrainz:artist",
         "lastfm:artist",
     }
-    assert {str(eid.namespace) for eid in release_set.external_ids} == {"musicbrainz:release-group"}
     assert {str(eid.namespace) for eid in release.external_ids} == {"musicbrainz:release"}
     assert {str(eid.namespace) for eid in recording.external_ids} == {
         "musicbrainz:recording",

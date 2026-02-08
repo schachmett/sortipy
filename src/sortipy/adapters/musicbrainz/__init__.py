@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-from .fetcher import enrich_recordings
+from .fetcher import (
+    fetch_release_candidates_from_artist,
+    fetch_release_candidates_from_recording,
+    fetch_release_candidates_from_release_set,
+    fetch_release_update,
+)
 
 __all__ = [
-    "enrich_recordings",
+    "fetch_release_candidates_from_artist",
+    "fetch_release_candidates_from_recording",
+    "fetch_release_candidates_from_release_set",
+    "fetch_release_update",
 ]
