@@ -6,11 +6,11 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 
 ## Quickstart Checklist
 - Prefer editor-style patch operations (`apply_patch` or equivalent) for edits; reach for shell commands only when a scripted workflow is unavoidable.
-- Run `pre-commit run --all-files`—or at minimum `.venv/bin/ruff check`, `.venv/bin/pyright`, and `.venv/bin/pytest`—before handing work off so failures surface early.
+- Run `uv run poe fix` for auto-fixes, then `uv run poe lint`, `uv run poe typecheck` and, if reasonable `uv run poe test` before handing work off.
+- Before attempting manual lint fixes, ensure that `uv run poe fix` was run.
 - If a required tool/command is missing or blocked, stop and ask the user rather than guessing.
 - Do not introduce new runtime or development dependencies without explicit user approval; confirm intent before touching `pyproject.toml`.
 - Escalate blockers instead of weakening domain invariants or bypassing documented policies.
-- **Before attempting manual lint fixes, run `.venv/bin/ruff format` followed by `.venv/bin/ruff check --fix`. Do not hand-edit import order or other lint output until those commands succeed.**
 
 ## Key References
 - [ADR-0001](docs/adr/0001-architecture-style.md) ports-and-adapters boundaries.
@@ -25,10 +25,8 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 - [docs/todo.md](docs/todo.md) for outstanding technical work and upcoming migrations.
 
 ## Tooling & Configuration
-- Use the `.venv/bin/` entry points when running linters, type checks, and tests so results match CI and pre-commit.
-- When you modify imports, run `.venv/bin/ruff check --select I --fix <path>` (or `.venv/bin/ruff check --fix`) to keep ordering consistent; let `ruff` apply safe autofixes before manual edits.
-- After most edits, it’s faster to run `.venv/bin/ruff format` followed by `.venv/bin/ruff check --fix` than to iterate on lint errors manually—treat those commands as the default cleanup pass unless you have a reason not to.
-- Repository configuration (formatter, linter, type-checker settings) lives in `pyproject.toml`; review it before changing defaults.
+- Use `uv` (`uv sync --group dev`, `uv run ...`) so results match CI and pre-commit.
+- Repository configuration (formatter, linter, type-checker settings) lives in `pyproject.toml`.
 - Follow `docs/policies/typing.md` for guidance on how to use protocols, casts, and `TYPE_CHECKING` blocks when adding typed code.
 - Follow `docs/policies/logging.md` when emitting new log statements; avoid `print`.
 - Handle secrets through `.env` files per ADR-0005; never commit secrets.
@@ -49,8 +47,8 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 - Configuration currently flows through dotenv-loaded settings (ADR-0005); introducing alternatives requires a new ADR.
 
 ## Process Reminders
-- Keep worktrees clean: do not create commits without user direction, stage only what belongs to the current proposal, and surface staged files when requesting review.
-- Before running `git commit` (including `git commit --amend`), pause and ask the user for explicit approval in this session—even if the staged changes were discussed earlier.
+- Keep worktrees clean: do not create commits without user direction, stage only what belongs to the current proposal.
+- Before running `git commit`, ask the user for explicit approval in this session.
 - When drafting commit messages, use conventional scope keywords (`feat`, `bugfix`, `docs`, `test`, `tooling`, `refactor`, `chore`, etc.) followed by a concise summary so history stays scannable.
 - Seek guidance instead of forcing changes past failing quality gates.
 - When a feature or fix feels release-ready, suggest a semantic-version git tag and explain the milestone’s value.
