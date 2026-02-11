@@ -43,6 +43,10 @@ build-backend = "hatchling.build"
 version.source = "vcs"
 
 
+[tool.uv]
+cache-dir = "./.cache/uv"
+
+
 [tool.poe.tasks]
 format = "ruff format"
 format_check = "ruff format --check"
