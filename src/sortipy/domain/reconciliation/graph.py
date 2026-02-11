@@ -19,8 +19,6 @@ from sortipy.domain.model import EntityType
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from sortipy.domain.model import Entity
-
     from .claims import EntityClaim
 
 
@@ -36,8 +34,8 @@ class ClaimGraph:
     indexed by ``entity_type`` for deterministic per-type resolver processing.
     """
 
-    _claims_by_id: dict[UUID, EntityClaim[Entity]] = field(
-        default_factory=dict["UUID", "EntityClaim[Entity]"], repr=False
+    _claims_by_id: dict[UUID, EntityClaim] = field(
+        default_factory=dict["UUID", "EntityClaim"], repr=False
     )
     _root_ids: list[UUID] = field(default_factory=list["UUID"], repr=False)
     _claim_ids_by_entity_type: dict[EntityType, list[UUID]] = field(
@@ -46,14 +44,14 @@ class ClaimGraph:
     )
 
     @property
-    def claims(self) -> tuple[EntityClaim[Entity], ...]:
+    def claims(self) -> tuple[EntityClaim, ...]:
         return tuple(self._claims_by_id.values())
 
     @property
-    def roots(self) -> tuple[EntityClaim[Entity], ...]:
+    def roots(self) -> tuple[EntityClaim, ...]:
         return tuple(self._claims_by_id[claim_id] for claim_id in self._root_ids)
 
-    def add(self, claim: EntityClaim[Entity], *, root: bool = False) -> None:
+    def add(self, claim: EntityClaim, *, root: bool = False) -> None:
         existing = self._claims_by_id.get(claim.claim_id)
         if existing is None:
             self._claims_by_id[claim.claim_id] = claim
@@ -61,12 +59,12 @@ class ClaimGraph:
         if root and claim.claim_id not in self._root_ids:
             self._root_ids.append(claim.claim_id)
 
-    def add_root(self, claim: EntityClaim[Entity]) -> None:
+    def add_root(self, claim: EntityClaim) -> None:
         self.add(claim, root=True)
 
-    def claim_for(self, claim_id: UUID) -> EntityClaim[Entity] | None:
+    def claim_for(self, claim_id: UUID) -> EntityClaim | None:
         return self._claims_by_id.get(claim_id)
 
-    def claims_for(self, entity_type: EntityType) -> tuple[EntityClaim[Entity], ...]:
+    def claims_for(self, entity_type: EntityType) -> tuple[EntityClaim, ...]:
         claim_ids = self._claim_ids_by_entity_type[entity_type]
         return tuple(self._claims_by_id[claim_id] for claim_id in claim_ids)

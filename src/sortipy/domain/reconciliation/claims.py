@@ -18,12 +18,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sortipy.domain.model import Entity
-
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from sortipy.domain.model import EntityType, Provider
+    from sortipy.domain.model import Entity, EntityType, Provider
 
 
 @dataclass(slots=True, kw_only=True)
@@ -53,10 +51,10 @@ class ClaimEvidence:
 
 
 @dataclass(slots=True, kw_only=True)
-class EntityClaim[TEntity: Entity]:
+class EntityClaim:
     """Claim envelope for one observed domain entity state."""
 
-    entity: TEntity
+    entity: Entity
     metadata: ClaimMetadata
     evidence: ClaimEvidence = field(default_factory=ClaimEvidence)
     claim_id: UUID = field(default_factory=uuid4)
