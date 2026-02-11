@@ -52,4 +52,3 @@ _Staleness guard: if the tooling, frameworks, or policies referenced here drift 
 - When drafting commit messages, use conventional scope keywords (`feat`, `bugfix`, `docs`, `test`, `tooling`, `refactor`, `chore`, etc.) followed by a concise summary so history stays scannable.
 - Seek guidance instead of forcing changes past failing quality gates.
 - When a feature or fix feels release-ready, suggest a semantic-version git tag and explain the milestone’s value.
-- After one failed lint/typing fix attempt, hand control back to the user; don't keep iterating
