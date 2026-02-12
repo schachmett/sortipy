@@ -66,10 +66,10 @@ class RelationshipEndpoint(str, Enum):
     TARGET = "target"
 
 
-class ClaimDeduplicator(Protocol):
+class DeduplicateClaimGraph(Protocol):
     """Collapse duplicate claims in a graph."""
 
-    def deduplicate(
+    def __call__(
         self,
         graph: ClaimGraph,
         *,
@@ -77,23 +77,20 @@ class ClaimDeduplicator(Protocol):
     ) -> DeduplicationResult: ...
 
 
-@dataclass(slots=True)
-class DefaultClaimDeduplicator:
-    """Default intra-batch deduplicator keyed by normalized claim keys."""
+def deduplicate_claim_graph(
+    graph: ClaimGraph,
+    *,
+    normalization: NormalizationResult,
+) -> DeduplicationResult:
+    """Collapse duplicate claims and rewire relationship claims."""
 
-    def deduplicate(
-        self,
-        graph: ClaimGraph,
-        *,
-        normalization: NormalizationResult,
-    ) -> DeduplicationResult:
-        deduplicated_graph, representative_by_claim = _deduplicated_graph(
-            graph,
-            normalization=normalization,
-        )
-        return DeduplicationResult(
-            graph=deduplicated_graph, representative_by_claim=representative_by_claim
-        )
+    deduplicated_graph, representative_by_claim = _deduplicated_graph(
+        graph,
+        normalization=normalization,
+    )
+    return DeduplicationResult(
+        graph=deduplicated_graph, representative_by_claim=representative_by_claim
+    )
 
 
 def _deduplicated_graph(

@@ -62,30 +62,30 @@ class NormalizationResult:
     keys_by_claim: dict[UUID, tuple[ClaimKey, ...]]
 
 
-class ClaimNormalizer(Protocol):
+class NormalizeClaimGraph(Protocol):
     """Compute deterministic keys for a claim graph."""
 
-    def normalize(self, graph: ClaimGraph) -> NormalizationResult: ...
+    def __call__(self, graph: ClaimGraph) -> NormalizationResult: ...
 
 
-@dataclass(slots=True, kw_only=True)
-class DefaultClaimNormalizer:
-    """Default deterministic key strategy for reconciliation claims."""
+def normalize_claim_graph(
+    graph: ClaimGraph,
+    *,
+    duration_bucket_ms: int = _DEFAULT_IDENTITY_DURATION_BUCKET_MS,
+) -> NormalizationResult:
+    """Compute deterministic keys for all entity claims in ``graph``."""
 
-    duration_bucket_ms: int = 2000
-
-    def normalize(self, graph: ClaimGraph) -> NormalizationResult:
-        keys_by_claim: dict[UUID, tuple[ClaimKey, ...]] = {}
-        for claim in graph.claims:
-            keys = _keys_for_entity(claim.entity, self.duration_bucket_ms)
-            keys_by_claim[claim.claim_id] = keys
-            if not keys:
-                log.warning(
-                    "No normalization keys for claim_id=%s entity_type=%s",
-                    claim.claim_id,
-                    claim.entity_type,
-                )
-        return NormalizationResult(keys_by_claim=keys_by_claim)
+    keys_by_claim: dict[UUID, tuple[ClaimKey, ...]] = {}
+    for claim in graph.claims:
+        keys = _keys_for_entity(claim.entity, duration_bucket_ms)
+        keys_by_claim[claim.claim_id] = keys
+        if not keys:
+            log.warning(
+                "No normalization keys for claim_id=%s entity_type=%s",
+                claim.claim_id,
+                claim.entity_type,
+            )
+    return NormalizationResult(keys_by_claim=keys_by_claim)
 
 
 _ROLE_PRIORITY: dict[ArtistRole | None, int] = {

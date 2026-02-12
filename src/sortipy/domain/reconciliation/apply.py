@@ -30,7 +30,7 @@ class ApplyResult:
     manual_review: int = 0
 
 
-class PlanApplier(Protocol):
+class ApplyResolutionPlan(Protocol):
     """Apply a resolved and policy-refined plan to domain entities."""
 
-    def apply(self, graph: ClaimGraph, *, plan: ResolutionPlan) -> ApplyResult: ...
+    def __call__(self, graph: ClaimGraph, *, plan: ResolutionPlan) -> ApplyResult: ...

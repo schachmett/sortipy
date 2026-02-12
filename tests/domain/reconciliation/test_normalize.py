@@ -15,7 +15,7 @@ from sortipy.domain.model import (
 from sortipy.domain.reconciliation import ClaimEvidence, ClaimGraph, ClaimMetadata, EntityClaim
 from sortipy.domain.reconciliation.claims import RelationshipClaim, RelationshipKind
 from sortipy.domain.reconciliation.normalize import (
-    DefaultClaimNormalizer,
+    normalize_claim_graph,
     normalized_relationship_key,
 )
 
@@ -33,9 +33,8 @@ def test_normalizer_computes_artist_keys_deterministically() -> None:
     graph = ClaimGraph()
     graph.add(claim)
 
-    normalizer = DefaultClaimNormalizer()
-    first = normalizer.normalize(graph).keys_by_claim[claim.claim_id]
-    second = normalizer.normalize(graph).keys_by_claim[claim.claim_id]
+    first = normalize_claim_graph(graph).keys_by_claim[claim.claim_id]
+    second = normalize_claim_graph(graph).keys_by_claim[claim.claim_id]
 
     assert first == second
     assert first == (
@@ -65,9 +64,8 @@ def test_normalizer_ignores_claim_metadata_and_evidence_for_keys() -> None:
     graph_2 = ClaimGraph()
     graph_2.add(claim_2)
 
-    normalizer = DefaultClaimNormalizer()
-    keys_1 = normalizer.normalize(graph_1).keys_by_claim[claim_1.claim_id]
-    keys_2 = normalizer.normalize(graph_2).keys_by_claim[claim_2.claim_id]
+    keys_1 = normalize_claim_graph(graph_1).keys_by_claim[claim_1.claim_id]
+    keys_2 = normalize_claim_graph(graph_2).keys_by_claim[claim_2.claim_id]
 
     assert keys_1 == keys_2
     assert keys_1 == (("artist:name", "boards of canada"),)
@@ -82,7 +80,7 @@ def test_release_set_normalization_uses_primary_artist_priority() -> None:
     graph = ClaimGraph()
     graph.add(claim)
 
-    keys = DefaultClaimNormalizer().normalize(graph).keys_by_claim[claim.claim_id]
+    keys = normalize_claim_graph(graph).keys_by_claim[claim.claim_id]
 
     assert ("release_set:artist-title", "radiohead", "kid a") in keys
     assert ("release_set:artist-title", "featured artist", "kid a") not in keys
@@ -111,7 +109,7 @@ def test_play_event_normalization_includes_track_key_when_available() -> None:
     graph = ClaimGraph()
     graph.add(claim)
 
-    keys = DefaultClaimNormalizer().normalize(graph).keys_by_claim[claim.claim_id]
+    keys = normalize_claim_graph(graph).keys_by_claim[claim.claim_id]
 
     assert (
         "play_event:user-source-played_at",
@@ -182,7 +180,7 @@ def test_normalizer_logs_warning_for_claim_without_any_keys(
     graph = ClaimGraph()
     graph.add(claim)
 
-    result = DefaultClaimNormalizer().normalize(graph)
+    result = normalize_claim_graph(graph)
 
     assert result.keys_by_claim[claim.claim_id] == ()
     assert "No normalization keys" in caplog.text

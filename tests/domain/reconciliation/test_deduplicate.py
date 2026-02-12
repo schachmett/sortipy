@@ -11,9 +11,9 @@ from sortipy.domain.reconciliation import (
     RelationshipKind,
 )
 from sortipy.domain.reconciliation.deduplicate import (
-    DefaultClaimDeduplicator,
     MissingRelationshipEndpointError,
     RelationshipEndpoint,
+    deduplicate_claim_graph,
 )
 from sortipy.domain.reconciliation.normalize import NormalizationResult
 
@@ -39,7 +39,7 @@ def test_deduplicator_collapses_duplicate_claims_and_rewires_roots() -> None:
         }
     )
 
-    result = DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+    result = deduplicate_claim_graph(graph, normalization=normalization)
 
     assert tuple(claim.claim_id for claim in result.graph.claims) == (first.claim_id,)
     assert tuple(claim.claim_id for claim in result.graph.roots) == (first.claim_id,)
@@ -69,7 +69,7 @@ def test_deduplicator_does_not_collapse_across_entity_types() -> None:
         }
     )
 
-    result = DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+    result = deduplicate_claim_graph(graph, normalization=normalization)
 
     assert tuple(claim.claim_id for claim in result.graph.claims) == (
         artist.claim_id,
@@ -99,7 +99,7 @@ def test_deduplicator_keeps_claims_without_keys() -> None:
         }
     )
 
-    result = DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+    result = deduplicate_claim_graph(graph, normalization=normalization)
 
     assert tuple(claim.claim_id for claim in result.graph.claims) == (
         first.claim_id,
@@ -155,7 +155,7 @@ def test_deduplicator_rewires_and_collapses_relationship_claims() -> None:
         }
     )
 
-    result = DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+    result = deduplicate_claim_graph(graph, normalization=normalization)
 
     assert len(result.graph.relationships) == 1
     surviving_relationship = result.graph.relationships[0]
@@ -199,7 +199,7 @@ def test_deduplicator_collapses_non_payload_relationship_duplicates() -> None:
             label.claim_id: (("label:name", "virgin"),),
         }
     )
-    result = DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+    result = deduplicate_claim_graph(graph, normalization=normalization)
 
     assert len(result.graph.relationships) == 1
     assert result.graph.relationships[0].claim_id == relationship_1.claim_id
@@ -239,7 +239,7 @@ def test_deduplicator_rewires_one_to_many_ownership_relationships() -> None:
             release.claim_id: (("release:title", "moon safari"),),
         }
     )
-    result = DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+    result = deduplicate_claim_graph(graph, normalization=normalization)
 
     assert len(result.graph.relationships) == 1
     rewired = result.graph.relationships[0]
@@ -275,7 +275,7 @@ def test_deduplicator_raises_for_relationships_with_missing_rewired_endpoints() 
     )
 
     with pytest.raises(MissingRelationshipEndpointError) as exc_info:
-        DefaultClaimDeduplicator().deduplicate(graph, normalization=normalization)
+        deduplicate_claim_graph(graph, normalization=normalization)
 
     assert exc_info.value.endpoint == RelationshipEndpoint.TARGET
     assert exc_info.value.relationship_claim_id == bad_relationship.claim_id

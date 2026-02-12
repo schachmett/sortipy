@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from .plan import ResolutionPlan
 
 
-class ReconciliationPolicy(Protocol):
+class RefineResolutionPlan(Protocol):
     """Refine a resolution plan into executable apply instructions."""
 
-    def refine(self, plan: ResolutionPlan, *, graph: ClaimGraph) -> ResolutionPlan: ...
+    def __call__(self, plan: ResolutionPlan, *, graph: ClaimGraph) -> ResolutionPlan: ...

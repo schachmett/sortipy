@@ -28,7 +28,7 @@ class PersistenceResult:
     persisted_events: int = 0
 
 
-class PlanPersister(Protocol):
+class PersistReconciliation(Protocol):
     """Persist applied reconciliation changes and commit transaction state."""
 
-    def persist(self, *, plan: ResolutionPlan, apply_result: ApplyResult) -> PersistenceResult: ...
+    def __call__(self, *, plan: ResolutionPlan, apply_result: ApplyResult) -> PersistenceResult: ...

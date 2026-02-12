@@ -26,10 +26,10 @@ if TYPE_CHECKING:
     from .plan import ResolutionPlan
 
 
-class IdentityResolver(Protocol):
+class ResolveClaimGraph(Protocol):
     """Resolve claims against canonical catalog state."""
 
-    def resolve(
+    def __call__(
         self,
         graph: ClaimGraph,
         *,

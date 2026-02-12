@@ -30,17 +30,17 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
     observed: dict[str, ClaimGraph] = {}
 
     class _Normalizer:
-        def normalize(self, graph: ClaimGraph) -> NormalizationResult:
+        def __call__(self, graph: ClaimGraph) -> NormalizationResult:
             return NormalizationResult(keys_by_claim={claim.claim_id: () for claim in graph.claims})
 
     class _Deduplicator:
-        def deduplicate(
+        def __call__(
             self, graph: ClaimGraph, *, normalization: NormalizationResult
         ) -> DeduplicationResult:
             return DeduplicationResult(graph=deduplicated_graph)
 
     class _Resolver:
-        def resolve(
+        def __call__(
             self,
             graph: ClaimGraph,
             *,
@@ -50,26 +50,26 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
             return ResolutionPlan()
 
     class _Policy:
-        def refine(self, plan: ResolutionPlan, *, graph: ClaimGraph) -> ResolutionPlan:
+        def __call__(self, plan: ResolutionPlan, *, graph: ClaimGraph) -> ResolutionPlan:
             observed["policy"] = graph
             return plan
 
     class _Applier:
-        def apply(self, graph: ClaimGraph, *, plan: ResolutionPlan) -> ApplyResult:
+        def __call__(self, graph: ClaimGraph, *, plan: ResolutionPlan) -> ApplyResult:
             observed["applier"] = graph
             return ApplyResult()
 
     class _Persister:
-        def persist(self, *, plan: ResolutionPlan, apply_result: ApplyResult) -> PersistenceResult:
+        def __call__(self, *, plan: ResolutionPlan, apply_result: ApplyResult) -> PersistenceResult:
             return PersistenceResult(committed=True)
 
     engine = ReconciliationEngine(
-        normalizer=_Normalizer(),
-        deduplicator=_Deduplicator(),
-        resolver=_Resolver(),
-        policy=_Policy(),
-        applier=_Applier(),
-        persister=_Persister(),
+        normalize=_Normalizer(),
+        deduplicate=_Deduplicator(),
+        resolve=_Resolver(),
+        refine=_Policy(),
+        apply=_Applier(),
+        persist=_Persister(),
     )
     engine.reconcile(original_graph)
 

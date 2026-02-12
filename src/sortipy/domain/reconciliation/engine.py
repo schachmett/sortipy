@@ -11,36 +11,36 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .apply import ApplyResult, PlanApplier
-    from .deduplicate import ClaimDeduplicator
+    from .apply import ApplyResolutionPlan, ApplyResult
+    from .deduplicate import DeduplicateClaimGraph
     from .graph import ClaimGraph
-    from .normalize import ClaimNormalizer
-    from .persist import PersistenceResult, PlanPersister
-    from .policy import ReconciliationPolicy
-    from .resolve import IdentityResolver
+    from .normalize import NormalizeClaimGraph
+    from .persist import PersistenceResult, PersistReconciliation
+    from .policy import RefineResolutionPlan
+    from .resolve import ResolveClaimGraph
 
 
 @dataclass(slots=True)
 class ReconciliationEngine:
     """Run full reconciliation from claim graph to persistence."""
 
-    normalizer: ClaimNormalizer
-    deduplicator: ClaimDeduplicator
-    resolver: IdentityResolver
-    policy: ReconciliationPolicy
-    applier: PlanApplier
-    persister: PlanPersister
+    normalize: NormalizeClaimGraph
+    deduplicate: DeduplicateClaimGraph
+    resolve: ResolveClaimGraph
+    refine: RefineResolutionPlan
+    apply: ApplyResolutionPlan
+    persist: PersistReconciliation
 
     def reconcile(self, graph: ClaimGraph) -> tuple[ApplyResult, PersistenceResult]:
         """Run all reconciliation stages for ``graph``."""
 
-        normalization = self.normalizer.normalize(graph)
-        deduplication = self.deduplicator.deduplicate(graph, normalization=normalization)
+        normalization = self.normalize(graph)
+        deduplication = self.deduplicate(graph, normalization=normalization)
         deduplicated_graph = deduplication.graph
-        plan = self.resolver.resolve(deduplicated_graph, deduplication=deduplication)
-        refined_plan = self.policy.refine(plan, graph=deduplicated_graph)
-        apply_result = self.applier.apply(deduplicated_graph, plan=refined_plan)
-        persistence_result = self.persister.persist(
+        plan = self.resolve(deduplicated_graph, deduplication=deduplication)
+        refined_plan = self.refine(plan, graph=deduplicated_graph)
+        apply_result = self.apply(deduplicated_graph, plan=refined_plan)
+        persistence_result = self.persist(
             plan=refined_plan,
             apply_result=apply_result,
         )
