@@ -12,6 +12,7 @@ Implementation note:
 
 from __future__ import annotations
 
+import logging
 import unicodedata
 from collections.abc import Hashable
 from dataclasses import dataclass
@@ -38,17 +39,20 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sortipy.domain.model import (
-        Entity,
+        AssociationEntity,
         ExternallyIdentifiable,
         Namespace,
         Provenanced,
         Provider,
     )
 
+    from .claims import RelationshipClaim
     from .graph import ClaimGraph
 
 
 type ClaimKey = tuple[Hashable, ...]
+_DEFAULT_IDENTITY_DURATION_BUCKET_MS = 2000
+log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -73,7 +77,14 @@ class DefaultClaimNormalizer:
     def normalize(self, graph: ClaimGraph) -> NormalizationResult:
         keys_by_claim: dict[UUID, tuple[ClaimKey, ...]] = {}
         for claim in graph.claims:
-            keys_by_claim[claim.claim_id] = _keys_for_entity(claim.entity, self.duration_bucket_ms)
+            keys = _keys_for_entity(claim.entity, self.duration_bucket_ms)
+            keys_by_claim[claim.claim_id] = keys
+            if not keys:
+                log.warning(
+                    "No normalization keys for claim_id=%s entity_type=%s",
+                    claim.claim_id,
+                    claim.entity_type,
+                )
         return NormalizationResult(keys_by_claim=keys_by_claim)
 
 
@@ -89,10 +100,8 @@ _ROLE_PRIORITY: dict[ArtistRole | None, int] = {
 
 
 @singledispatch
-def _keys_for_entity(entity: Entity, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
-    return _filter_and_dedupe_keys(
-        (("entity:resolved-id", entity.entity_type, entity.resolved_id),),
-    )
+def _keys_for_entity(_entity: object, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
+    return ()
 
 
 @_keys_for_entity.register
@@ -205,31 +214,41 @@ def _(user: User, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
 
 @_keys_for_entity.register
 def _(event: PlayEvent, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
+    user_identity = _identity_key_for_entity(event.user)
+    recording_identity = _identity_key_for_entity(event.recording)
     keys: list[ClaimKey] = [
-        ("play_event:user-source-played_at", event.user.resolved_id, event.source, event.played_at),
-        ("play_event:recording-played_at", event.recording.resolved_id, event.played_at),
+        ("play_event:user-source-played_at", user_identity, event.source, event.played_at),
+        ("play_event:recording-played_at", recording_identity, event.played_at),
     ]
     if event.track is not None:
-        keys.append(("play_event:track-played_at", event.track.resolved_id, event.played_at))
+        keys.append(
+            (
+                "play_event:track-played_at",
+                _identity_key_for_entity(event.track),
+                event.played_at,
+            )
+        )
     return _filter_and_dedupe_keys(tuple(keys))
 
 
 @_keys_for_entity.register
 def _(item: LibraryItem, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
+    user_identity = _identity_key_for_entity(item.user)
+    target_identity = _library_item_target_identity(item)
     return _filter_and_dedupe_keys(
         (
             (
                 "library_item:user-target",
-                item.user.resolved_id,
+                user_identity,
                 item.target_type,
-                item.target_id,
+                target_identity,
             ),
             (
                 "library_item:user-source-target",
-                item.user.resolved_id,
+                user_identity,
                 item.source,
                 item.target_type,
-                item.target_id,
+                target_identity,
             ),
         )
     )
@@ -241,12 +260,12 @@ def _(track: ReleaseTrack, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
         (
             (
                 "release_track:release-recording",
-                track.release.resolved_id,
-                track.recording.resolved_id,
+                _identity_key_for_entity(track.release),
+                _identity_key_for_entity(track.recording),
             ),
             (
                 "release_track:release-position",
-                track.release.resolved_id,
+                _identity_key_for_entity(track.release),
                 track.disc_number,
                 track.track_number,
             ),
@@ -260,14 +279,14 @@ def _(contribution: ReleaseSetContribution, _duration_bucket_ms: int) -> tuple[C
         (
             (
                 "release_set_contribution:release_set-artist-role",
-                contribution.release_set.resolved_id,
-                contribution.artist.resolved_id,
+                _identity_key_for_entity(contribution.release_set),
+                _identity_key_for_entity(contribution.artist),
                 contribution.role or ArtistRole.UNKNOWN,
             ),
             (
                 "release_set_contribution:release_set-artist-credit_order",
-                contribution.release_set.resolved_id,
-                contribution.artist.resolved_id,
+                _identity_key_for_entity(contribution.release_set),
+                _identity_key_for_entity(contribution.artist),
                 contribution.credit_order if contribution.credit_order is not None else -1,
             ),
         )
@@ -280,14 +299,14 @@ def _(contribution: RecordingContribution, _duration_bucket_ms: int) -> tuple[Cl
         (
             (
                 "recording_contribution:recording-artist-role",
-                contribution.recording.resolved_id,
-                contribution.artist.resolved_id,
+                _identity_key_for_entity(contribution.recording),
+                _identity_key_for_entity(contribution.artist),
                 contribution.role or ArtistRole.UNKNOWN,
             ),
             (
                 "recording_contribution:recording-artist-credit_order",
-                contribution.recording.resolved_id,
-                contribution.artist.resolved_id,
+                _identity_key_for_entity(contribution.recording),
+                _identity_key_for_entity(contribution.artist),
                 contribution.credit_order if contribution.credit_order is not None else -1,
             ),
         )
@@ -402,3 +421,75 @@ def _normalize_duration(duration_ms: int | None, *, bucket_ms: int) -> int | Non
     if duration_ms is None:
         return None
     return duration_ms // bucket_ms
+
+
+def _identity_key_for_entity(entity: object) -> ClaimKey | None:
+    keys = _keys_for_entity(entity, _DEFAULT_IDENTITY_DURATION_BUCKET_MS)
+    return _preferred_identity_key_from_keys(keys)
+
+
+def _preferred_identity_key_from_keys(keys: tuple[ClaimKey, ...]) -> ClaimKey | None:
+    for key in keys:
+        head = key[0]
+        if isinstance(head, str) and ":source-" not in head:
+            return key
+    return keys[0] if keys else None
+
+
+def _library_item_target_identity(item: LibraryItem) -> ClaimKey | None:
+    target = item.target
+    if target is not None:
+        return _identity_key_for_entity(target)
+    return ("library_item:target", str(item.target_type), str(item.target_id))
+
+
+def normalized_relationship_key(claim: RelationshipClaim) -> ClaimKey:
+    payload_components = _normalized_relationship_payload(claim.payload)
+    return (
+        "relationship",
+        claim.kind,
+        claim.source_claim_id,
+        claim.target_claim_id,
+        *payload_components,
+    )
+
+
+def _normalized_relationship_payload(payload: AssociationEntity | None) -> tuple[Hashable, ...]:
+    if payload is None:
+        return ()
+    return _relationship_payload_components(payload)
+
+
+@singledispatch
+def _relationship_payload_components(_payload: object) -> tuple[Hashable, ...]:
+    return ()
+
+
+@_relationship_payload_components.register
+def _(payload: ReleaseTrack) -> tuple[Hashable, ...]:
+    return (
+        payload.disc_number if payload.disc_number is not None else -1,
+        payload.track_number if payload.track_number is not None else -1,
+        _normalize_text(payload.title_override),
+        payload.duration_ms,
+    )
+
+
+@_relationship_payload_components.register
+def _(payload: ReleaseSetContribution) -> tuple[Hashable, ...]:
+    return (
+        payload.role or ArtistRole.UNKNOWN,
+        payload.credit_order if payload.credit_order is not None else -1,
+        _normalize_text(payload.credited_as),
+        _normalize_text(payload.join_phrase),
+    )
+
+
+@_relationship_payload_components.register
+def _(payload: RecordingContribution) -> tuple[Hashable, ...]:
+    return (
+        payload.role or ArtistRole.UNKNOWN,
+        payload.credit_order if payload.credit_order is not None else -1,
+        _normalize_text(payload.credited_as),
+        _normalize_text(payload.join_phrase),
+    )

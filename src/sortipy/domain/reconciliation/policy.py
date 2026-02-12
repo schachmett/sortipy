@@ -8,6 +8,10 @@ Responsibilities of this stage:
 This stage should be deterministic given:
 - claim metadata (source/confidence/event context)
 - canonical provenance/history (if supplied by resolver inputs)
+
+TODO:
+- handle 1:n cardinality conflicts surfaced after relationship rewiring
+  (for example, a child resolving to multiple distinct parents).
 """
 
 from __future__ import annotations

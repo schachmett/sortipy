@@ -5,6 +5,11 @@ Responsibilities of this stage:
 - classify each claim as NEW/RESOLVED/AMBIGUOUS/CONFLICT
 - produce a ``ResolutionPlan`` without mutating persistence state
 
+TODO:
+- consume normalization artifacts directly (or through deduplication result)
+  so resolver implementations can combine exact lookup and fuzzy matching
+  without recomputing normalization.
+
 Out of scope for this stage:
 - conflict policy decisions
 - domain mutation

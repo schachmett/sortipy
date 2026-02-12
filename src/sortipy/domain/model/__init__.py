@@ -45,6 +45,9 @@ from .primitives import (
 from .provenance import Provenance, Provenanced, ProvenanceTracked
 from .user import LibraryItem, PlayEvent, User
 
+type CatalogEntity = Artist | Label | Recording | Release | ReleaseSet
+type AssociationEntity = RecordingContribution | ReleaseSetContribution | ReleaseTrack
+
 __all__ = [  # noqa: RUF022
     # base
     "IdentifiedEntity",
@@ -63,12 +66,14 @@ __all__ = [  # noqa: RUF022
     "ReleaseSetContribution",
     "RecordingContribution",
     "ReleaseTrack",
+    "AssociationEntity",
     # music
     "Artist",
     "ReleaseSet",
     "Release",
     "Recording",
     "Label",
+    "CatalogEntity",
     # user
     "User",
     "LibraryItem",

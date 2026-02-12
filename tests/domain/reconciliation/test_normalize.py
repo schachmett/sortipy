@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sortipy.domain.model import (
     Artist,
@@ -12,7 +13,14 @@ from sortipy.domain.model import (
     User,
 )
 from sortipy.domain.reconciliation import ClaimEvidence, ClaimGraph, ClaimMetadata, EntityClaim
-from sortipy.domain.reconciliation.normalize import DefaultClaimNormalizer
+from sortipy.domain.reconciliation.claims import RelationshipClaim, RelationshipKind
+from sortipy.domain.reconciliation.normalize import (
+    DefaultClaimNormalizer,
+    normalized_relationship_key,
+)
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_normalizer_computes_artist_keys_deterministically() -> None:
@@ -107,9 +115,74 @@ def test_play_event_normalization_includes_track_key_when_available() -> None:
 
     assert (
         "play_event:user-source-played_at",
-        user.resolved_id,
+        ("user:display_name", "listener"),
         Provider.LASTFM,
         played_at,
     ) in keys
-    assert ("play_event:recording-played_at", recording.resolved_id, played_at) in keys
-    assert ("play_event:track-played_at", track.resolved_id, played_at) in keys
+    assert (
+        "play_event:recording-played_at",
+        ("recording:artist-title", "massive attack", "teardrop"),
+        played_at,
+    ) in keys
+    assert (
+        "play_event:track-played_at",
+        (
+            "release_track:release-recording",
+            ("release:artist-title", "massive attack", "mezzanine"),
+            ("recording:artist-title", "massive attack", "teardrop"),
+        ),
+        played_at,
+    ) in keys
+
+
+def test_relationship_key_normalizes_contribution_payload() -> None:
+    artist = Artist(name="Massive Attack")
+    recording = Recording(title="Teardrop")
+    contribution = recording.add_artist(
+        artist,
+        role=ArtistRole.FEATURED,
+        credit_order=2,
+        credited_as="Liz Fraser",
+        join_phrase=" feat. ",
+    )
+
+    source_claim = EntityClaim(
+        entity=recording,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    target_claim = EntityClaim(
+        entity=artist,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+
+    relationship_claim = RelationshipClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_claim.claim_id,
+        kind=RelationshipKind.RECORDING_CONTRIBUTION,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+        payload=contribution,
+    )
+
+    key = normalized_relationship_key(relationship_claim)
+
+    assert key[0] == "relationship"
+    assert key[1] == RelationshipKind.RECORDING_CONTRIBUTION
+    assert key[2] == source_claim.claim_id
+    assert key[3] == target_claim.claim_id
+    assert key[4:] == (ArtistRole.FEATURED, 2, "liz fraser", "feat")
+
+
+def test_normalizer_logs_warning_for_claim_without_any_keys(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("WARNING")
+
+    user = User(display_name="")
+    claim = EntityClaim(entity=user, metadata=ClaimMetadata(source=Provider.SPOTIFY))
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    result = DefaultClaimNormalizer().normalize(graph)
+
+    assert result.keys_by_claim[claim.claim_id] == ()
+    assert "No normalization keys" in caplog.text

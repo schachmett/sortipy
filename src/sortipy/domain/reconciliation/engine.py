@@ -36,9 +36,10 @@ class ReconciliationEngine:
 
         normalization = self.normalizer.normalize(graph)
         deduplication = self.deduplicator.deduplicate(graph, normalization=normalization)
-        plan = self.resolver.resolve(graph, deduplication=deduplication)
-        refined_plan = self.policy.refine(plan, graph=graph)
-        apply_result = self.applier.apply(graph, plan=refined_plan)
+        deduplicated_graph = deduplication.graph
+        plan = self.resolver.resolve(deduplicated_graph, deduplication=deduplication)
+        refined_plan = self.policy.refine(plan, graph=deduplicated_graph)
+        apply_result = self.applier.apply(deduplicated_graph, plan=refined_plan)
         persistence_result = self.persister.persist(
             plan=refined_plan,
             apply_result=apply_result,

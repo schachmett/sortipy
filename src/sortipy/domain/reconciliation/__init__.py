@@ -16,9 +16,13 @@ Planned layered flow:
 from __future__ import annotations
 
 from .claims import (
+    CatalogEntity,
     ClaimEvidence,
     ClaimMetadata,
     EntityClaim,
+    RelationshipClaim,
+    RelationshipKind,
+    UserEntity,
 )
 from .graph import ClaimGraph
 from .plan import (
@@ -34,11 +38,15 @@ __all__ = [
     "ApplyInstruction",
     "ApplyStrategy",
     "CanonicalRef",
+    "CatalogEntity",
     "ClaimEvidence",
     "ClaimGraph",
     "ClaimMetadata",
     "EntityClaim",
     "EntityResolution",
+    "RelationshipClaim",
+    "RelationshipKind",
     "ResolutionPlan",
     "ResolutionStatus",
+    "UserEntity",
 ]
