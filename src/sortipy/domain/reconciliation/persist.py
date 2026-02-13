@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from .apply import ApplyResult
-    from .plan import ResolutionPlan
+    from .contracts import InstructionsByClaim
 
 
 @dataclass(slots=True)
@@ -31,4 +31,9 @@ class PersistenceResult:
 class PersistReconciliation(Protocol):
     """Persist applied reconciliation changes and commit transaction state."""
 
-    def __call__(self, *, plan: ResolutionPlan, apply_result: ApplyResult) -> PersistenceResult: ...
+    def __call__(
+        self,
+        *,
+        instructions_by_claim: InstructionsByClaim,
+        apply_result: ApplyResult,
+    ) -> PersistenceResult: ...

@@ -11,12 +11,12 @@ operate on claim nodes and normalization results.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
 from sortipy.domain.model import EntityType
 
+from .contracts import Representative
 from .graph import ClaimGraph
 from .normalize import normalized_relationship_key
 
@@ -24,18 +24,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from .claims import EntityClaim, RelationshipClaim
-    from .normalize import ClaimKey, NormalizationResult
-
-
-@dataclass(slots=True)
-class DeduplicationResult:
-    """Result of intra-batch claim deduplication."""
-
-    graph: ClaimGraph
-    representative_by_claim: dict[UUID, UUID] = field(default_factory=dict["UUID", "UUID"])
-
-    def representative_for(self, claim_id: UUID) -> UUID:
-        return self.representative_by_claim.get(claim_id, claim_id)
+    from .contracts import ClaimKey, KeysByClaim, RepresentativesByClaim
 
 
 class MissingRelationshipEndpointError(ValueError):
@@ -73,55 +62,56 @@ class DeduplicateClaimGraph(Protocol):
         self,
         graph: ClaimGraph,
         *,
-        normalization: NormalizationResult,
-    ) -> DeduplicationResult: ...
+        keys_by_claim: KeysByClaim,
+    ) -> tuple[ClaimGraph, RepresentativesByClaim]: ...
 
 
 def deduplicate_claim_graph(
     graph: ClaimGraph,
     *,
-    normalization: NormalizationResult,
-) -> DeduplicationResult:
+    keys_by_claim: KeysByClaim,
+) -> tuple[ClaimGraph, RepresentativesByClaim]:
     """Collapse duplicate claims and rewire relationship claims."""
 
     deduplicated_graph, representative_by_claim = _deduplicated_graph(
         graph,
-        normalization=normalization,
+        keys_by_claim=keys_by_claim,
     )
-    return DeduplicationResult(
-        graph=deduplicated_graph, representative_by_claim=representative_by_claim
-    )
+    return deduplicated_graph, representative_by_claim
 
 
 def _deduplicated_graph(
     graph: ClaimGraph,
     *,
-    normalization: NormalizationResult,
-) -> tuple[ClaimGraph, dict[UUID, UUID]]:
+    keys_by_claim: KeysByClaim,
+) -> tuple[ClaimGraph, RepresentativesByClaim]:
     deduplicated_graph = ClaimGraph()
-    representative_by_claim: dict[UUID, UUID] = {}
+    representative_by_claim: dict[UUID, Representative] = {}
     entity_key_index: dict[EntityType, dict[ClaimKey, UUID]] = {
         entity_type: {} for entity_type in EntityType
     }
 
     for claim in graph.claims:
-        representative_id = _find_entity_representative(
+        representative = _find_entity_representative(
             claim,
             key_index=entity_key_index,
-            normalization=normalization,
+            keys_by_claim=keys_by_claim,
         )
-        if representative_id is None:
+        if representative is None:
             deduplicated_graph.add(claim)
             _index_entity_claim_keys(
                 claim,
                 key_index=entity_key_index,
-                normalization=normalization,
+                keys_by_claim=keys_by_claim,
             )
             continue
-        representative_by_claim[claim.claim_id] = representative_id
+        representative_by_claim[claim.claim_id] = representative
 
     for root_claim in graph.roots:
-        representative_id = representative_by_claim.get(root_claim.claim_id, root_claim.claim_id)
+        representative = representative_by_claim.get(root_claim.claim_id)
+        representative_id = (
+            representative.claim_id if representative is not None else root_claim.claim_id
+        )
         representative_claim = deduplicated_graph.claim_for(representative_id)
         if representative_claim is not None:
             deduplicated_graph.add_root(representative_claim)
@@ -139,13 +129,13 @@ def _find_entity_representative(
     claim: EntityClaim,
     *,
     key_index: dict[EntityType, dict[ClaimKey, UUID]],
-    normalization: NormalizationResult,
-) -> UUID | None:
-    keys = normalization.keys_by_claim.get(claim.claim_id, ())
+    keys_by_claim: KeysByClaim,
+) -> Representative | None:
+    keys = keys_by_claim.get(claim.claim_id, ())
     for key in keys:
         representative_id = key_index[claim.entity_type].get(key)
         if representative_id is not None:
-            return representative_id
+            return Representative(claim_id=representative_id, matched_key=key)
     return None
 
 
@@ -153,9 +143,9 @@ def _index_entity_claim_keys(
     claim: EntityClaim,
     *,
     key_index: dict[EntityType, dict[ClaimKey, UUID]],
-    normalization: NormalizationResult,
+    keys_by_claim: KeysByClaim,
 ) -> None:
-    keys = normalization.keys_by_claim.get(claim.claim_id, ())
+    keys = keys_by_claim.get(claim.claim_id, ())
     for key in keys:
         key_index[claim.entity_type][key] = claim.claim_id
 
@@ -164,7 +154,7 @@ def _deduplicate_relationship_claims(
     graph: ClaimGraph,
     *,
     deduplicated_graph: ClaimGraph,
-    representative_by_claim: dict[UUID, UUID],
+    representative_by_claim: dict[UUID, Representative],
 ) -> None:
     relationship_key_index: dict[ClaimKey, UUID] = {}
 
@@ -194,18 +184,27 @@ def _deduplicate_relationship_claims(
             relationship_key_index[relationship_key] = rewired_relationship.claim_id
             continue
 
-        representative_by_claim[relationship.claim_id] = representative_id
+        representative_by_claim[relationship.claim_id] = Representative(
+            claim_id=representative_id,
+            matched_key=relationship_key,
+        )
 
 
 def _rewire_relationship(
     relationship: RelationshipClaim,
     *,
-    representative_by_claim: dict[UUID, UUID],
+    representative_by_claim: dict[UUID, Representative],
 ) -> RelationshipClaim:
-    source_claim_id = representative_by_claim.get(
-        relationship.source_claim_id, relationship.source_claim_id
+    source_representative = representative_by_claim.get(relationship.source_claim_id)
+    target_representative = representative_by_claim.get(relationship.target_claim_id)
+    source_claim_id = (
+        source_representative.claim_id
+        if source_representative is not None
+        else relationship.source_claim_id
     )
-    target_claim_id = representative_by_claim.get(
-        relationship.target_claim_id, relationship.target_claim_id
+    target_claim_id = (
+        target_representative.claim_id
+        if target_representative is not None
+        else relationship.target_claim_id
     )
     return relationship.rewired(source_claim_id=source_claim_id, target_claim_id=target_claim_id)

@@ -1,4 +1,4 @@
-"""Domain mutation contracts for reconciliation plans.
+"""Domain mutation contracts for reconciliation instructions.
 
 Responsibilities of this stage:
 - execute policy instructions via domain commands
@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from .contracts import InstructionsByClaim
     from .graph import ClaimGraph
-    from .plan import ResolutionPlan
 
 
 @dataclass(slots=True)
@@ -31,6 +31,11 @@ class ApplyResult:
 
 
 class ApplyResolutionPlan(Protocol):
-    """Apply a resolved and policy-refined plan to domain entities."""
+    """Apply policy instructions to canonical domain entities."""
 
-    def __call__(self, graph: ClaimGraph, *, plan: ResolutionPlan) -> ApplyResult: ...
+    def __call__(
+        self,
+        graph: ClaimGraph,
+        *,
+        instructions_by_claim: InstructionsByClaim,
+    ) -> ApplyResult: ...

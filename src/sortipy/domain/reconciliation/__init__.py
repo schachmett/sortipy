@@ -24,29 +24,47 @@ from .claims import (
     RelationshipKind,
     UserEntity,
 )
-from .graph import ClaimGraph
-from .plan import (
+from .contracts import (
+    AmbiguousEntityResolution,
     ApplyInstruction,
     ApplyStrategy,
-    CanonicalRef,
+    ClaimKey,
+    ConflictEntityResolution,
     EntityResolution,
-    ResolutionPlan,
+    InstructionsByClaim,
+    KeysByClaim,
+    MatchKind,
+    NewEntityResolution,
+    Representative,
+    RepresentativesByClaim,
+    ResolutionsByClaim,
     ResolutionStatus,
+    ResolvedEntityResolution,
 )
+from .graph import ClaimGraph
 
 __all__ = [
+    "AmbiguousEntityResolution",
     "ApplyInstruction",
     "ApplyStrategy",
-    "CanonicalRef",
     "CatalogEntity",
     "ClaimEvidence",
     "ClaimGraph",
+    "ClaimKey",
     "ClaimMetadata",
+    "ConflictEntityResolution",
     "EntityClaim",
     "EntityResolution",
+    "InstructionsByClaim",
+    "KeysByClaim",
+    "MatchKind",
+    "NewEntityResolution",
     "RelationshipClaim",
     "RelationshipKind",
-    "ResolutionPlan",
+    "Representative",
+    "RepresentativesByClaim",
     "ResolutionStatus",
+    "ResolutionsByClaim",
+    "ResolvedEntityResolution",
     "UserEntity",
 ]

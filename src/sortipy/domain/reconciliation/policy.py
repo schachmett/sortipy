@@ -19,11 +19,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from .contracts import InstructionsByClaim, ResolutionsByClaim
     from .graph import ClaimGraph
-    from .plan import ResolutionPlan
 
 
 class RefineResolutionPlan(Protocol):
-    """Refine a resolution plan into executable apply instructions."""
+    """Refine resolution output into executable apply instructions."""
 
-    def __call__(self, plan: ResolutionPlan, *, graph: ClaimGraph) -> ResolutionPlan: ...
+    def __call__(
+        self,
+        resolutions_by_claim: ResolutionsByClaim,
+        *,
+        graph: ClaimGraph,
+    ) -> InstructionsByClaim: ...

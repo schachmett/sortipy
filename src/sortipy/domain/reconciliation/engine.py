@@ -34,14 +34,25 @@ class ReconciliationEngine:
     def reconcile(self, graph: ClaimGraph) -> tuple[ApplyResult, PersistenceResult]:
         """Run all reconciliation stages for ``graph``."""
 
-        normalization = self.normalize(graph)
-        deduplication = self.deduplicate(graph, normalization=normalization)
-        deduplicated_graph = deduplication.graph
-        plan = self.resolve(deduplicated_graph, deduplication=deduplication)
-        refined_plan = self.refine(plan, graph=deduplicated_graph)
-        apply_result = self.apply(deduplicated_graph, plan=refined_plan)
+        keys_by_claim = self.normalize(graph)
+        deduplicated_graph, _representatives_by_claim = self.deduplicate(
+            graph,
+            keys_by_claim=keys_by_claim,
+        )
+        resolutions_by_claim = self.resolve(
+            deduplicated_graph,
+            keys_by_claim=keys_by_claim,
+        )
+        instructions_by_claim = self.refine(
+            resolutions_by_claim,
+            graph=deduplicated_graph,
+        )
+        apply_result = self.apply(
+            deduplicated_graph,
+            instructions_by_claim=instructions_by_claim,
+        )
         persistence_result = self.persist(
-            plan=refined_plan,
+            instructions_by_claim=instructions_by_claim,
             apply_result=apply_result,
         )
         return apply_result, persistence_result

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sortipy.domain.model import Artist, Provider
 from sortipy.domain.reconciliation import ClaimGraph, ClaimMetadata, EntityClaim
 from sortipy.domain.reconciliation.apply import ApplyResult
-from sortipy.domain.reconciliation.deduplicate import DeduplicationResult
 from sortipy.domain.reconciliation.engine import ReconciliationEngine
-from sortipy.domain.reconciliation.normalize import NormalizationResult
 from sortipy.domain.reconciliation.persist import PersistenceResult
-from sortipy.domain.reconciliation.plan import ResolutionPlan
+
+if TYPE_CHECKING:
+    from sortipy.domain.reconciliation.contracts import (
+        InstructionsByClaim,
+        KeysByClaim,
+        RepresentativesByClaim,
+        ResolutionsByClaim,
+    )
 
 
 def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
@@ -30,37 +37,55 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
     observed: dict[str, ClaimGraph] = {}
 
     class _Normalizer:
-        def __call__(self, graph: ClaimGraph) -> NormalizationResult:
-            return NormalizationResult(keys_by_claim={claim.claim_id: () for claim in graph.claims})
+        def __call__(self, graph: ClaimGraph) -> KeysByClaim:
+            return {claim.claim_id: () for claim in graph.claims}
 
     class _Deduplicator:
         def __call__(
-            self, graph: ClaimGraph, *, normalization: NormalizationResult
-        ) -> DeduplicationResult:
-            return DeduplicationResult(graph=deduplicated_graph)
+            self,
+            graph: ClaimGraph,
+            *,
+            keys_by_claim: KeysByClaim,
+        ) -> tuple[ClaimGraph, RepresentativesByClaim]:
+            return deduplicated_graph, {}
 
     class _Resolver:
         def __call__(
             self,
             graph: ClaimGraph,
             *,
-            deduplication: DeduplicationResult,
-        ) -> ResolutionPlan:
+            keys_by_claim: KeysByClaim,
+        ) -> ResolutionsByClaim:
             observed["resolver"] = graph
-            return ResolutionPlan()
+            return {}
 
     class _Policy:
-        def __call__(self, plan: ResolutionPlan, *, graph: ClaimGraph) -> ResolutionPlan:
+        def __call__(
+            self,
+            resolutions_by_claim: ResolutionsByClaim,
+            *,
+            graph: ClaimGraph,
+        ) -> InstructionsByClaim:
             observed["policy"] = graph
-            return plan
+            return {}
 
     class _Applier:
-        def __call__(self, graph: ClaimGraph, *, plan: ResolutionPlan) -> ApplyResult:
+        def __call__(
+            self,
+            graph: ClaimGraph,
+            *,
+            instructions_by_claim: InstructionsByClaim,
+        ) -> ApplyResult:
             observed["applier"] = graph
             return ApplyResult()
 
     class _Persister:
-        def __call__(self, *, plan: ResolutionPlan, apply_result: ApplyResult) -> PersistenceResult:
+        def __call__(
+            self,
+            *,
+            instructions_by_claim: InstructionsByClaim,
+            apply_result: ApplyResult,
+        ) -> PersistenceResult:
             return PersistenceResult(committed=True)
 
     engine = ReconciliationEngine(

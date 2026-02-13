@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import unicodedata
 from collections.abc import Hashable
-from dataclasses import dataclass
 from functools import singledispatch
 from typing import TYPE_CHECKING, Protocol
 
@@ -36,8 +35,6 @@ from sortipy.domain.model import (
 )
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from sortipy.domain.model import (
         AssociationEntity,
         ExternallyIdentifiable,
@@ -47,35 +44,29 @@ if TYPE_CHECKING:
     )
 
     from .claims import RelationshipClaim
+    from .contracts import KeysByClaim
     from .graph import ClaimGraph
 
+from .contracts import ClaimKey
 
-type ClaimKey = tuple[Hashable, ...]
 _DEFAULT_IDENTITY_DURATION_BUCKET_MS = 2000
 log = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class NormalizationResult:
-    """Deterministic keys for every claim in the graph."""
-
-    keys_by_claim: dict[UUID, tuple[ClaimKey, ...]]
 
 
 class NormalizeClaimGraph(Protocol):
     """Compute deterministic keys for a claim graph."""
 
-    def __call__(self, graph: ClaimGraph) -> NormalizationResult: ...
+    def __call__(self, graph: ClaimGraph) -> KeysByClaim: ...
 
 
 def normalize_claim_graph(
     graph: ClaimGraph,
     *,
     duration_bucket_ms: int = _DEFAULT_IDENTITY_DURATION_BUCKET_MS,
-) -> NormalizationResult:
+) -> KeysByClaim:
     """Compute deterministic keys for all entity claims in ``graph``."""
 
-    keys_by_claim: dict[UUID, tuple[ClaimKey, ...]] = {}
+    keys_by_claim: KeysByClaim = {}
     for claim in graph.claims:
         keys = _keys_for_entity(claim.entity, duration_bucket_ms)
         keys_by_claim[claim.claim_id] = keys
@@ -85,7 +76,7 @@ def normalize_claim_graph(
                 claim.claim_id,
                 claim.entity_type,
             )
-    return NormalizationResult(keys_by_claim=keys_by_claim)
+    return keys_by_claim
 
 
 _ROLE_PRIORITY: dict[ArtistRole | None, int] = {
