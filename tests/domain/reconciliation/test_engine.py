@@ -92,7 +92,7 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
         normalize=_Normalizer(),
         deduplicate=_Deduplicator(),
         resolve=_Resolver(),
-        refine=_Policy(),
+        decide=_Policy(),
         apply=_Applier(),
         persist=_Persister(),
     )

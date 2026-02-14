@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .graph import ClaimGraph
     from .normalize import NormalizeClaimGraph
     from .persist import PersistenceResult, PersistReconciliation
-    from .policy import RefineResolutionPlan
+    from .policy import DecideApplyInstructions
     from .resolve import ResolveClaimGraph
 
 
@@ -27,7 +27,7 @@ class ReconciliationEngine:
     normalize: NormalizeClaimGraph
     deduplicate: DeduplicateClaimGraph
     resolve: ResolveClaimGraph
-    refine: RefineResolutionPlan
+    decide: DecideApplyInstructions
     apply: ApplyResolutionPlan
     persist: PersistReconciliation
 
@@ -43,7 +43,7 @@ class ReconciliationEngine:
             deduplicated_graph,
             keys_by_claim=keys_by_claim,
         )
-        instructions_by_claim = self.refine(
+        instructions_by_claim = self.decide(
             resolutions_by_claim,
             graph=deduplicated_graph,
         )
