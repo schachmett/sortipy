@@ -144,6 +144,10 @@ class _NullCanonicalRepository[TCanonical]:
         _ = (namespace, value)
         return None
 
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[TCanonical, ...]:
+        _ = key
+        return ()
+
     def list(self, *, limit: int | None = None) -> list[TCanonical]:
         _ = limit
         return []

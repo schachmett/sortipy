@@ -44,6 +44,18 @@ if TYPE_CHECKING:
 class MissingParentError(Exception): ...
 
 
+def _serialize_normalized_key(key: tuple[object, ...]) -> str:
+    return json.dumps(key, default=str, separators=(",", ":"))
+
+
+def _deserialize_normalized_key(value: str) -> tuple[object, ...]:
+    loaded_raw = json.loads(value)
+    if not isinstance(loaded_raw, list):
+        raise TypeError("Invalid key format")
+    loaded = cast("list[object]", loaded_raw)
+    return tuple(loaded)
+
+
 class SqlAlchemyPlayEventRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -103,6 +115,26 @@ class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
         if not isinstance(entity_id, uuid.UUID):
             return None
         return self.session.get(self._entity_cls, entity_id)
+
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[TEntity, ...]:
+        key_str = _serialize_normalized_key(key)
+        stmt = (
+            select(normalization_sidecar_table.c.entity_id)
+            .where(normalization_sidecar_table.c.entity_type == self._entity_type)
+            .where(normalization_sidecar_table.c.key == key_str)
+        )
+        entities: list[TEntity] = []
+        seen_resolved_ids: set[uuid.UUID] = set()
+        entity_ids = self.session.execute(stmt).scalars().all()
+        for entity_id in entity_ids:
+            entity = self.session.get(self._entity_cls, entity_id)
+            if entity is None:
+                continue
+            if entity.resolved_id in seen_resolved_ids:
+                continue
+            seen_resolved_ids.add(entity.resolved_id)
+            entities.append(entity)
+        return tuple(entities)
 
 
 class SqlAlchemyArtistRepository(SqlAlchemyCanonicalRepository[Artist]):
@@ -195,7 +227,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
     ) -> dict[tuple[object, ...], IdentifiedEntity]:
         if not keys:
             return {}
-        key_strings = [self._serialize_key(key) for key in keys]
+        key_strings = [_serialize_normalized_key(key) for key in keys]
         stmt = (
             select(normalization_sidecar_table.c.key, normalization_sidecar_table.c.entity_id)
             .where(normalization_sidecar_table.c.entity_type == entity_type)
@@ -211,7 +243,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
             if entity_obj is None:
                 continue
             try:
-                key_tuple = self._deserialize_key(key_str)
+                key_tuple = _deserialize_normalized_key(key_str)
             except ValueError:
                 continue
             results[key_tuple] = entity_obj
@@ -223,7 +255,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
         entity_id: uuid.UUID,
         key: tuple[object, ...],
     ) -> None:
-        key_str = self._serialize_key(key)
+        key_str = _serialize_normalized_key(key)
         stmt = (
             normalization_sidecar_table.insert()
             .prefix_with("OR IGNORE")
@@ -234,18 +266,6 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
             )
         )
         self.session.execute(stmt)
-
-    @staticmethod
-    def _serialize_key(key: tuple[object, ...]) -> str:
-        return json.dumps(key, default=str, separators=(",", ":"))
-
-    @staticmethod
-    def _deserialize_key(value: str) -> tuple[object, ...]:
-        loaded_raw = json.loads(value)
-        if not isinstance(loaded_raw, list):
-            raise TypeError("Invalid key format")
-        loaded = cast("list[object]", loaded_raw)
-        return tuple(loaded)
 
 
 if TYPE_CHECKING:

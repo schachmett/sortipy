@@ -75,6 +75,10 @@ class _FakeCanonicalRepository[TEntity]:
                     return entity
         return None
 
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[TEntity, ...]:
+        _ = key
+        return ()
+
     def list(self, *, limit: int | None = None) -> list[TEntity]:
         if limit is None:
             return list(self._items)

@@ -49,6 +49,8 @@ class CanonicalEntityRepository[TCanonical: ExternallyIdentifiable](
 
     def get_by_external_id(self, namespace: Namespace, value: str) -> TCanonical | None: ...
 
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[TCanonical, ...]: ...
+
 
 @runtime_checkable
 class ArtistRepository(CanonicalEntityRepository[Artist], Protocol):

@@ -30,7 +30,7 @@ from .contracts import (
 )
 
 if TYPE_CHECKING:
-    from sortipy.domain.model import IdentifiedEntity
+    from sortipy.domain.model import IdentifiedEntity, Namespace
 
     from .claims import EntityClaim
     from .contracts import ClaimKey, EntityResolution, KeysByClaim, ResolutionsByClaim
@@ -49,8 +49,11 @@ class ResolveClaimGraph(Protocol):
 
 
 type FindExactCandidates = Callable[
-    [EntityClaim, tuple[ClaimKey, ...]], tuple[IdentifiedEntity, ...]
+    [EntityClaim, tuple[ClaimKey, ...]],
+    tuple[tuple[IdentifiedEntity, ...], ClaimKey | None],
 ]
+type FindByExternalId = Callable[[EntityClaim, Namespace, str], tuple[IdentifiedEntity, ...]]
+type FindByNormalizedKey = Callable[[EntityClaim, ClaimKey], tuple[IdentifiedEntity, ...]]
 
 
 def resolve_claim_graph(
@@ -58,6 +61,8 @@ def resolve_claim_graph(
     *,
     keys_by_claim: KeysByClaim,
     find_exact_candidates: FindExactCandidates | None = None,
+    find_by_external_id: FindByExternalId | None = None,
+    find_by_normalized_key: FindByNormalizedKey | None = None,
 ) -> ResolutionsByClaim:
     """Resolve claim identities using exact-match candidate lookup.
 
@@ -68,12 +73,19 @@ def resolve_claim_graph(
     - mismatched candidate entity type -> ``ConflictEntityResolution``
     """
 
-    finder = find_exact_candidates or _no_exact_candidates
+    finder = find_exact_candidates or _default_exact_candidate_finder(
+        find_by_external_id=find_by_external_id,
+        find_by_normalized_key=find_by_normalized_key,
+    )
     resolutions_by_claim: ResolutionsByClaim = {}
     for claim in graph.claims:
         keys = keys_by_claim.get(claim.claim_id, ())
-        candidates = _dedupe_candidates(finder(claim, keys))
-        resolution = _resolution_for_claim(claim, candidates=candidates, matched_key=None)
+        candidates, matched_key = finder(claim, keys)
+        resolution = _resolution_for_claim(
+            claim,
+            candidates=_dedupe_candidates(candidates),
+            matched_key=matched_key,
+        )
         resolutions_by_claim[claim.claim_id] = resolution
     return resolutions_by_claim
 
@@ -125,7 +137,71 @@ def _dedupe_candidates(
     return tuple(deduped)
 
 
-def _no_exact_candidates(
-    _claim: EntityClaim, _keys: tuple[ClaimKey, ...]
-) -> tuple[IdentifiedEntity, ...]:
-    return ()
+def _default_exact_candidate_finder(
+    *,
+    find_by_external_id: FindByExternalId | None,
+    find_by_normalized_key: FindByNormalizedKey | None,
+) -> Callable[
+    [EntityClaim, tuple[ClaimKey, ...]],
+    tuple[tuple[IdentifiedEntity, ...], ClaimKey | None],
+]:
+    def find_exact_candidates(
+        claim: EntityClaim,
+        keys: tuple[ClaimKey, ...],
+    ) -> tuple[tuple[IdentifiedEntity, ...], ClaimKey | None]:
+        external_lookup = _match_from_external_ids(claim, find_by_external_id=find_by_external_id)
+        if external_lookup is not None:
+            return external_lookup
+
+        key_lookup = _match_from_keys(
+            claim,
+            keys,
+            find_by_normalized_key=find_by_normalized_key,
+        )
+        if key_lookup is not None:
+            return key_lookup
+
+        return (), None
+
+    return find_exact_candidates
+
+
+def _match_from_external_ids(
+    claim: EntityClaim,
+    *,
+    find_by_external_id: FindByExternalId | None,
+) -> tuple[tuple[IdentifiedEntity, ...], ClaimKey] | None:
+    if find_by_external_id is None:
+        return None
+    if not hasattr(claim.entity, "external_ids"):
+        return None
+
+    external_ids = getattr(claim.entity, "external_ids", ())
+    for external_id in external_ids:
+        candidates = find_by_external_id(claim, external_id.namespace, external_id.value)
+        if candidates:
+            return candidates, ("external_id", external_id.namespace, external_id.value)
+    return None
+
+
+def _match_from_keys(
+    claim: EntityClaim,
+    keys: tuple[ClaimKey, ...],
+    *,
+    find_by_normalized_key: FindByNormalizedKey | None,
+) -> tuple[tuple[IdentifiedEntity, ...], ClaimKey] | None:
+    if find_by_normalized_key is None:
+        return None
+
+    all_candidates: list[IdentifiedEntity] = []
+    matched_key: ClaimKey | None = None
+    for key in keys:
+        candidates = find_by_normalized_key(claim, key)
+        if not candidates:
+            continue
+        if matched_key is None:
+            matched_key = key
+        all_candidates.extend(candidates)
+    if not all_candidates or matched_key is None:
+        return None
+    return tuple(all_candidates), matched_key
