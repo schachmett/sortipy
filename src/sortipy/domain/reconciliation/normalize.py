@@ -101,6 +101,7 @@ def _(artist: Artist, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
     sources = _normalized_sources(artist)
     return _filter_and_dedupe_keys(
         (
+            *_external_id_keys("artist", artist),
             ("artist:mbid", _external_id_value(artist, ExternalNamespace.MUSICBRAINZ_ARTIST)),
             ("artist:source-name", _primary_source(sources), normalized_name),
             ("artist:name", normalized_name),
@@ -115,6 +116,7 @@ def _(release_set: ReleaseSet, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]
     sources = _normalized_sources(release_set)
     return _filter_and_dedupe_keys(
         (
+            *_external_id_keys("release_set", release_set),
             (
                 "release_set:mbid",
                 _external_id_value(release_set, ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP),
@@ -137,6 +139,7 @@ def _(release: Release, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
     sources = _normalized_sources(release)
     return _filter_and_dedupe_keys(
         (
+            *_external_id_keys("release", release),
             ("release:mbid", _external_id_value(release, ExternalNamespace.MUSICBRAINZ_RELEASE)),
             (
                 "release:source-artist-title",
@@ -157,6 +160,7 @@ def _(recording: Recording, duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
     sources = _normalized_sources(recording)
     return _filter_and_dedupe_keys(
         (
+            *_external_id_keys("recording", recording),
             (
                 "recording:mbid",
                 _external_id_value(recording, ExternalNamespace.MUSICBRAINZ_RECORDING),
@@ -184,6 +188,7 @@ def _(label: Label, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
     sources = _normalized_sources(label)
     return _filter_and_dedupe_keys(
         (
+            *_external_id_keys("label", label),
             ("label:mbid", _external_id_value(label, ExternalNamespace.MUSICBRAINZ_LABEL)),
             ("label:source-name", _primary_source(sources), normalized_name),
             ("label:name", normalized_name),
@@ -361,6 +366,21 @@ def _external_id_value(
         if str(external_id.namespace) == target_namespace:
             return external_id.value
     return None
+
+
+def _external_id_keys(prefix: str, entity: ExternallyIdentifiable) -> tuple[ClaimKey, ...]:
+    external_ids = sorted(
+        entity.external_ids,
+        key=lambda external_id: (str(external_id.namespace), external_id.value),
+    )
+    return tuple(
+        (
+            f"{prefix}:external_id",
+            str(external_id.namespace),
+            external_id.value,
+        )
+        for external_id in external_ids
+    )
 
 
 def _release_set_primary_artist_name(release_set: ReleaseSet) -> str | None:

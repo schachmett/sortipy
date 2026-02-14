@@ -18,6 +18,7 @@ from sortipy.domain.reconciliation.deduplicate import (
     RelationshipEndpoint,
     deduplicate_claim_graph,
 )
+from sortipy.domain.reconciliation.normalize import normalize_claim_graph
 
 if TYPE_CHECKING:
     from sortipy.domain.reconciliation.contracts import KeysByClaim
@@ -296,3 +297,34 @@ def test_deduplicator_raises_for_relationships_with_missing_rewired_endpoints() 
     assert exc_info.value.endpoint == RelationshipEndpoint.TARGET
     assert exc_info.value.relationship_claim_id == bad_relationship.claim_id
     assert exc_info.value.endpoint_claim_id == bad_relationship.claim_id
+
+
+def test_deduplicator_collapses_duplicate_artists_by_external_id() -> None:
+    first_artist = Artist(name="Aphex Twin")
+    first_artist.add_external_id("spotify_artist", "artist-123")
+    duplicate_artist = Artist(name="Richard D. James")
+    duplicate_artist.add_external_id("spotify_artist", "artist-123")
+
+    first_claim = EntityClaim(
+        entity=first_artist,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    duplicate_claim = EntityClaim(
+        entity=duplicate_artist,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(first_claim)
+    graph.add(duplicate_claim)
+
+    deduplicated_graph, representative_by_claim = deduplicate_claim_graph(
+        graph,
+        keys_by_claim=normalize_claim_graph(graph),
+    )
+
+    assert tuple(claim.claim_id for claim in deduplicated_graph.claims) == (first_claim.claim_id,)
+    assert representative_by_claim[duplicate_claim.claim_id] == Representative(
+        claim_id=first_claim.claim_id,
+        matched_key=("artist:external_id", "spotify_artist", "artist-123"),
+    )

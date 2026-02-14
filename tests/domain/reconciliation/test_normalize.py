@@ -38,6 +38,7 @@ def test_normalizer_computes_artist_keys_deterministically() -> None:
 
     assert first == second
     assert first == (
+        ("artist:external_id", str(ExternalNamespace.MUSICBRAINZ_ARTIST), "mbid-artist-1"),
         ("artist:mbid", "mbid-artist-1"),
         ("artist:source-name", Provider.LASTFM, "rem"),
         ("artist:name", "rem"),
