@@ -43,10 +43,11 @@ if TYPE_CHECKING:
         Provider,
     )
 
-    from .claims import RelationshipClaim
+    from .claims import AnyRelationshipClaim
     from .contracts import KeysByClaim
     from .graph import ClaimGraph
 
+from .claims import AssociationClaim
 from .contracts import ClaimKey
 
 _DEFAULT_IDENTITY_DURATION_BUCKET_MS = 2000
@@ -454,8 +455,9 @@ def _library_item_target_identity(item: LibraryItem) -> ClaimKey | None:
     return ("library_item:target", str(item.target_type), str(item.target_id))
 
 
-def normalized_relationship_key(claim: RelationshipClaim) -> ClaimKey:
-    payload_components = _normalized_relationship_payload(claim.payload)
+def normalized_relationship_key(claim: AnyRelationshipClaim) -> ClaimKey:
+    payload = claim.payload if isinstance(claim, AssociationClaim) else None
+    payload_components = _normalized_relationship_payload(payload)
     return (
         "relationship",
         claim.kind,

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .apply import ApplyResolutionPlan, ApplyResult
+    from .apply import ApplyReconciliationInstructions, ApplyResult
     from .deduplicate import DeduplicateClaimGraph
     from .graph import ClaimGraph
     from .normalize import NormalizeClaimGraph
@@ -28,7 +28,7 @@ class ReconciliationEngine:
     deduplicate: DeduplicateClaimGraph
     resolve: ResolveClaimGraph
     decide: DecideApplyInstructions
-    apply: ApplyResolutionPlan
+    apply: ApplyReconciliationInstructions
     persist: PersistReconciliation
 
     def reconcile(self, graph: ClaimGraph) -> tuple[ApplyResult, PersistenceResult]:
@@ -39,20 +39,34 @@ class ReconciliationEngine:
             graph,
             keys_by_claim=keys_by_claim,
         )
-        resolutions_by_claim = self.resolve(
+        (
+            entity_resolutions_by_claim,
+            association_resolutions_by_claim,
+            link_resolutions_by_claim,
+        ) = self.resolve(
             deduplicated_graph,
             keys_by_claim=keys_by_claim,
         )
-        instructions_by_claim = self.decide(
-            resolutions_by_claim,
+        (
+            entity_instructions_by_claim,
+            association_instructions_by_claim,
+            link_instructions_by_claim,
+        ) = self.decide(
+            entity_resolutions_by_claim,
+            association_resolutions_by_claim,
+            link_resolutions_by_claim,
             graph=deduplicated_graph,
         )
         apply_result = self.apply(
             deduplicated_graph,
-            instructions_by_claim=instructions_by_claim,
+            entity_instructions_by_claim=entity_instructions_by_claim,
+            association_instructions_by_claim=association_instructions_by_claim,
+            link_instructions_by_claim=link_instructions_by_claim,
         )
         persistence_result = self.persist(
-            instructions_by_claim=instructions_by_claim,
+            entity_instructions_by_claim=entity_instructions_by_claim,
+            association_instructions_by_claim=association_instructions_by_claim,
+            link_instructions_by_claim=link_instructions_by_claim,
             apply_result=apply_result,
         )
         return apply_result, persistence_result

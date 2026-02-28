@@ -6,11 +6,13 @@ import pytest
 
 from sortipy.domain.model import Artist, Label, Provider, Recording, ReleaseSet
 from sortipy.domain.reconciliation import (
+    AssociationClaim,
+    AssociationKind,
     ClaimGraph,
     ClaimMetadata,
     EntityClaim,
-    RelationshipClaim,
-    RelationshipKind,
+    LinkClaim,
+    LinkKind,
 )
 from sortipy.domain.reconciliation.contracts import Representative
 from sortipy.domain.reconciliation.deduplicate import (
@@ -146,16 +148,16 @@ def test_deduplicator_rewires_and_collapses_relationship_claims() -> None:
     graph.add(recording_claim_1)
     graph.add(recording_claim_2)
 
-    relationship_1 = RelationshipClaim(
+    relationship_1 = AssociationClaim(
         source_claim_id=release_claim.claim_id,
         target_claim_id=recording_claim_1.claim_id,
-        kind=RelationshipKind.RELEASE_TRACK,
+        kind=AssociationKind.RELEASE_TRACK,
         metadata=ClaimMetadata(source=Provider.SPOTIFY),
     )
-    relationship_2 = RelationshipClaim(
+    relationship_2 = AssociationClaim(
         source_claim_id=release_claim.claim_id,
         target_claim_id=recording_claim_2.claim_id,
-        kind=RelationshipKind.RELEASE_TRACK,
+        kind=AssociationKind.RELEASE_TRACK,
         metadata=ClaimMetadata(source=Provider.LASTFM),
     )
     graph.add_relationship(relationship_1)
@@ -195,16 +197,16 @@ def test_deduplicator_collapses_non_payload_relationship_duplicates() -> None:
     graph = ClaimGraph()
     graph.add(release)
     graph.add(label)
-    relationship_1 = RelationshipClaim(
+    relationship_1 = LinkClaim(
         source_claim_id=release.claim_id,
         target_claim_id=label.claim_id,
-        kind=RelationshipKind.RELEASE_LABEL,
+        kind=LinkKind.RELEASE_LABEL,
         metadata=ClaimMetadata(source=Provider.SPOTIFY),
     )
-    relationship_2 = RelationshipClaim(
+    relationship_2 = LinkClaim(
         source_claim_id=release.claim_id,
         target_claim_id=label.claim_id,
-        kind=RelationshipKind.RELEASE_LABEL,
+        kind=LinkKind.RELEASE_LABEL,
         metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
     )
     graph.add_relationship(relationship_1)
@@ -242,10 +244,10 @@ def test_deduplicator_rewires_one_to_many_ownership_relationships() -> None:
     graph.add(release_set_1)
     graph.add(release_set_2)
     graph.add(release)
-    ownership = RelationshipClaim(
+    ownership = LinkClaim(
         source_claim_id=release_set_2.claim_id,
         target_claim_id=release.claim_id,
-        kind=RelationshipKind.RELEASE_SET_RELEASE,
+        kind=LinkKind.RELEASE_SET_RELEASE,
         metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
     )
     graph.add_relationship(ownership)
@@ -274,16 +276,14 @@ def test_deduplicator_raises_for_relationships_with_missing_rewired_endpoints() 
     graph = ClaimGraph()
     graph.add(artist_claim)
 
-    bad_relationship = RelationshipClaim(
+    bad_relationship = LinkClaim(
         source_claim_id=artist_claim.claim_id,
         target_claim_id=artist_claim.claim_id,
-        kind=RelationshipKind.RELEASE_LABEL,
+        kind=LinkKind.RELEASE_LABEL,
         metadata=ClaimMetadata(source=Provider.SPOTIFY),
     )
     graph._relationship_claims_by_id[bad_relationship.claim_id] = bad_relationship
-    graph._relationship_claim_ids_by_kind[RelationshipKind.RELEASE_LABEL].append(
-        bad_relationship.claim_id
-    )
+    graph._relationship_claim_ids_by_kind[LinkKind.RELEASE_LABEL].append(bad_relationship.claim_id)
     graph._relationship_claims_by_id[bad_relationship.claim_id] = bad_relationship.rewired(
         source_claim_id=artist_claim.claim_id,
         target_claim_id=bad_relationship.claim_id,

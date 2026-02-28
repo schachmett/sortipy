@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from .apply import ApplyResult
-    from .contracts import InstructionsByClaim
+    from .contracts import (
+        AssociationInstructionsByClaim,
+        EntityInstructionsByClaim,
+        LinkInstructionsByClaim,
+    )
 
 
 @dataclass(slots=True)
@@ -34,6 +38,8 @@ class PersistReconciliation(Protocol):
     def __call__(
         self,
         *,
-        instructions_by_claim: InstructionsByClaim,
+        entity_instructions_by_claim: EntityInstructionsByClaim,
+        association_instructions_by_claim: AssociationInstructionsByClaim,
+        link_instructions_by_claim: LinkInstructionsByClaim,
         apply_result: ApplyResult,
     ) -> PersistenceResult: ...

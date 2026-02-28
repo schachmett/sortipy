@@ -10,10 +10,14 @@ from sortipy.domain.reconciliation.persist import PersistenceResult
 
 if TYPE_CHECKING:
     from sortipy.domain.reconciliation.contracts import (
-        InstructionsByClaim,
+        AssociationInstructionsByClaim,
+        AssociationResolutionsByClaim,
+        EntityInstructionsByClaim,
+        EntityResolutionsByClaim,
         KeysByClaim,
+        LinkInstructionsByClaim,
+        LinkResolutionsByClaim,
         RepresentativesByClaim,
-        ResolutionsByClaim,
     )
 
 
@@ -55,37 +59,67 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
             graph: ClaimGraph,
             *,
             keys_by_claim: KeysByClaim,
-        ) -> ResolutionsByClaim:
+        ) -> tuple[
+            EntityResolutionsByClaim,
+            AssociationResolutionsByClaim,
+            LinkResolutionsByClaim,
+        ]:
             observed["resolver"] = graph
-            return {}
+            return {}, {}, {}
 
     class _Policy:
         def __call__(
             self,
-            resolutions_by_claim: ResolutionsByClaim,
+            entity_resolutions_by_claim: EntityResolutionsByClaim,
+            association_resolutions_by_claim: AssociationResolutionsByClaim,
+            link_resolutions_by_claim: LinkResolutionsByClaim,
             *,
             graph: ClaimGraph,
-        ) -> InstructionsByClaim:
+        ) -> tuple[
+            EntityInstructionsByClaim,
+            AssociationInstructionsByClaim,
+            LinkInstructionsByClaim,
+        ]:
             observed["policy"] = graph
-            return {}
+            _ = (
+                entity_resolutions_by_claim,
+                association_resolutions_by_claim,
+                link_resolutions_by_claim,
+            )
+            return {}, {}, {}
 
     class _Applier:
         def __call__(
             self,
             graph: ClaimGraph,
             *,
-            instructions_by_claim: InstructionsByClaim,
+            entity_instructions_by_claim: EntityInstructionsByClaim,
+            association_instructions_by_claim: AssociationInstructionsByClaim,
+            link_instructions_by_claim: LinkInstructionsByClaim,
         ) -> ApplyResult:
             observed["applier"] = graph
+            _ = (
+                entity_instructions_by_claim,
+                association_instructions_by_claim,
+                link_instructions_by_claim,
+            )
             return ApplyResult()
 
     class _Persister:
         def __call__(
             self,
             *,
-            instructions_by_claim: InstructionsByClaim,
+            entity_instructions_by_claim: EntityInstructionsByClaim,
+            association_instructions_by_claim: AssociationInstructionsByClaim,
+            link_instructions_by_claim: LinkInstructionsByClaim,
             apply_result: ApplyResult,
         ) -> PersistenceResult:
+            _ = (
+                entity_instructions_by_claim,
+                association_instructions_by_claim,
+                link_instructions_by_claim,
+                apply_result,
+            )
             return PersistenceResult(committed=True)
 
     engine = ReconciliationEngine(

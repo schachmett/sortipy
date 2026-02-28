@@ -1,70 +1,103 @@
-"""Reconciliation core for integrating external claim graphs into the catalog.
-
-This package is the target replacement for the current split between
-``domain.ingest_pipeline`` and ``domain.entity_updates``.
-
-Planned layered flow:
-1) build a claim graph from adapter payloads
-2) normalize claim keys
-3) deduplicate claims intra-batch
-4) resolve canonical targets from persistence ports
-5) apply conflict/merge policy
-6) apply decisions to domain entities
-7) persist changes and provenance events
-"""
+"""Reconciliation core for integrating external claim graphs into the catalog."""
 
 from __future__ import annotations
 
 from .claims import (
-    CatalogEntity,
+    AnyRelationshipClaim,
+    AssociationClaim,
+    AssociationKind,
     ClaimEvidence,
     ClaimMetadata,
     EntityClaim,
-    RelationshipClaim,
+    LinkClaim,
+    LinkKind,
     RelationshipKind,
     UserEntity,
 )
 from .contracts import (
-    AmbiguousEntityResolution,
-    ApplyInstruction,
+    AmbiguousResolution,
     ApplyStrategy,
+    AssociationApplyInstruction,
+    AssociationInstructionsByClaim,
+    AssociationResolution,
+    AssociationResolutionsByClaim,
+    BlockedResolution,
     ClaimKey,
-    ConflictEntityResolution,
+    ConflictResolution,
+    CreateInstruction,
+    EntityApplyInstruction,
+    EntityInstructionsByClaim,
     EntityResolution,
-    InstructionsByClaim,
+    EntityResolutionsByClaim,
     KeysByClaim,
+    LinkApplyInstruction,
+    LinkConflictResolution,
+    LinkCreateInstruction,
+    LinkInstructionsByClaim,
+    LinkManualReviewInstruction,
+    LinkNoopInstruction,
+    LinkResolution,
+    LinkResolutionsByClaim,
+    LinkResolvedResolution,
+    ManualReviewInstruction,
+    ManualReviewItem,
+    ManualReviewSubject,
     MatchKind,
-    NewEntityResolution,
+    MergeInstruction,
+    NewResolution,
+    NoopInstruction,
     Representative,
     RepresentativesByClaim,
-    ResolutionsByClaim,
     ResolutionStatus,
-    ResolvedEntityResolution,
+    ResolvedResolution,
 )
 from .graph import ClaimGraph
 
 __all__ = [
-    "AmbiguousEntityResolution",
-    "ApplyInstruction",
+    "AmbiguousResolution",
+    "AnyRelationshipClaim",
     "ApplyStrategy",
-    "CatalogEntity",
+    "AssociationApplyInstruction",
+    "AssociationClaim",
+    "AssociationInstructionsByClaim",
+    "AssociationKind",
+    "AssociationResolution",
+    "AssociationResolutionsByClaim",
+    "BlockedResolution",
     "ClaimEvidence",
     "ClaimGraph",
     "ClaimKey",
     "ClaimMetadata",
-    "ConflictEntityResolution",
+    "ConflictResolution",
+    "CreateInstruction",
+    "EntityApplyInstruction",
     "EntityClaim",
+    "EntityInstructionsByClaim",
     "EntityResolution",
-    "InstructionsByClaim",
+    "EntityResolutionsByClaim",
     "KeysByClaim",
+    "LinkApplyInstruction",
+    "LinkClaim",
+    "LinkConflictResolution",
+    "LinkCreateInstruction",
+    "LinkInstructionsByClaim",
+    "LinkKind",
+    "LinkManualReviewInstruction",
+    "LinkNoopInstruction",
+    "LinkResolution",
+    "LinkResolutionsByClaim",
+    "LinkResolvedResolution",
+    "ManualReviewInstruction",
+    "ManualReviewItem",
+    "ManualReviewSubject",
     "MatchKind",
-    "NewEntityResolution",
-    "RelationshipClaim",
+    "MergeInstruction",
+    "NewResolution",
+    "NoopInstruction",
     "RelationshipKind",
     "Representative",
     "RepresentativesByClaim",
     "ResolutionStatus",
-    "ResolutionsByClaim",
-    "ResolvedEntityResolution",
+    "ResolvedResolution",
     "UserEntity",
 ]

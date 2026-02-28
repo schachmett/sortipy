@@ -3,20 +3,40 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sortipy.domain.model import Artist, Provider
-from sortipy.domain.reconciliation import ClaimGraph, ClaimMetadata, EntityClaim
+from sortipy.domain.model import Artist, Label, Provider, ReleaseSet
+from sortipy.domain.reconciliation import (
+    AssociationClaim,
+    AssociationKind,
+    ClaimGraph,
+    ClaimMetadata,
+    EntityClaim,
+    LinkClaim,
+    LinkKind,
+)
 from sortipy.domain.reconciliation.contracts import (
-    AmbiguousEntityResolution,
-    ApplyStrategy,
-    ConflictEntityResolution,
+    AmbiguousResolution,
+    BlockedResolution,
+    ConflictResolution,
+    CreateInstruction,
+    LinkCreateInstruction,
+    LinkManualReviewInstruction,
+    LinkNoopInstruction,
+    LinkResolvedResolution,
+    ManualReviewInstruction,
     MatchKind,
-    NewEntityResolution,
-    ResolvedEntityResolution,
+    MergeInstruction,
+    NewResolution,
+    NoopInstruction,
+    ResolvedResolution,
 )
 from sortipy.domain.reconciliation.policy import decide_apply_instructions
 
 if TYPE_CHECKING:
-    from sortipy.domain.reconciliation.contracts import ResolutionsByClaim
+    from sortipy.domain.reconciliation.contracts import (
+        AssociationResolutionsByClaim,
+        EntityResolutionsByClaim,
+        LinkResolutionsByClaim,
+    )
 
 
 def test_decide_apply_instructions_maps_resolution_statuses_to_strategies() -> None:
@@ -44,29 +64,40 @@ def test_decide_apply_instructions_maps_resolution_statuses_to_strategies() -> N
     graph.add(conflict_claim)
 
     target = Artist(name="Canonical Artist")
-    resolutions: ResolutionsByClaim = {
-        new_claim.claim_id: NewEntityResolution(reason="no_exact_match"),
-        resolved_claim.claim_id: ResolvedEntityResolution(
+    entity_resolutions: EntityResolutionsByClaim = {
+        new_claim.claim_id: NewResolution(reason="no_exact_match"),
+        resolved_claim.claim_id: ResolvedResolution(
             target=target,
             match_kind=MatchKind.EXACT,
             reason="exact_match",
         ),
-        ambiguous_claim.claim_id: AmbiguousEntityResolution(
+        ambiguous_claim.claim_id: AmbiguousResolution(
             candidates=(Artist(name="A"), Artist(name="B")),
             reason="multiple_exact_matches",
         ),
-        conflict_claim.claim_id: ConflictEntityResolution(
+        conflict_claim.claim_id: ConflictResolution(
             candidates=(Artist(name="X"), Artist(name="Y")),
             reason="candidate_type_mismatch",
         ),
     }
 
-    instructions = decide_apply_instructions(resolutions, graph=graph)
+    entity_instructions, association_instructions, link_instructions = decide_apply_instructions(
+        entity_resolutions,
+        association_resolutions_by_claim={},
+        link_resolutions_by_claim={},
+        graph=graph,
+    )
 
-    assert instructions[new_claim.claim_id].strategy is ApplyStrategy.CREATE
-    assert instructions[resolved_claim.claim_id].strategy is ApplyStrategy.MERGE
-    assert instructions[ambiguous_claim.claim_id].strategy is ApplyStrategy.MANUAL_REVIEW
-    assert instructions[conflict_claim.claim_id].strategy is ApplyStrategy.MANUAL_REVIEW
+    assert isinstance(entity_instructions[new_claim.claim_id], CreateInstruction)
+    assert isinstance(entity_instructions[resolved_claim.claim_id], MergeInstruction)
+    ambiguous_instruction = entity_instructions[ambiguous_claim.claim_id]
+    assert isinstance(ambiguous_instruction, ManualReviewInstruction)
+    assert len(ambiguous_instruction.candidate_entity_ids) == 2
+    conflict_instruction = entity_instructions[conflict_claim.claim_id]
+    assert isinstance(conflict_instruction, ManualReviewInstruction)
+    assert len(conflict_instruction.candidate_entity_ids) == 2
+    assert association_instructions == {}
+    assert link_instructions == {}
 
 
 def test_decide_apply_instructions_coalesces_resolved_claims_with_same_target() -> None:
@@ -84,22 +115,28 @@ def test_decide_apply_instructions_coalesces_resolved_claims_with_same_target() 
     graph.add(high_confidence_claim)
 
     target = Artist(name="Canonical Target")
-    resolutions: ResolutionsByClaim = {
-        low_confidence_claim.claim_id: ResolvedEntityResolution(
+    entity_resolutions: EntityResolutionsByClaim = {
+        low_confidence_claim.claim_id: ResolvedResolution(
             target=target,
             match_kind=MatchKind.EXACT,
         ),
-        high_confidence_claim.claim_id: ResolvedEntityResolution(
+        high_confidence_claim.claim_id: ResolvedResolution(
             target=target,
             match_kind=MatchKind.EXACT,
         ),
     }
 
-    instructions = decide_apply_instructions(resolutions, graph=graph)
+    entity_instructions, _association_instructions, _link_instructions = decide_apply_instructions(
+        entity_resolutions,
+        association_resolutions_by_claim={},
+        link_resolutions_by_claim={},
+        graph=graph,
+    )
 
-    assert instructions[high_confidence_claim.claim_id].strategy is ApplyStrategy.MERGE
-    assert instructions[low_confidence_claim.claim_id].strategy is ApplyStrategy.NOOP
-    assert instructions[low_confidence_claim.claim_id].target == target
+    assert isinstance(entity_instructions[high_confidence_claim.claim_id], MergeInstruction)
+    low_instruction = entity_instructions[low_confidence_claim.claim_id]
+    assert isinstance(low_instruction, NoopInstruction)
+    assert low_instruction.target == target
 
 
 def test_decide_apply_instructions_tie_breaks_on_claim_id() -> None:
@@ -119,18 +156,141 @@ def test_decide_apply_instructions_tie_breaks_on_claim_id() -> None:
     graph.add(second_claim)
 
     target = Artist(name="Canonical")
-    resolutions: ResolutionsByClaim = {
-        first_claim.claim_id: ResolvedEntityResolution(
+    entity_resolutions: EntityResolutionsByClaim = {
+        first_claim.claim_id: ResolvedResolution(
             target=target,
             match_kind=MatchKind.EXACT,
         ),
-        second_claim.claim_id: ResolvedEntityResolution(
+        second_claim.claim_id: ResolvedResolution(
             target=target,
             match_kind=MatchKind.EXACT,
         ),
     }
 
-    instructions = decide_apply_instructions(resolutions, graph=graph)
+    entity_instructions, _association_instructions, _link_instructions = decide_apply_instructions(
+        entity_resolutions,
+        association_resolutions_by_claim={},
+        link_resolutions_by_claim={},
+        graph=graph,
+    )
 
-    assert instructions[first_claim.claim_id].strategy is ApplyStrategy.MERGE
-    assert instructions[second_claim.claim_id].strategy is ApplyStrategy.NOOP
+    assert isinstance(entity_instructions[first_claim.claim_id], MergeInstruction)
+    assert isinstance(entity_instructions[second_claim.claim_id], NoopInstruction)
+
+
+def test_decide_apply_instructions_maps_association_and_link_resolutions() -> None:
+    source_claim = EntityClaim(
+        entity=ReleaseSet(title="Source"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    target_artist_claim = EntityClaim(
+        entity=Artist(name="Target"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    target_label_claim = EntityClaim(
+        entity=Label(name="Label"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    association_claim = AssociationClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_artist_claim.claim_id,
+        kind=AssociationKind.RELEASE_SET_CONTRIBUTION,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    link_claim = LinkClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_label_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(source_claim)
+    graph.add(target_artist_claim)
+    graph.add(target_label_claim)
+    graph.add_relationship(association_claim)
+    graph.add_relationship(link_claim)
+
+    association_resolutions: AssociationResolutionsByClaim = {
+        association_claim.claim_id: NewResolution(),
+    }
+    link_resolutions: LinkResolutionsByClaim = {
+        link_claim.claim_id: BlockedResolution(
+            blocked_by_claim_ids=(source_claim.claim_id,),
+        ),
+    }
+
+    _entity_instructions, association_instructions, link_instructions = decide_apply_instructions(
+        entity_resolutions_by_claim={},
+        association_resolutions_by_claim=association_resolutions,
+        link_resolutions_by_claim=link_resolutions,
+        graph=graph,
+    )
+
+    assert isinstance(association_instructions[association_claim.claim_id], CreateInstruction)
+    assert isinstance(link_instructions[link_claim.claim_id], LinkManualReviewInstruction)
+
+
+def test_decide_apply_instructions_maps_resolved_link_to_noop() -> None:
+    source_release_set = ReleaseSet(title="Source")
+    source_release = source_release_set.create_release(title="Source")
+    target_label = Label(name="Target")
+
+    source_claim = EntityClaim(
+        entity=source_release,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    target_claim = EntityClaim(
+        entity=target_label,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    link_claim = LinkClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(source_claim)
+    graph.add(target_claim)
+    graph.add_relationship(link_claim)
+
+    _entity_instructions, _association_instructions, link_instructions = decide_apply_instructions(
+        entity_resolutions_by_claim={},
+        association_resolutions_by_claim={},
+        link_resolutions_by_claim={link_claim.claim_id: LinkResolvedResolution()},
+        graph=graph,
+    )
+    assert isinstance(link_instructions[link_claim.claim_id], LinkNoopInstruction)
+
+
+def test_decide_apply_instructions_maps_new_link_to_create() -> None:
+    source_claim = EntityClaim(
+        entity=ReleaseSet(title="Source"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    target_claim = EntityClaim(
+        entity=Label(name="Target"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    link_claim = LinkClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(source_claim)
+    graph.add(target_claim)
+    graph.add_relationship(link_claim)
+
+    _entity_instructions, _association_instructions, link_instructions = decide_apply_instructions(
+        entity_resolutions_by_claim={},
+        association_resolutions_by_claim={},
+        link_resolutions_by_claim={link_claim.claim_id: NewResolution()},
+        graph=graph,
+    )
+    assert isinstance(link_instructions[link_claim.claim_id], LinkCreateInstruction)

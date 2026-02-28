@@ -5,19 +5,37 @@ from uuid import UUID
 
 import pytest
 
-from sortipy.domain.model import Artist, Provider, User
-from sortipy.domain.reconciliation import ClaimGraph, ClaimMetadata, EntityClaim
-from sortipy.domain.reconciliation.apply import apply_resolution_plan
+from sortipy.domain.model import Artist, Label, Provider, Recording, ReleaseSet, User
+from sortipy.domain.reconciliation import (
+    AssociationClaim,
+    AssociationKind,
+    ClaimGraph,
+    ClaimMetadata,
+    EntityClaim,
+    LinkClaim,
+    LinkKind,
+)
+from sortipy.domain.reconciliation.apply import apply_reconciliation_instructions
 from sortipy.domain.reconciliation.contracts import (
-    ApplyInstruction,
-    ApplyStrategy,
+    CreateInstruction,
+    LinkCreateInstruction,
+    LinkManualReviewInstruction,
+    LinkNoopInstruction,
+    ManualReviewInstruction,
+    ManualReviewSubject,
+    MergeInstruction,
+    NoopInstruction,
 )
 
 if TYPE_CHECKING:
-    from sortipy.domain.reconciliation.contracts import InstructionsByClaim
+    from sortipy.domain.reconciliation.contracts import (
+        AssociationInstructionsByClaim,
+        EntityInstructionsByClaim,
+        LinkInstructionsByClaim,
+    )
 
 
-def test_apply_resolution_plan_counts_instruction_outcomes() -> None:
+def test_apply_reconciliation_instructions_counts_instruction_outcomes() -> None:
     create_claim = EntityClaim(
         entity=Artist(name="Create Artist"),
         metadata=ClaimMetadata(source=Provider.SPOTIFY),
@@ -36,22 +54,29 @@ def test_apply_resolution_plan_counts_instruction_outcomes() -> None:
     graph.add(noop_claim)
     graph.add(review_claim)
 
-    instructions: InstructionsByClaim = {
-        create_claim.claim_id: ApplyInstruction(strategy=ApplyStrategy.CREATE),
-        noop_claim.claim_id: ApplyInstruction(strategy=ApplyStrategy.NOOP),
-        review_claim.claim_id: ApplyInstruction(strategy=ApplyStrategy.MANUAL_REVIEW),
+    entity_instructions: EntityInstructionsByClaim = {
+        create_claim.claim_id: CreateInstruction(),
+        noop_claim.claim_id: NoopInstruction(),
+        review_claim.claim_id: ManualReviewInstruction(),
     }
 
-    result = apply_resolution_plan(graph, instructions_by_claim=instructions)
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim=entity_instructions,
+        association_instructions_by_claim={},
+        link_instructions_by_claim={},
+    )
 
-    assert result.applied == 3
-    assert result.created == 1
-    assert result.merged == 0
-    assert result.skipped == 1
-    assert result.manual_review == 1
+    assert result.entities.applied == 3
+    assert result.entities.merged == 0
+    assert result.entities.created == 1
+    assert result.entities.skipped == 1
+    assert result.entities.manual_review == 1
+    assert len(result.manual_review_items) == 1
+    assert result.manual_review_items[0].subject is ManualReviewSubject.ENTITY
 
 
-def test_apply_resolution_plan_points_merged_claim_to_canonical_target() -> None:
+def test_apply_reconciliation_instructions_merges_entity_fields_into_target() -> None:
     incoming = Artist(name="Incoming")
     canonical = Artist(name="Canonical")
     claim = EntityClaim(
@@ -61,21 +86,23 @@ def test_apply_resolution_plan_points_merged_claim_to_canonical_target() -> None
     graph = ClaimGraph()
     graph.add(claim)
 
-    instructions: InstructionsByClaim = {
-        claim.claim_id: ApplyInstruction(
-            strategy=ApplyStrategy.MERGE,
-            target=canonical,
-        )
+    entity_instructions: EntityInstructionsByClaim = {
+        claim.claim_id: MergeInstruction(target=canonical)
     }
 
-    result = apply_resolution_plan(graph, instructions_by_claim=instructions)
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim=entity_instructions,
+        association_instructions_by_claim={},
+        link_instructions_by_claim={},
+    )
 
-    assert incoming.canonical_id == canonical.resolved_id
-    assert result.applied == 1
-    assert result.merged == 1
+    assert canonical.name == "Incoming"
+    assert result.entities.applied == 1
+    assert result.entities.merged == 1
 
 
-def test_apply_resolution_plan_rejects_merge_without_target() -> None:
+def test_apply_reconciliation_instructions_rejects_merge_without_target() -> None:
     claim = EntityClaim(
         entity=Artist(name="Incoming"),
         metadata=ClaimMetadata(source=Provider.LASTFM),
@@ -83,38 +110,188 @@ def test_apply_resolution_plan_rejects_merge_without_target() -> None:
     graph = ClaimGraph()
     graph.add(claim)
 
-    instructions: InstructionsByClaim = {
-        claim.claim_id: ApplyInstruction(strategy=ApplyStrategy.MERGE)
-    }
-
-    with pytest.raises(ValueError, match="missing target"):
-        apply_resolution_plan(graph, instructions_by_claim=instructions)
+    with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
+        _ = MergeInstruction()  # type: ignore[call-arg]
 
 
-def test_apply_resolution_plan_rejects_merge_for_non_canonicalizable_entities() -> None:
+def test_apply_reconciliation_instructions_merges_user_fields_into_target() -> None:
     claim = EntityClaim(
-        entity=User(display_name="Listener"),
+        entity=User(display_name="Listener", email="listener@example.com"),
         metadata=ClaimMetadata(source=Provider.SPOTIFY),
     )
     graph = ClaimGraph()
     graph.add(claim)
 
-    instructions: InstructionsByClaim = {
-        claim.claim_id: ApplyInstruction(
-            strategy=ApplyStrategy.MERGE,
-            target=User(display_name="Canonical Listener"),
-        )
+    canonical = User(display_name="Old", email=None)
+    entity_instructions: EntityInstructionsByClaim = {
+        claim.claim_id: MergeInstruction(target=canonical)
     }
 
-    with pytest.raises(TypeError, match="does not support canonical merge"):
-        apply_resolution_plan(graph, instructions_by_claim=instructions)
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim=entity_instructions,
+        association_instructions_by_claim={},
+        link_instructions_by_claim={},
+    )
+    assert canonical.display_name == "Listener"
+    assert canonical.email == "listener@example.com"
+    assert result.entities.merged == 1
 
 
-def test_apply_resolution_plan_rejects_unknown_claim_instruction() -> None:
+def test_apply_reconciliation_instructions_rejects_unknown_claim_instruction() -> None:
     graph = ClaimGraph()
-    instructions: InstructionsByClaim = {
-        UUID("00000000-0000-0000-0000-000000000123"): ApplyInstruction(strategy=ApplyStrategy.NOOP)
+    entity_instructions: EntityInstructionsByClaim = {
+        UUID("00000000-0000-0000-0000-000000000123"): NoopInstruction()
     }
 
-    with pytest.raises(ValueError, match="unknown claim"):
-        apply_resolution_plan(graph, instructions_by_claim=instructions)
+    with pytest.raises(ValueError, match="Unknown claim"):
+        apply_reconciliation_instructions(
+            graph,
+            entity_instructions_by_claim=entity_instructions,
+            association_instructions_by_claim={},
+            link_instructions_by_claim={},
+        )
+
+
+def test_apply_reconciliation_instructions_creates_release_label_link() -> None:
+    release_set = ReleaseSet(title="Kid A")
+    release = release_set.create_release(title="Kid A")
+    label = Label(name="Parlophone")
+    release_claim = EntityClaim(entity=release, metadata=ClaimMetadata(source=Provider.SPOTIFY))
+    label_claim = EntityClaim(entity=label, metadata=ClaimMetadata(source=Provider.SPOTIFY))
+    link_claim = LinkClaim(
+        source_claim_id=release_claim.claim_id,
+        target_claim_id=label_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(release_claim)
+    graph.add(label_claim)
+    graph.add_relationship(link_claim)
+
+    entity_instructions: EntityInstructionsByClaim = {
+        release_claim.claim_id: CreateInstruction(),
+        label_claim.claim_id: CreateInstruction(),
+    }
+    link_instructions: LinkInstructionsByClaim = {link_claim.claim_id: LinkCreateInstruction()}
+
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim=entity_instructions,
+        association_instructions_by_claim={},
+        link_instructions_by_claim=link_instructions,
+    )
+
+    assert label in release.labels
+    assert result.links.applied == 1
+    assert result.links.created == 1
+
+
+def test_apply_reconciliation_instructions_counts_link_noop_and_manual_review() -> None:
+    release_set = ReleaseSet(title="Source")
+    source_release = release_set.create_release(title="Source")
+    label = Label(name="Target")
+
+    source_claim = EntityClaim(
+        entity=source_release,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    target_claim = EntityClaim(
+        entity=label,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    noop_link = LinkClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    review_link = LinkClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(source_claim)
+    graph.add(target_claim)
+    graph.add_relationship(noop_link)
+    graph.add_relationship(review_link)
+
+    link_instructions: LinkInstructionsByClaim = {
+        noop_link.claim_id: LinkNoopInstruction(),
+        review_link.claim_id: LinkManualReviewInstruction(),
+    }
+
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim={},
+        association_instructions_by_claim={},
+        link_instructions_by_claim=link_instructions,
+    )
+
+    assert result.links.applied == 2
+    assert result.links.skipped == 1
+    assert result.links.manual_review == 1
+    assert len(result.manual_review_items) == 1
+    assert result.manual_review_items[0].subject is ManualReviewSubject.LINK
+
+
+def test_apply_reconciliation_instructions_merges_association_payload() -> None:
+    release_set = ReleaseSet(title="Kid A")
+    release = release_set.create_release(title="Kid A")
+    recording = Recording(title="Everything in Its Right Place")
+    existing_track = release.add_track(
+        recording,
+        disc_number=1,
+        track_number=1,
+    )
+    incoming_release = release_set.create_release(title="Incoming")
+    incoming_recording = Recording(title="Incoming Recording")
+    incoming_payload = incoming_release.add_track(
+        incoming_recording,
+        disc_number=2,
+        track_number=7,
+        title_override="Incoming Title",
+    )
+
+    release_claim = EntityClaim(
+        entity=release,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    recording_claim = EntityClaim(
+        entity=recording,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    association_claim = AssociationClaim(
+        source_claim_id=release_claim.claim_id,
+        target_claim_id=recording_claim.claim_id,
+        kind=AssociationKind.RELEASE_TRACK,
+        payload=incoming_payload,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+
+    graph = ClaimGraph()
+    graph.add(release_claim)
+    graph.add(recording_claim)
+    graph.add_relationship(association_claim)
+
+    association_instructions: AssociationInstructionsByClaim = {
+        association_claim.claim_id: MergeInstruction(target=existing_track)
+    }
+
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim={},
+        association_instructions_by_claim=association_instructions,
+        link_instructions_by_claim={},
+    )
+
+    assert existing_track.disc_number == 2
+    assert existing_track.track_number == 7
+    assert existing_track.title_override == "Incoming Title"
+    assert result.associations.applied == 1
+    assert result.associations.merged == 1

@@ -13,7 +13,7 @@ from sortipy.domain.model import (
     User,
 )
 from sortipy.domain.reconciliation import ClaimEvidence, ClaimGraph, ClaimMetadata, EntityClaim
-from sortipy.domain.reconciliation.claims import RelationshipClaim, RelationshipKind
+from sortipy.domain.reconciliation.claims import AssociationClaim, AssociationKind
 from sortipy.domain.reconciliation.normalize import (
     normalize_claim_graph,
     normalized_relationship_key,
@@ -154,10 +154,10 @@ def test_relationship_key_normalizes_contribution_payload() -> None:
         metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
     )
 
-    relationship_claim = RelationshipClaim(
+    relationship_claim = AssociationClaim(
         source_claim_id=source_claim.claim_id,
         target_claim_id=target_claim.claim_id,
-        kind=RelationshipKind.RECORDING_CONTRIBUTION,
+        kind=AssociationKind.RECORDING_CONTRIBUTION,
         metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
         payload=contribution,
     )
@@ -165,7 +165,7 @@ def test_relationship_key_normalizes_contribution_payload() -> None:
     key = normalized_relationship_key(relationship_claim)
 
     assert key[0] == "relationship"
-    assert key[1] == RelationshipKind.RECORDING_CONTRIBUTION
+    assert key[1] == AssociationKind.RECORDING_CONTRIBUTION
     assert key[2] == source_claim.claim_id
     assert key[3] == target_claim.claim_id
     assert key[4:] == (ArtistRole.FEATURED, 2, "liz fraser", "feat")

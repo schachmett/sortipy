@@ -23,7 +23,7 @@ from .normalize import normalized_relationship_key
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from .claims import EntityClaim, RelationshipClaim
+    from .claims import AnyRelationshipClaim, EntityClaim
     from .contracts import ClaimKey, KeysByClaim, RepresentativesByClaim
 
 
@@ -112,9 +112,8 @@ def _deduplicated_graph(
         representative_id = (
             representative.claim_id if representative is not None else root_claim.claim_id
         )
-        representative_claim = deduplicated_graph.claim_for(representative_id)
-        if representative_claim is not None:
-            deduplicated_graph.add_root(representative_claim)
+        representative_claim = deduplicated_graph.require_claim(representative_id)
+        deduplicated_graph.add_root(representative_claim)
 
     _deduplicate_relationship_claims(
         graph,
@@ -191,10 +190,10 @@ def _deduplicate_relationship_claims(
 
 
 def _rewire_relationship(
-    relationship: RelationshipClaim,
+    relationship: AnyRelationshipClaim,
     *,
     representative_by_claim: dict[UUID, Representative],
-) -> RelationshipClaim:
+) -> AnyRelationshipClaim:
     source_representative = representative_by_claim.get(relationship.source_claim_id)
     target_representative = representative_by_claim.get(relationship.target_claim_id)
     source_claim_id = (

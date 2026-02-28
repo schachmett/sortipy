@@ -2,9 +2,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sortipy.domain.model import Artist, ExternalNamespace, Provider, Recording
-from sortipy.domain.reconciliation import ClaimGraph, ClaimMetadata, EntityClaim
-from sortipy.domain.reconciliation.contracts import MatchKind, ResolutionStatus
+from sortipy.domain.model import Artist, ExternalNamespace, Label, Provider, Recording, ReleaseSet
+from sortipy.domain.reconciliation import (
+    AssociationClaim,
+    AssociationKind,
+    ClaimGraph,
+    ClaimMetadata,
+    EntityClaim,
+    LinkClaim,
+    LinkKind,
+)
+from sortipy.domain.reconciliation.contracts import (
+    LinkResolvedResolution,
+    MatchKind,
+    ResolutionStatus,
+)
 from sortipy.domain.reconciliation.resolve import resolve_claim_graph
 
 if TYPE_CHECKING:
@@ -20,12 +32,21 @@ def test_resolve_claim_graph_marks_new_when_no_exact_candidates() -> None:
     graph.add(claim)
 
     keys_by_claim: KeysByClaim = {claim.claim_id: (("artist:name", "air"),)}
-    resolutions_by_claim = resolve_claim_graph(graph, keys_by_claim=keys_by_claim)
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
+        graph,
+        keys_by_claim=keys_by_claim,
+    )
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
 
     assert resolution is not None
     assert resolution.status is ResolutionStatus.NEW
     assert resolution.reason == "no_exact_match"
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
 
 
 def test_resolve_claim_graph_marks_resolved_for_single_candidate() -> None:
@@ -37,21 +58,27 @@ def test_resolve_claim_graph_marks_resolved_for_single_candidate() -> None:
     graph.add(claim)
 
     candidate = Artist(name="Massive Attack")
-    resolutions_by_claim = resolve_claim_graph(
+    keys_by_claim: KeysByClaim = {claim.claim_id: (("artist:name", "massive attack"),)}
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
         graph,
-        keys_by_claim={},
-        find_exact_candidates=lambda _claim, _keys: (
-            (candidate,),
-            ("artist:name", "massive attack"),
+        keys_by_claim=keys_by_claim,
+        find_by_normalized_key=lambda _claim, key: (
+            (candidate,) if key[1] == "massive attack" else ()
         ),
     )
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
 
     assert resolution is not None
     assert resolution.status is ResolutionStatus.RESOLVED
     assert resolution.target == candidate
     assert resolution.match_kind is MatchKind.EXACT
     assert resolution.reason == "exact_match"
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
 
 
 def test_resolve_claim_graph_marks_ambiguous_for_multiple_candidates() -> None:
@@ -64,22 +91,28 @@ def test_resolve_claim_graph_marks_ambiguous_for_multiple_candidates() -> None:
 
     candidate_a = Artist(name="Burial")
     candidate_b = Artist(name="Burial")
+    keys_by_claim: KeysByClaim = {claim.claim_id: (("artist:name", "burial"),)}
 
-    resolutions_by_claim = resolve_claim_graph(
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
         graph,
-        keys_by_claim={},
-        find_exact_candidates=lambda _claim, _keys: (
-            (candidate_a, candidate_b),
-            ("artist:name", "burial"),
+        keys_by_claim=keys_by_claim,
+        find_by_normalized_key=lambda _claim, key: (
+            (candidate_a, candidate_b) if key[1] == "burial" else ()
         ),
     )
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
 
     assert resolution is not None
     assert resolution.status is ResolutionStatus.AMBIGUOUS
     assert resolution.candidates == (candidate_a, candidate_b)
     assert resolution.match_kind is MatchKind.EXACT
     assert resolution.reason == "multiple_exact_matches"
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
 
 
 def test_resolve_claim_graph_marks_conflict_for_mismatched_candidate_type() -> None:
@@ -91,20 +124,26 @@ def test_resolve_claim_graph_marks_conflict_for_mismatched_candidate_type() -> N
     graph.add(claim)
 
     mismatched_candidate = Recording(title="Portishead")
-    resolutions_by_claim = resolve_claim_graph(
+    keys_by_claim: KeysByClaim = {claim.claim_id: (("artist:name", "portishead"),)}
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
         graph,
-        keys_by_claim={},
-        find_exact_candidates=lambda _claim, _keys: (
-            (mismatched_candidate,),
-            ("artist:name", "portishead"),
+        keys_by_claim=keys_by_claim,
+        find_by_normalized_key=lambda _claim, key: (
+            (mismatched_candidate,) if key[1] == "portishead" else ()
         ),
     )
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
 
     assert resolution is not None
     assert resolution.status is ResolutionStatus.CONFLICT
     assert resolution.match_kind is MatchKind.EXACT
     assert resolution.reason == "candidate_type_mismatch"
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
 
 
 def test_resolve_claim_graph_forwards_normalization_keys_to_finder() -> None:
@@ -115,26 +154,30 @@ def test_resolve_claim_graph_forwards_normalization_keys_to_finder() -> None:
     graph = ClaimGraph()
     graph.add(claim)
 
-    observed: dict[str, tuple[object, ...]] = {}
+    observed_keys: list[tuple[object, ...]] = []
     keys = (("artist:name", "skee mask"), ("artist:source-name", Provider.SPOTIFY, "skee mask"))
 
-    def _finder(
-        _claim: EntityClaim, lookup_keys: tuple[tuple[object, ...], ...]
-    ) -> tuple[tuple[Artist, ...], tuple[object, ...] | None]:
-        observed["keys"] = lookup_keys
-        return (), None
+    def _by_normalized_key(_claim: EntityClaim, key: tuple[object, ...]) -> tuple[Artist, ...]:
+        observed_keys.append(key)
+        return ()
 
     keys_by_claim: KeysByClaim = {claim.claim_id: keys}
-    resolutions_by_claim = resolve_claim_graph(
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
         graph,
         keys_by_claim=keys_by_claim,
-        find_exact_candidates=_finder,
+        find_by_normalized_key=_by_normalized_key,
     )
 
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
     assert resolution is not None
     assert resolution.status is ResolutionStatus.NEW
-    assert observed["keys"] == keys
+    assert observed_keys == list(keys)
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
 
 
 def test_resolve_claim_graph_prefers_external_id_lookup_over_keys() -> None:
@@ -166,13 +209,17 @@ def test_resolve_claim_graph_prefers_external_id_lookup_over_keys() -> None:
             ("artist:source-name", Provider.SPOTIFY, "boards of canada"),
         )
     }
-    resolutions_by_claim = resolve_claim_graph(
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
         graph,
         keys_by_claim=keys_by_claim,
         find_by_external_id=_by_external_id,
         find_by_normalized_key=_by_normalized_key,
     )
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
 
     assert resolution is not None
     assert resolution.status is ResolutionStatus.RESOLVED
@@ -183,52 +230,140 @@ def test_resolve_claim_graph_prefers_external_id_lookup_over_keys() -> None:
         "69158f97-a5af-4f2b-9f0f-7dcf6e3a1905",
     )
     assert key_calls == []
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
 
 
-def test_resolve_claim_graph_falls_back_to_key_lookup_when_external_misses() -> None:
-    artist = Artist(name="Autechre")
-    artist.add_external_id(
-        ExternalNamespace.MUSICBRAINZ_ARTIST,
-        "9b4c6f95-a4f6-4e44-87b2-f845247e7a63",
+def test_resolve_claim_graph_marks_association_new_when_not_found() -> None:
+    release_set_claim = EntityClaim(
+        entity=ReleaseSet(title="Source"),
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
     )
-    claim = EntityClaim(
+    artist_claim = EntityClaim(
+        entity=Artist(name="Target"),
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    association_claim = AssociationClaim(
+        source_claim_id=release_set_claim.claim_id,
+        target_claim_id=artist_claim.claim_id,
+        kind=AssociationKind.RELEASE_SET_CONTRIBUTION,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+
+    graph = ClaimGraph()
+    graph.add(release_set_claim)
+    graph.add(artist_claim)
+    graph.add_relationship(association_claim)
+
+    _, association_resolutions_by_claim, _ = resolve_claim_graph(graph, keys_by_claim={})
+    association_resolution = association_resolutions_by_claim.get(association_claim.claim_id)
+
+    assert association_resolution is not None
+    assert association_resolution.status is ResolutionStatus.NEW
+
+
+def test_resolve_claim_graph_marks_association_resolved_when_existing_payload_found() -> None:
+    release_set = ReleaseSet(title="Source")
+    artist = Artist(name="Target")
+    contribution = release_set.add_artist(artist)
+
+    release_set_claim = EntityClaim(
+        entity=release_set,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    artist_claim = EntityClaim(
         entity=artist,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    association_claim = AssociationClaim(
+        source_claim_id=release_set_claim.claim_id,
+        target_claim_id=artist_claim.claim_id,
+        kind=AssociationKind.RELEASE_SET_CONTRIBUTION,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+        payload=contribution,
+    )
+
+    graph = ClaimGraph()
+    graph.add(release_set_claim)
+    graph.add(artist_claim)
+    graph.add_relationship(association_claim)
+
+    _, association_resolutions_by_claim, _ = resolve_claim_graph(graph, keys_by_claim={})
+    association_resolution = association_resolutions_by_claim.get(association_claim.claim_id)
+
+    assert association_resolution is not None
+    assert association_resolution.status is ResolutionStatus.RESOLVED
+    assert association_resolution.target is contribution
+
+
+def test_resolve_claim_graph_marks_association_blocked_for_ambiguous_endpoint() -> None:
+    source_claim = EntityClaim(
+        entity=ReleaseSet(title="Source"),
         metadata=ClaimMetadata(source=Provider.SPOTIFY),
     )
+    target_claim = EntityClaim(
+        entity=Artist(name="Target"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    association_claim = AssociationClaim(
+        source_claim_id=source_claim.claim_id,
+        target_claim_id=target_claim.claim_id,
+        kind=AssociationKind.RELEASE_SET_CONTRIBUTION,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
     graph = ClaimGraph()
-    graph.add(claim)
+    graph.add(source_claim)
+    graph.add(target_claim)
+    graph.add_relationship(association_claim)
 
-    candidate = Artist(name="Autechre")
-    observed_keys: list[tuple[object, ...]] = []
-
-    def _by_external_id(_claim: EntityClaim, _namespace: object, _value: str) -> tuple[Artist, ...]:
-        return ()
-
-    def _by_normalized_key(_claim: EntityClaim, key: tuple[object, ...]) -> tuple[Artist, ...]:
-        observed_keys.append(key)
-        if key == ("artist:name", "autechre"):
-            return (candidate,)
+    def _by_normalized_key(_claim: EntityClaim, key: tuple[object, ...]) -> tuple[ReleaseSet, ...]:
+        if key == ("release_set:artist-title", None, "source"):
+            return (ReleaseSet(title="A"), ReleaseSet(title="B"))
         return ()
 
     keys_by_claim: KeysByClaim = {
-        claim.claim_id: (
-            ("artist:name", "autechre"),
-            ("artist:source-name", Provider.SPOTIFY, "autechre"),
-        )
+        source_claim.claim_id: (("release_set:artist-title", None, "source"),),
     }
-    resolutions_by_claim = resolve_claim_graph(
+    _, association_resolutions_by_claim, _ = resolve_claim_graph(
         graph,
         keys_by_claim=keys_by_claim,
-        find_by_external_id=_by_external_id,
         find_by_normalized_key=_by_normalized_key,
     )
-    resolution = resolutions_by_claim.get(claim.claim_id)
+    association_resolution = association_resolutions_by_claim.get(association_claim.claim_id)
 
-    assert resolution is not None
-    assert resolution.status is ResolutionStatus.RESOLVED
-    assert resolution.target == candidate
-    assert resolution.matched_key == ("artist:name", "autechre")
-    assert observed_keys == [
-        ("artist:name", "autechre"),
-        ("artist:source-name", Provider.SPOTIFY, "autechre"),
-    ]
+    assert association_resolution is not None
+    assert association_resolution.status is ResolutionStatus.BLOCKED
+    assert association_resolution.blocked_by_claim_ids == (source_claim.claim_id,)
+
+
+def test_resolve_claim_graph_marks_link_resolved_without_target_payload() -> None:
+    release_set = ReleaseSet(title="Mezzanine")
+    release = release_set.create_release(title="Mezzanine")
+    label = Label(name="Virgin")
+    release.add_label(label)
+
+    release_claim = EntityClaim(
+        entity=release,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    label_claim = EntityClaim(
+        entity=label,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    link_claim = LinkClaim(
+        source_claim_id=release_claim.claim_id,
+        target_claim_id=label_claim.claim_id,
+        kind=LinkKind.RELEASE_LABEL,
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+
+    graph = ClaimGraph()
+    graph.add(release_claim)
+    graph.add(label_claim)
+    graph.add_relationship(link_claim)
+
+    _, _, link_resolutions_by_claim = resolve_claim_graph(graph, keys_by_claim={})
+    link_resolution = link_resolutions_by_claim.get(link_claim.claim_id)
+
+    assert isinstance(link_resolution, LinkResolvedResolution)
