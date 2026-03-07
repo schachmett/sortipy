@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from sortipy.domain.model import Artist, ExternalNamespace, Label, Provider, Recording, ReleaseSet
+from sortipy.domain.model import (
+    Artist,
+    ExternalNamespace,
+    Label,
+    Provider,
+    Recording,
+    ReleaseSet,
+    User,
+)
 from sortipy.domain.reconciliation import (
     AssociationClaim,
     AssociationKind,
@@ -21,6 +29,7 @@ from sortipy.domain.reconciliation.resolve import resolve_claim_graph
 
 if TYPE_CHECKING:
     from sortipy.domain.reconciliation.contracts import KeysByClaim
+    from sortipy.domain.reconciliation.resolve import ResolveRepositories
 
 
 def test_resolve_claim_graph_marks_new_when_no_exact_candidates() -> None:
@@ -230,6 +239,124 @@ def test_resolve_claim_graph_prefers_external_id_lookup_over_keys() -> None:
         "69158f97-a5af-4f2b-9f0f-7dcf6e3a1905",
     )
     assert key_calls == []
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
+
+
+def test_resolve_claim_graph_uses_repository_backed_lookup_when_provided() -> None:
+    claim = EntityClaim(
+        entity=Artist(name="Autechre"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    candidate = Artist(name="Autechre")
+    key = ("artist:name", "autechre")
+    keys_by_claim: KeysByClaim = {claim.claim_id: (key,)}
+
+    class _ArtistRepository:
+        def get_by_external_id(self, _namespace: object, _value: str) -> Artist | None:
+            return None
+
+    class _NullRepository:
+        def get_by_external_id(self, _namespace: object, _value: str) -> object | None:
+            return None
+
+    class _NormalizationSidecars:
+        def save(self, _entity: object, _data: object) -> None:
+            return None
+
+        def find_by_keys(
+            self,
+            _entity_type: object,
+            keys: tuple[tuple[object, ...], ...],
+        ) -> dict[tuple[object, ...], object]:
+            if key in keys:
+                return {key: candidate}
+            return {}
+
+    class _Repositories:
+        def __init__(self) -> None:
+            self.artists = _ArtistRepository()
+            self.labels = _NullRepository()
+            self.release_sets = _NullRepository()
+            self.releases = _NullRepository()
+            self.recordings = _NullRepository()
+            self.normalization_sidecars = _NormalizationSidecars()
+
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
+        graph,
+        keys_by_claim=keys_by_claim,
+        repositories=cast("ResolveRepositories", _Repositories()),
+    )
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
+
+    assert resolution is not None
+    assert resolution.status is ResolutionStatus.RESOLVED
+    assert resolution.target == candidate
+    assert resolution.matched_key == key
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
+
+
+def test_resolve_claim_graph_uses_sidecar_lookup_for_user_claim() -> None:
+    claim = EntityClaim(
+        entity=User(display_name="alice", email="alice@example.com"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    candidate = User(display_name="Alice", email="alice@example.com")
+    key = ("user:email", "alice@example.com")
+    keys_by_claim: KeysByClaim = {claim.claim_id: (key,)}
+
+    class _NullRepository:
+        def get_by_external_id(self, _namespace: object, _value: str) -> object | None:
+            return None
+
+    class _NormalizationSidecars:
+        def save(self, _entity: object, _data: object) -> None:
+            return None
+
+        def find_by_keys(
+            self,
+            _entity_type: object,
+            keys: tuple[tuple[object, ...], ...],
+        ) -> dict[tuple[object, ...], object]:
+            if key in keys:
+                return {key: candidate}
+            return {}
+
+    class _Repositories:
+        def __init__(self) -> None:
+            self.artists = _NullRepository()
+            self.labels = _NullRepository()
+            self.release_sets = _NullRepository()
+            self.releases = _NullRepository()
+            self.recordings = _NullRepository()
+            self.normalization_sidecars = _NormalizationSidecars()
+
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
+        graph,
+        keys_by_claim=keys_by_claim,
+        repositories=cast("ResolveRepositories", _Repositories()),
+    )
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
+
+    assert resolution is not None
+    assert resolution.status is ResolutionStatus.RESOLVED
+    assert resolution.target == candidate
+    assert resolution.matched_key == key
     assert association_resolutions_by_claim == {}
     assert link_resolutions_by_claim == {}
 

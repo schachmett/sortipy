@@ -93,6 +93,10 @@ class FakeLibraryItemRepository:
     def add(self, entity: LibraryItem) -> None:
         self.items.append(entity)
 
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[LibraryItem, ...]:
+        _ = key
+        return ()
+
 
 class _NullCanonicalRepository[TCanonical]:
     def add(self, entity: TCanonical) -> None:

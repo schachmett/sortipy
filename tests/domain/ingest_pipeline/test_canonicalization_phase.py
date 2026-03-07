@@ -59,6 +59,10 @@ class _FakePlayEventRepository(PlayEventRepository):
     def latest_timestamp(self) -> datetime | None:
         return None
 
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[PlayEvent, ...]:
+        _ = key
+        return ()
+
 
 class _FakeCanonicalRepository[TEntity]:
     def __init__(self) -> None:

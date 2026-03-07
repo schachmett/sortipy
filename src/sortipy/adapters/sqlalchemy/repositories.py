@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
-from sortipy.domain.ingest_pipeline import NormalizationSidecarRepository
 from sortipy.domain.model import (
     Artist,
     IdentifiedEntity,
@@ -19,6 +18,7 @@ from sortipy.domain.model import (
     ReleaseSet,
     User,
 )
+from sortipy.domain.ports.persistence import NormalizationSidecarRepository
 
 from .mappings import (
     CLASS_BY_ENTITY_TYPE,
@@ -33,12 +33,12 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
-    from sortipy.domain.ingest_pipeline import NormalizationData
     from sortipy.domain.model import (
         EntityType,
         LibraryItem,
         Namespace,
     )
+    from sortipy.domain.ports.persistence import PriorityKeysData
 
 
 class MissingParentError(Exception): ...
@@ -115,26 +115,6 @@ class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
         if not isinstance(entity_id, uuid.UUID):
             return None
         return self.session.get(self._entity_cls, entity_id)
-
-    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[TEntity, ...]:
-        key_str = _serialize_normalized_key(key)
-        stmt = (
-            select(normalization_sidecar_table.c.entity_id)
-            .where(normalization_sidecar_table.c.entity_type == self._entity_type)
-            .where(normalization_sidecar_table.c.key == key_str)
-        )
-        entities: list[TEntity] = []
-        seen_resolved_ids: set[uuid.UUID] = set()
-        entity_ids = self.session.execute(stmt).scalars().all()
-        for entity_id in entity_ids:
-            entity = self.session.get(self._entity_cls, entity_id)
-            if entity is None:
-                continue
-            if entity.resolved_id in seen_resolved_ids:
-                continue
-            seen_resolved_ids.add(entity.resolved_id)
-            entities.append(entity)
-        return tuple(entities)
 
 
 class SqlAlchemyArtistRepository(SqlAlchemyCanonicalRepository[Artist]):
@@ -214,7 +194,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def save(self, entity: IdentifiedEntity, data: NormalizationData[IdentifiedEntity]) -> None:
+    def save(self, entity: IdentifiedEntity, data: PriorityKeysData) -> None:
         if not data.priority_keys:
             return
         for key in data.priority_keys:
@@ -271,6 +251,7 @@ class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
 if TYPE_CHECKING:
     from sortipy.domain.ports import (
         ArtistRepository,
+        LabelRepository,
         LibraryItemRepository,
         PlayEventRepository,
         RecordingRepository,
@@ -282,6 +263,7 @@ if TYPE_CHECKING:
     _session_stub = cast("Session", object())
     _repo_check: PlayEventRepository = SqlAlchemyPlayEventRepository(_session_stub)
     _artist_repo: ArtistRepository = SqlAlchemyArtistRepository(_session_stub)
+    _label_repo: LabelRepository = SqlAlchemyLabelRepository(_session_stub)
     _release_set_repo: ReleaseSetRepository = SqlAlchemyReleaseSetRepository(_session_stub)
     _release_repo: ReleaseRepository = SqlAlchemyReleaseRepository(_session_stub)
     _recording_repo: RecordingRepository = SqlAlchemyRecordingRepository(_session_stub)

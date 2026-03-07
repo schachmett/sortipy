@@ -29,6 +29,7 @@ from sortipy.domain.model import (
     ReleaseTrack,
     User,
 )
+from sortipy.domain.ports.unit_of_work import RepositoryCollection
 
 from .claims import (
     AssociationClaim,
@@ -50,7 +51,15 @@ from .contracts import (
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from sortipy.domain.model import Namespace
+    from sortipy.domain.model import IdentifiedEntity, Namespace
+    from sortipy.domain.ports.persistence import (
+        ArtistRepository,
+        LabelRepository,
+        NormalizationSidecarRepository,
+        RecordingRepository,
+        ReleaseRepository,
+        ReleaseSetRepository,
+    )
 
     from .claims import AssociationEntity, EntityClaim, LinkClaim, RelationshipClaimEntity
     from .contracts import (
@@ -74,11 +83,34 @@ class ResolveClaimGraph(Protocol):
         graph: ClaimGraph,
         *,
         keys_by_claim: KeysByClaim,
+        repositories: ResolveRepositories | None = None,
     ) -> tuple[EntityResolutionsByClaim, AssociationResolutionsByClaim, LinkResolutionsByClaim]: ...
 
 
 type FindByExternalId = Callable[[EntityClaim, Namespace, str], tuple[ClaimEntity, ...]]
 type FindByNormalizedKey = Callable[[EntityClaim, ClaimKey], tuple[ClaimEntity, ...]]
+
+
+class ResolveRepositories(RepositoryCollection, Protocol):
+    """Repositories required for canonical entity lookups in resolve stage."""
+
+    @property
+    def artists(self) -> ArtistRepository: ...
+
+    @property
+    def labels(self) -> LabelRepository: ...
+
+    @property
+    def release_sets(self) -> ReleaseSetRepository: ...
+
+    @property
+    def releases(self) -> ReleaseRepository: ...
+
+    @property
+    def recordings(self) -> RecordingRepository: ...
+
+    @property
+    def normalization_sidecars(self) -> NormalizationSidecarRepository: ...
 
 
 class ResolveError(Exception):
@@ -148,8 +180,21 @@ def resolve_claim_graph(
     keys_by_claim: KeysByClaim,
     find_by_external_id: FindByExternalId | None = None,
     find_by_normalized_key: FindByNormalizedKey | None = None,
+    repositories: ResolveRepositories | None = None,
 ) -> tuple[EntityResolutionsByClaim, AssociationResolutionsByClaim, LinkResolutionsByClaim]:
     """Resolve entities and relationship claims against canonical state."""
+
+    if repositories is not None:
+        find_by_external_id = (
+            find_by_external_id
+            if find_by_external_id is not None
+            else _find_by_external_id_from_repositories(repositories)
+        )
+        find_by_normalized_key = (
+            find_by_normalized_key
+            if find_by_normalized_key is not None
+            else _find_by_normalized_key_from_repositories(repositories)
+        )
 
     entity_resolutions_by_claim: EntityResolutionsByClaim = {}
     for claim in graph.claims:
@@ -189,6 +234,90 @@ def resolve_claim_graph(
         association_resolutions_by_claim,
         link_resolutions_by_claim,
     )
+
+
+def _find_by_external_id_from_repositories(
+    repositories: ResolveRepositories,
+) -> FindByExternalId:
+    def _find_by_external_id(
+        claim: EntityClaim,
+        namespace: Namespace,
+        value: str,
+    ) -> tuple[ClaimEntity, ...]:
+        repository = _external_id_repository_for_claim(claim, repositories=repositories)
+        if repository is None:
+            return ()
+        candidate = repository.get_by_external_id(namespace, value)
+        if candidate is None:
+            return ()
+        return (candidate,)
+
+    return _find_by_external_id
+
+
+def _find_by_normalized_key_from_repositories(
+    repositories: ResolveRepositories,
+) -> FindByNormalizedKey:
+    def _find_by_normalized_key(claim: EntityClaim, key: ClaimKey) -> tuple[ClaimEntity, ...]:
+        found = repositories.normalization_sidecars.find_by_keys(
+            claim.entity_type,
+            (tuple(key),),
+        )
+        candidate = found.get(tuple(key))
+        if candidate is None:
+            return ()
+        typed = _as_claim_entity(candidate)
+        if typed is None or typed.entity_type is not claim.entity_type:
+            return ()
+        return (typed,)
+
+    return _find_by_normalized_key
+
+
+type ExternalIdResolveRepository = (
+    ArtistRepository
+    | LabelRepository
+    | ReleaseSetRepository
+    | ReleaseRepository
+    | RecordingRepository
+)
+
+
+def _external_id_repository_for_claim(
+    claim: EntityClaim,
+    *,
+    repositories: ResolveRepositories,
+) -> ExternalIdResolveRepository | None:
+    match claim.entity:
+        case Artist():
+            return repositories.artists
+        case Label():
+            return repositories.labels
+        case ReleaseSet():
+            return repositories.release_sets
+        case Release():
+            return repositories.releases
+        case Recording():
+            return repositories.recordings
+        case _:
+            return None
+
+
+def _as_claim_entity(entity: IdentifiedEntity) -> ClaimEntity | None:
+    match entity:
+        case (
+            Artist()
+            | Label()
+            | ReleaseSet()
+            | Release()
+            | Recording()
+            | User()
+            | LibraryItem()
+            | PlayEvent()
+        ):
+            return entity
+        case _:
+            return None
 
 
 def _resolution_for_claim(
@@ -269,6 +398,7 @@ def _association_candidates_for_kind(
     *,
     relationship_claim_id: UUID,
 ) -> tuple[AssociationEntity, ...]:
+    _ = relationship_claim_id
     match association_kind:
         case AssociationKind.RELEASE_TRACK:
             release, recording, _track = _validate_association_types(
@@ -305,8 +435,6 @@ def _association_candidates_for_kind(
         case _:
             raise RelationshipTypeError(
                 "unsupported_association_kind",
-                relationship_claim_id=relationship_claim_id,
-                relationship_kind=association_kind,
                 endpoint="kind",
                 actual=association_kind.value,
             )
@@ -408,6 +536,7 @@ def _check_link_existence(
     *,
     relationship_claim_id: UUID,
 ) -> bool:
+    _ = relationship_claim_id
     match link_kind:
         case LinkKind.RELEASE_LABEL:
             release, label = _validate_link_types(types=(Release, Label), entities=(source, target))
@@ -430,8 +559,6 @@ def _check_link_existence(
         case _:
             raise RelationshipTypeError(
                 "unsupported_link_kind",
-                relationship_claim_id=relationship_claim_id,
-                relationship_kind=link_kind,
                 endpoint="kind",
                 actual=link_kind.value,
             )

@@ -129,6 +129,10 @@ class FakePlayEventRepository:
             return None
         return max(item.played_at for item in self.items)
 
+    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[PlayEvent, ...]:
+        _ = key
+        return ()
+
 
 if TYPE_CHECKING:
     from sortipy.domain.ports.persistence import PlayEventRepository

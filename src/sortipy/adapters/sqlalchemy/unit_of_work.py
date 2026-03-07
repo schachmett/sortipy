@@ -17,6 +17,7 @@ from .migrations import upgrade_head
 from .repositories import (
     MissingParentError,
     SqlAlchemyArtistRepository,
+    SqlAlchemyLabelRepository,
     SqlAlchemyLibraryItemRepository,
     SqlAlchemyNormalizationSidecarRepository,
     SqlAlchemyPlayEventRepository,
@@ -105,6 +106,7 @@ class SqlAlchemyRepositories(RepositoryCollection):
     library_items: SqlAlchemyLibraryItemRepository
     users: SqlAlchemyUserRepository
     artists: SqlAlchemyArtistRepository
+    labels: SqlAlchemyLabelRepository
     release_sets: SqlAlchemyReleaseSetRepository
     releases: SqlAlchemyReleaseRepository
     recordings: SqlAlchemyRecordingRepository
@@ -123,6 +125,7 @@ class SqlAlchemyUnitOfWork(BaseSqlAlchemyUnitOfWork[SqlAlchemyRepositories]):
             library_items=SqlAlchemyLibraryItemRepository(session),
             users=SqlAlchemyUserRepository(session),
             artists=SqlAlchemyArtistRepository(session),
+            labels=SqlAlchemyLabelRepository(session),
             release_sets=SqlAlchemyReleaseSetRepository(session),
             releases=SqlAlchemyReleaseRepository(session),
             recordings=SqlAlchemyRecordingRepository(session),

@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sortipy.domain.model import (
+        EntityType,
+        IdentifiedEntity,
         Namespace,
     )
 
@@ -30,6 +32,26 @@ class Repository[TEntity](Protocol):
     """Minimal repository contract for a persistent aggregate store."""
 
     def add(self, entity: TEntity) -> None: ...
+
+
+@runtime_checkable
+class PriorityKeysData(Protocol):
+    """Minimal normalized-key payload required by sidecar persistence."""
+
+    priority_keys: tuple[tuple[object, ...], ...]
+
+
+@runtime_checkable
+class NormalizationSidecarRepository(Protocol):
+    """Repository contract for normalized-key sidecar persistence and lookup."""
+
+    def save(self, entity: IdentifiedEntity, data: PriorityKeysData) -> None: ...
+
+    def find_by_keys(
+        self,
+        entity_type: EntityType,
+        keys: tuple[tuple[object, ...], ...],
+    ) -> dict[tuple[object, ...], IdentifiedEntity]: ...
 
 
 @runtime_checkable
@@ -48,8 +70,6 @@ class CanonicalEntityRepository[TCanonical: ExternallyIdentifiable](
     """Repository contract for canonical catalog aggregates."""
 
     def get_by_external_id(self, namespace: Namespace, value: str) -> TCanonical | None: ...
-
-    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[TCanonical, ...]: ...
 
 
 @runtime_checkable

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sortipy.domain.model import Artist, Provider
 from sortipy.domain.reconciliation import ClaimGraph, ClaimMetadata, EntityClaim
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
         LinkResolutionsByClaim,
         RepresentativesByClaim,
     )
+    from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
+    from sortipy.domain.reconciliation.resolve import ResolveRepositories
 
 
 def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
@@ -38,7 +40,14 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
         )
     )
 
-    observed: dict[str, ClaimGraph] = {}
+    observed: dict[str, object] = {}
+    fake_repositories = cast("ResolveRepositories", object())
+
+    class _FakeUow:
+        def __init__(self) -> None:
+            self.repositories = fake_repositories
+
+    fake_uow = cast("ReconciliationUnitOfWork", _FakeUow())
 
     class _Normalizer:
         def __call__(self, graph: ClaimGraph) -> KeysByClaim:
@@ -59,12 +68,14 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
             graph: ClaimGraph,
             *,
             keys_by_claim: KeysByClaim,
+            repositories: ResolveRepositories | None = None,
         ) -> tuple[
             EntityResolutionsByClaim,
             AssociationResolutionsByClaim,
             LinkResolutionsByClaim,
         ]:
             observed["resolver"] = graph
+            observed["resolve_repositories"] = repositories
             return {}, {}, {}
 
     class _Policy:
@@ -109,11 +120,17 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
         def __call__(
             self,
             *,
+            graph: ClaimGraph,
+            keys_by_claim: KeysByClaim,
             entity_instructions_by_claim: EntityInstructionsByClaim,
             association_instructions_by_claim: AssociationInstructionsByClaim,
             link_instructions_by_claim: LinkInstructionsByClaim,
             apply_result: ApplyResult,
+            uow: ReconciliationUnitOfWork,
         ) -> PersistenceResult:
+            observed["persister"] = graph
+            observed["persist_keys"] = keys_by_claim
+            observed["persist_uow"] = uow
             _ = (
                 entity_instructions_by_claim,
                 association_instructions_by_claim,
@@ -130,8 +147,12 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
         apply=_Applier(),
         persist=_Persister(),
     )
-    engine.reconcile(original_graph)
+    engine.reconcile(original_graph, uow=fake_uow)
 
     assert observed["resolver"] is deduplicated_graph
+    assert observed["resolve_repositories"] is fake_repositories
     assert observed["policy"] is deduplicated_graph
     assert observed["applier"] is deduplicated_graph
+    assert observed["persister"] is deduplicated_graph
+    assert observed["persist_keys"] == {claim.claim_id: () for claim in original_graph.claims}
+    assert observed["persist_uow"] is fake_uow

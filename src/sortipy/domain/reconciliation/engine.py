@@ -15,7 +15,11 @@ if TYPE_CHECKING:
     from .deduplicate import DeduplicateClaimGraph
     from .graph import ClaimGraph
     from .normalize import NormalizeClaimGraph
-    from .persist import PersistenceResult, PersistReconciliation
+    from .persist import (
+        PersistenceResult,
+        PersistReconciliation,
+        ReconciliationUnitOfWork,
+    )
     from .policy import DecideApplyInstructions
     from .resolve import ResolveClaimGraph
 
@@ -31,7 +35,12 @@ class ReconciliationEngine:
     apply: ApplyReconciliationInstructions
     persist: PersistReconciliation
 
-    def reconcile(self, graph: ClaimGraph) -> tuple[ApplyResult, PersistenceResult]:
+    def reconcile(
+        self,
+        graph: ClaimGraph,
+        *,
+        uow: ReconciliationUnitOfWork,
+    ) -> tuple[ApplyResult, PersistenceResult]:
         """Run all reconciliation stages for ``graph``."""
 
         keys_by_claim = self.normalize(graph)
@@ -46,6 +55,7 @@ class ReconciliationEngine:
         ) = self.resolve(
             deduplicated_graph,
             keys_by_claim=keys_by_claim,
+            repositories=uow.repositories,
         )
         (
             entity_instructions_by_claim,
@@ -64,9 +74,12 @@ class ReconciliationEngine:
             link_instructions_by_claim=link_instructions_by_claim,
         )
         persistence_result = self.persist(
+            graph=deduplicated_graph,
+            keys_by_claim=keys_by_claim,
             entity_instructions_by_claim=entity_instructions_by_claim,
             association_instructions_by_claim=association_instructions_by_claim,
             link_instructions_by_claim=link_instructions_by_claim,
             apply_result=apply_result,
+            uow=uow,
         )
         return apply_result, persistence_result
