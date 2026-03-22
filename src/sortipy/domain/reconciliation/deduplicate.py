@@ -5,8 +5,7 @@ Responsibilities of this stage:
 - emit mapping from dropped claim IDs to surviving representative IDs
 - avoid persistence/database lookups
 
-This is analogous to current ``ingest_pipeline.deduplication`` but should
-operate on claim nodes and normalization results.
+This stage operates directly on claim nodes and normalized keys.
 """
 
 from __future__ import annotations

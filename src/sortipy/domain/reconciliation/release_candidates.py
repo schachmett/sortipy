@@ -1,12 +1,11 @@
-"""Resolve release candidates for enrichment."""
+"""Resolve MusicBrainz release candidates for reconciliation workflows."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
 from sortipy.domain.model import Artist, ExternalNamespace, Recording, Release, ReleaseSet
-
-from .dto import ReleaseCandidate
+from sortipy.domain.ports.enrichment import ReleaseCandidate
 
 if TYPE_CHECKING:
     from sortipy.domain.model import Mbid
@@ -34,13 +33,7 @@ def resolve_release_candidate(
     fetch_candidates_from_artist: ReleaseCandidatesFromArtist,
     policy: ReleaseSelectionPolicy | None = None,
 ) -> ReleaseCandidate | None:
-    """Resolve a release candidate for enrichment.
-
-    Strategy:
-    1) Prefer a release already linked in the domain graph (and uniquely identified).
-    2) Otherwise fetch candidates via adapter (recording → release_set → artist).
-    3) Select candidate using policy (or default heuristic).
-    """
+    """Resolve a release candidate for reconciliation."""
 
     existing = _existing_release_candidates(entity)
     if existing:

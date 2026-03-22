@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, Self, cast
 
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
+    Label,
     Provider,
     Recording,
     Release,
@@ -18,15 +19,18 @@ from sortipy.domain.model import (
 from sortipy.domain.ports.fetching import PlayEventFetcher, PlayEventFetchResult
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
+    from uuid import UUID
 
-    from sortipy.domain.ingest_pipeline.context import NormalizationData
     from sortipy.domain.model import (
         EntityType,
         IdentifiedEntity,
+        LibraryItem,
         Namespace,
         PlayEvent,
     )
+    from sortipy.domain.ports.persistence import PriorityKeysData
+    from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
 
 
 def make_play_event(
@@ -161,7 +165,7 @@ class _NullSidecarRepository:
     def save(
         self,
         entity: IdentifiedEntity,
-        data: NormalizationData[IdentifiedEntity],
+        data: PriorityKeysData,
     ) -> None:  # pragma: no cover - trivial
         _ = (entity, data)
 
@@ -174,13 +178,40 @@ class _NullSidecarRepository:
         return {}
 
 
+class _NullUserRepository:
+    def add(self, entity: User) -> None:
+        _ = entity
+
+    def get(self, user_id: UUID) -> User | None:
+        _ = user_id
+        return None
+
+
+class _NullLibraryItemRepository:
+    def add(self, entity: LibraryItem) -> None:
+        _ = entity
+
+    def exists(
+        self,
+        *,
+        user_id: object,
+        target_type: EntityType,
+        target_id: object,
+    ) -> bool:
+        _ = (user_id, target_type, target_id)
+        return False
+
+
 @dataclass(slots=True)
 class _FakePlayEventRepositories:
     play_events: FakePlayEventRepository
     artists: _NullCanonicalRepository[Artist]
+    labels: _NullCanonicalRepository[Label]
     release_sets: _NullCanonicalRepository[ReleaseSet]
     releases: _NullCanonicalRepository[Release]
     recordings: _NullCanonicalRepository[Recording]
+    users: _NullUserRepository
+    library_items: _NullLibraryItemRepository
     normalization_sidecars: _NullSidecarRepository
 
 
@@ -191,9 +222,12 @@ class FakeIngestUnitOfWork:
         self.repositories = _FakePlayEventRepositories(
             play_events=repository,
             artists=_NullCanonicalRepository[Artist](),
+            labels=_NullCanonicalRepository[Label](),
             release_sets=_NullCanonicalRepository[ReleaseSet](),
             releases=_NullCanonicalRepository[Release](),
             recordings=_NullCanonicalRepository[Recording](),
+            users=_NullUserRepository(),
+            library_items=_NullLibraryItemRepository(),
             normalization_sidecars=_NullSidecarRepository(),
         )
         self.committed = False
@@ -219,7 +253,19 @@ class FakeIngestUnitOfWork:
         self.rollback_called = True
 
 
-if TYPE_CHECKING:
-    from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
+def make_reconciliation_uow_factory(
+    repository_or_uow: FakePlayEventRepository | FakeIngestUnitOfWork,
+) -> Callable[[], ReconciliationUnitOfWork]:
+    def factory() -> ReconciliationUnitOfWork:
+        uow = (
+            repository_or_uow
+            if isinstance(repository_or_uow, FakeIngestUnitOfWork)
+            else FakeIngestUnitOfWork(repository_or_uow)
+        )
+        return cast("ReconciliationUnitOfWork", uow)
 
-    _uow_check: PlayEventSyncUnitOfWork = FakeIngestUnitOfWork(_check_repo)
+    return factory
+
+
+if TYPE_CHECKING:
+    _uow_check = cast("ReconciliationUnitOfWork", FakeIngestUnitOfWork(_check_repo))

@@ -7,7 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session  # noqa: TC002
 
-from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyPlayEventRepository
+from sortipy.adapters.sqlalchemy.repositories import (
+    SqlAlchemyLibraryItemRepository,
+    SqlAlchemyPlayEventRepository,
+)
+from sortipy.domain.model import Artist, User
 from tests.helpers.play_events import make_play_event
 
 
@@ -44,3 +48,29 @@ def test_play_event_repository_exists_returns_false_for_missing_rows(
     missing = make_play_event("Missing", timestamp=timestamp)
     missing._user.id = uuid.uuid4()
     assert repository.exists(missing) is False
+
+
+def test_library_item_repository_exists_checks_user_target_identity(
+    sqlite_session: Session,
+) -> None:
+    repository = SqlAlchemyLibraryItemRepository(sqlite_session)
+    user = User(display_name="Listener")
+    artist = Artist(name="Burial")
+    item = user.save_entity(artist)
+
+    sqlite_session.add_all([user, artist])
+    sqlite_session.commit()
+
+    repository.add(item)
+    sqlite_session.commit()
+
+    assert repository.exists(
+        user_id=user.id,
+        target_type=item.target_type,
+        target_id=item.target_id,
+    )
+    assert not repository.exists(
+        user_id=user.id,
+        target_type=item.target_type,
+        target_id=uuid.uuid4(),
+    )

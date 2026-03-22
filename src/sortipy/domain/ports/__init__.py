@@ -2,24 +2,12 @@
 
 from __future__ import annotations
 
-from sortipy.domain.entity_updates import (
-    ArtistUpdate,
-    ContributionUpdate,
-    EnrichmentMetadata,
-    ExternalIdUpdate,
-    LabelUpdate,
-    RecordingUpdate,
-    ReleaseCandidate,
-    ReleaseSetUpdate,
-    ReleaseTrackUpdate,
-    ReleaseUpdate,
-)
-
 from .enrichment import (
+    ReleaseCandidate,
     ReleaseCandidatesFromArtist,
     ReleaseCandidatesFromRecording,
     ReleaseCandidatesFromReleaseSet,
-    ReleaseUpdateFetcher,
+    ReleaseGraphFetcher,
 )
 from .fetching import (
     LibraryItemFetcher,
@@ -49,14 +37,9 @@ from .unit_of_work import (
 
 __all__ = [
     "ArtistRepository",
-    "ArtistUpdate",
     "CanonicalEntityRepository",
     "CatalogRepositories",
-    "ContributionUpdate",
-    "EnrichmentMetadata",
-    "ExternalIdUpdate",
     "LabelRepository",
-    "LabelUpdate",
     "LibraryItemFetchResult",
     "LibraryItemFetcher",
     "LibraryItemRepository",
@@ -66,17 +49,13 @@ __all__ = [
     "PlayEventRepository",
     "PriorityKeysData",
     "RecordingRepository",
-    "RecordingUpdate",
     "ReleaseCandidate",
     "ReleaseCandidatesFromArtist",
     "ReleaseCandidatesFromRecording",
     "ReleaseCandidatesFromReleaseSet",
+    "ReleaseGraphFetcher",
     "ReleaseRepository",
     "ReleaseSetRepository",
-    "ReleaseSetUpdate",
-    "ReleaseTrackUpdate",
-    "ReleaseUpdate",
-    "ReleaseUpdateFetcher",
     "Repository",
     "RepositoryCollection",
     "UnitOfWork",

@@ -141,6 +141,7 @@ def persist_reconciliation(
 
     persisted_entities = 0
     persisted_sidecars = 0
+    sidecar_targets: list[tuple[IdentifiedEntity, tuple[ClaimKey, ...]]] = []
 
     for claim_id in _sorted_entity_claim_ids(
         graph,
@@ -160,7 +161,9 @@ def persist_reconciliation(
         claim_keys = keys_by_claim.get(claim_id, ())
         if sidecar_target is None or not claim_keys:
             continue
+        sidecar_targets.append((sidecar_target, claim_keys))
 
+    for sidecar_target, claim_keys in sidecar_targets:
         normalized_keys = _normalization_keys(claim_keys)
         existing_before = uow.repositories.normalization_sidecars.find_by_keys(
             sidecar_target.entity_type,

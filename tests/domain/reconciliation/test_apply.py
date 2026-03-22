@@ -5,7 +5,17 @@ from uuid import UUID
 
 import pytest
 
-from sortipy.domain.model import Artist, Label, Provider, Recording, ReleaseSet, User
+from sortipy.domain.model import (
+    Artist,
+    ArtistRole,
+    Label,
+    Provider,
+    Recording,
+    RecordingContribution,
+    ReleaseSet,
+    ReleaseTrack,
+    User,
+)
 from sortipy.domain.reconciliation import (
     AssociationClaim,
     AssociationKind,
@@ -295,3 +305,69 @@ def test_apply_reconciliation_instructions_merges_association_payload() -> None:
     assert existing_track.title_override == "Incoming Title"
     assert result.associations.applied == 1
     assert result.associations.merged == 1
+
+
+def test_apply_reconciliation_instructions_exposes_materialized_objects_by_claim() -> None:
+    release_set = ReleaseSet(title="Kid A")
+    release = release_set.create_release(title="Kid A")
+    recording = Recording(title="Everything in Its Right Place")
+    artist = Artist(name="Radiohead")
+    incoming_track = release.add_track(recording, track_number=1)
+    incoming_contribution = recording.add_artist(artist, role=ArtistRole.PRIMARY)
+
+    release_claim = EntityClaim(
+        entity=release,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    recording_claim = EntityClaim(
+        entity=recording,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    artist_claim = EntityClaim(
+        entity=artist,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    track_claim = AssociationClaim(
+        source_claim_id=release_claim.claim_id,
+        target_claim_id=recording_claim.claim_id,
+        kind=AssociationKind.RELEASE_TRACK,
+        payload=incoming_track,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    contribution_claim = AssociationClaim(
+        source_claim_id=recording_claim.claim_id,
+        target_claim_id=artist_claim.claim_id,
+        kind=AssociationKind.RECORDING_CONTRIBUTION,
+        payload=incoming_contribution,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+
+    graph = ClaimGraph()
+    graph.add(release_claim)
+    graph.add(recording_claim)
+    graph.add(artist_claim)
+    graph.add_relationship(track_claim)
+    graph.add_relationship(contribution_claim)
+
+    result = apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim={
+            release_claim.claim_id: CreateInstruction(),
+            recording_claim.claim_id: CreateInstruction(),
+            artist_claim.claim_id: CreateInstruction(),
+        },
+        association_instructions_by_claim={
+            track_claim.claim_id: CreateInstruction(),
+            contribution_claim.claim_id: CreateInstruction(),
+        },
+        link_instructions_by_claim={},
+    )
+
+    assert result.entities_by_claim[release_claim.claim_id] is release
+    assert result.entities_by_claim[recording_claim.claim_id] is recording
+    materialized_track = result.associations_by_claim[track_claim.claim_id]
+    materialized_contribution = result.associations_by_claim[contribution_claim.claim_id]
+    assert isinstance(materialized_track, ReleaseTrack)
+    assert isinstance(materialized_contribution, RecordingContribution)
+    assert materialized_track.recording is recording
+    assert materialized_contribution.artist is artist

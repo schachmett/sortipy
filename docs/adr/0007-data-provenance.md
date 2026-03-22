@@ -6,6 +6,15 @@
 ## Context
 Ingested data comes from multiple providers and layers (primary user data, reference catalogues, tertiary enrichments). To debug, re-run ingests, and guarantee idempotency we need to persist raw payloads and checkpoints independently of the canonical domain tables. This provenance layer must be shared across ingestion jobs so that reconciliation and auditing are consistent.
 
+## Implementation Status
+
+As of March 7, 2026, this ADR is still target architecture rather than implemented behavior.
+
+- Reconciliation is the live ingestion path.
+- Alembic migration support exists for canonical schema changes.
+- Dedicated provenance tables such as `SourceIngest` and `RawPayload` are not implemented yet.
+- Current workflows derive idempotency from provider-specific fetch bounds, repository existence checks, and normalization sidecars rather than a shared provenance store.
+
 ## Decision
 Introduce a dedicated provenance schema consisting of:
 

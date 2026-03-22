@@ -30,6 +30,19 @@ def test_user_remove_library_item_requires_ownership() -> None:
         user_b.remove_library_item(item)
 
 
+def test_user_retarget_library_item_updates_hydrated_target_identity() -> None:
+    user = User(display_name="Default")
+    original = Artist(name="Radiohead")
+    canonical = Artist(name="Radiohead")
+    item = user.save_entity(original, source=Provider.SPOTIFY)
+
+    user.retarget_library_item(item, canonical)
+
+    assert item.target is canonical
+    assert item.target_type == canonical.entity_type
+    assert item.target_id == canonical.resolved_id
+
+
 def test_user_log_play_attaches_event_to_user_and_recording() -> None:
     user = User(display_name="Default")
     recording = Recording(title="Airbag")
@@ -97,6 +110,28 @@ def test_user_link_play_to_track_moves_from_recording_ref_to_track() -> None:
     user.link_play_to_track(event, track)
     assert event.track is track
     assert event.recording_ref is None
+
+
+def test_user_rebind_play_event_swaps_between_recording_and_track() -> None:
+    user = User(display_name="Default")
+    release_set = ReleaseSet(title="OK Computer")
+    release = Release(title="OK Computer", _release_set=release_set)
+    original = Recording(title="Original")
+    canonical = Recording(title="Canonical")
+    canonical_track = release.add_track(canonical, track_number=1)
+    event = user.log_play(
+        played_at=datetime(2024, 1, 1, tzinfo=UTC),
+        source=Provider.LASTFM,
+        recording=original,
+    )
+
+    user.rebind_play_event(event, recording=canonical)
+    assert event.track is None
+    assert event.recording is canonical
+
+    user.rebind_play_event(event, recording=canonical, track=canonical_track)
+    assert event.track is canonical_track
+    assert event.recording is canonical
 
 
 def test_user_link_play_to_track_rejects_wrong_recording() -> None:

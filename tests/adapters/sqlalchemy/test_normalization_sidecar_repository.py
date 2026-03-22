@@ -7,12 +7,11 @@ from sqlalchemy.orm import Session  # noqa: TC002
 
 from sortipy.adapters.sqlalchemy.mappings import normalization_sidecar_table
 from sortipy.adapters.sqlalchemy.repositories import SqlAlchemyNormalizationSidecarRepository
-from sortipy.domain.ingest_pipeline.context import NormalizationData
 from sortipy.domain.model import Artist, EntityType
 
 
 @dataclass(slots=True)
-class _Data(NormalizationData[Artist]):
+class _Data:
     priority_keys: tuple[tuple[object, ...], ...]
 
 

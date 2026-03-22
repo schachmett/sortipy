@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.musicbrainz.translator import translate_release
-from sortipy.domain.model import ArtistRole, ExternalNamespace
+from sortipy.domain.model import ArtistRole, ExternalNamespace, Release
 
 if TYPE_CHECKING:
     from sortipy.adapters.musicbrainz.schema import MBArtistCredit, MBRelease
@@ -13,19 +13,20 @@ if TYPE_CHECKING:
 
 def test_translate_release_roles(releases: list[MBRelease]) -> None:
     for release in releases:
-        update = translate_release(release)
+        translated = translate_release(release)
         mbid = next(
             ext.value
-            for ext in update.external_ids
+            for ext in translated.external_ids
             if ext.namespace == ExternalNamespace.MUSICBRAINZ_RELEASE
         )
         assert mbid == release.id
+        assert isinstance(translated, Release)
+        assert translated.release_set is not None
 
         if release.release_group is None or not release.release_group.artist_credit:
             continue
 
-        release_set = update.release_set
-        assert release_set is not None
+        release_set = translated.release_set
         assert len(release_set.contributions) == len(release.release_group.artist_credit)
 
         expected_roles = _expected_roles(release.release_group.artist_credit)
@@ -37,6 +38,24 @@ def test_translate_release_roles(releases: list[MBRelease]) -> None:
                 assert credit.credited_as == original.name
             else:
                 assert credit.credited_as is None
+
+
+def test_translate_release_populates_tracks_labels_and_recording_credits(
+    release: MBRelease,
+) -> None:
+    translated = translate_release(release)
+
+    assert translated.tracks
+    assert len(translated.tracks) == sum(len(medium.tracks) for medium in release.media)
+    assert len(translated.labels) == len(release.label_info)
+
+    first_track = translated.tracks[0]
+    assert first_track.recording.external_ids
+    assert any(
+        external_id.namespace == ExternalNamespace.MUSICBRAINZ_RECORDING
+        for external_id in first_track.recording.external_ids
+    )
+    assert first_track.recording.contributions
 
 
 def _expected_roles(credits_: list[MBArtistCredit]) -> list[ArtistRole]:

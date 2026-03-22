@@ -6,8 +6,7 @@ Responsibilities of this stage:
 - avoid persistence side effects
 
 Implementation note:
-- key strategies currently live in ``domain.ingest_pipeline.entity_ops``
-- this module is the target destination for claim-based equivalents
+- key strategies are defined here for claim-based reconciliation.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 """Orchestrator for the reconciliation subsystem.
 
 The engine composes stage interfaces but does not prescribe concrete adapters.
-This allows workflows (play-event ingest, library ingest, MB enrichment) to
-share one reconciliation core while providing different translators/fetchers.
+This allows play-event reconciliation, library reconciliation, and
+MusicBrainz release reconciliation to share one core.
 """
 
 from __future__ import annotations

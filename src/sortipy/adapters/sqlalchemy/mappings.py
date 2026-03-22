@@ -28,13 +28,18 @@ from sqlalchemy import (
 from sqlalchemy.orm import composite, configure_mappers, relationship
 
 from sortipy.domain.model import (
+    Area,
+    AreaRole,
+    AreaType,
     Artist,
+    ArtistKind,
     ArtistRole,
     EntityMerge,
     EntityType,
     ExternalID,
     Label,
     LibraryItem,
+    LifeSpan,
     MergeReason,
     PartialDate,
     PlayEvent,
@@ -43,9 +48,12 @@ from sortipy.domain.model import (
     Recording,
     RecordingContribution,
     Release,
+    ReleasePackaging,
     ReleaseSet,
     ReleaseSetContribution,
+    ReleaseSetSecondaryType,
     ReleaseSetType,
+    ReleaseStatus,
     ReleaseTrack,
     User,
 )
@@ -110,6 +118,186 @@ class ProviderSetType(TypeDecorator[set[Provider]]):
         return providers
 
 
+class StringListType(TypeDecorator[list[str]]):
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: list[str] | None, dialect: Dialect) -> str | None:
+        _ = dialect
+        if value is None:
+            return None
+        return json.dumps(list(value))
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> list[str]:
+        _ = dialect
+        if value is None:
+            return []
+        loaded = json.loads(value)
+        if not isinstance(loaded, list):
+            return []
+        items = cast("list[Any]", loaded)
+        return [item for item in items if isinstance(item, str)]
+
+
+class ReleaseSetSecondaryTypesType(TypeDecorator[list[ReleaseSetSecondaryType]]):
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(
+        self,
+        value: list[ReleaseSetSecondaryType] | None,
+        dialect: Dialect,
+    ) -> str | None:
+        _ = dialect
+        if value is None:
+            return None
+        return json.dumps([item.value for item in value])
+
+    def process_result_value(
+        self,
+        value: str | None,
+        dialect: Dialect,
+    ) -> list[ReleaseSetSecondaryType]:
+        _ = dialect
+        if value is None:
+            return []
+        loaded = json.loads(value)
+        if not isinstance(loaded, list):
+            return []
+        items = cast("list[Any]", loaded)
+        result: list[ReleaseSetSecondaryType] = []
+        for item in items:
+            if isinstance(item, str):
+                try:
+                    result.append(ReleaseSetSecondaryType(item))
+                except ValueError:
+                    continue
+        return result
+
+
+class LifeSpanType(TypeDecorator[LifeSpan | None]):
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: LifeSpan | None, dialect: Dialect) -> str | None:
+        _ = dialect
+        if value is None:
+            return None
+        payload = {
+            "begin": _partial_date_payload(value.begin),
+            "end": _partial_date_payload(value.end),
+            "ended": value.ended,
+        }
+        return json.dumps(payload)
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> LifeSpan | None:
+        _ = dialect
+        if value is None:
+            return None
+        loaded = json.loads(value)
+        if not isinstance(loaded, dict):
+            return None
+        payload = cast("dict[str, object]", loaded)
+        ended = payload.get("ended")
+        if ended is not None and not isinstance(ended, bool):
+            ended = None
+        return LifeSpan(
+            begin=_partial_date_from_payload(payload.get("begin")),
+            end=_partial_date_from_payload(payload.get("end")),
+            ended=ended,
+        )
+
+
+class AreaListType(TypeDecorator[list[Area]]):
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: list[Area] | None, dialect: Dialect) -> str | None:
+        _ = dialect
+        if value is None:
+            return None
+        payload = [
+            {
+                "name": area.name,
+                "area_type": area.area_type.value if area.area_type is not None else None,
+                "role": area.role.value,
+                "country_codes": list(area.country_codes),
+            }
+            for area in value
+        ]
+        return json.dumps(payload)
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> list[Area]:
+        _ = dialect
+        if value is None:
+            return []
+        loaded = json.loads(value)
+        if not isinstance(loaded, list):
+            return []
+        items = cast("list[Any]", loaded)
+        result: list[Area] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            payload = cast("dict[str, object]", item)
+            name = payload.get("name")
+            role = payload.get("role")
+            country_codes = payload.get("country_codes")
+            if not isinstance(name, str) or not isinstance(role, str):
+                continue
+            try:
+                role_value = AreaRole(role)
+            except ValueError:
+                continue
+            area_type_raw = payload.get("area_type")
+            try:
+                area_type = AreaType(area_type_raw) if isinstance(area_type_raw, str) else None
+            except ValueError:
+                area_type = None
+            codes = (
+                tuple(code for code in cast("list[Any]", country_codes) if isinstance(code, str))
+                if isinstance(country_codes, list)
+                else ()
+            )
+            result.append(
+                Area(
+                    name=name,
+                    area_type=area_type,
+                    role=role_value,
+                    country_codes=codes,
+                )
+            )
+        return result
+
+
+def _partial_date_payload(value: PartialDate | None) -> dict[str, int | None] | None:
+    if value is None:
+        return None
+    return {
+        "year": value.year,
+        "month": value.month,
+        "day": value.day,
+    }
+
+
+def _partial_date_from_payload(value: object) -> PartialDate | None:
+    if not isinstance(value, dict):
+        return None
+    payload = cast("dict[str, object]", value)
+    year = payload.get("year")
+    month = payload.get("month")
+    day = payload.get("day")
+    if year is not None and not isinstance(year, int):
+        return None
+    if month is not None and not isinstance(month, int):
+        return None
+    if day is not None and not isinstance(day, int):
+        return None
+    if year is None and month is None and day is None:
+        return None
+    return PartialDate(year=year, month=month, day=day)
+
+
 mapper_registry = orm.registry()
 mapper_registry.metadata.naming_convention = {
     "ix": "ix_%(column_0_label)s",
@@ -129,6 +317,10 @@ artist_table = Table(
     Column("name", String, nullable=False),
     Column("sort_name", String, nullable=True),
     Column("country", String(3), nullable=True),
+    Column("kind", Enum(ArtistKind, native_enum=False), nullable=True),
+    Column("life_span", LifeSpanType(), nullable=True),
+    Column("areas", AreaListType(), nullable=True),
+    Column("aliases", StringListType(), nullable=True),
     Column("formed_year", Integer, nullable=True),
     Column("disbanded_year", Integer, nullable=True),
 )
@@ -160,6 +352,8 @@ release_set_table = Table(
     Column("canonical_id", UUIDColumnType, key="_canonical_id", nullable=True),
     Column("title", String, nullable=False),
     Column("primary_type", Enum(ReleaseSetType, native_enum=False), nullable=True),
+    Column("secondary_types", ReleaseSetSecondaryTypesType(), nullable=True),
+    Column("aliases", StringListType(), nullable=True),
     Column("first_release_year", Integer, nullable=True),
     Column("first_release_month", Integer, nullable=True),
     Column("first_release_day", Integer, nullable=True),
@@ -181,6 +375,8 @@ release_table = Table(
     Column("release_month", Integer, nullable=True),
     Column("release_day", Integer, nullable=True),
     Column("country", String(3), nullable=True),
+    Column("status", Enum(ReleaseStatus, native_enum=False), nullable=True),
+    Column("packaging", Enum(ReleasePackaging, native_enum=False), nullable=True),
     Column("format", String, nullable=True),
     Column("medium_count", Integer, nullable=True),
 )
@@ -224,6 +420,7 @@ recording_table = Table(
     Column("duration_ms", Integer, nullable=True),
     Column("version", String, nullable=True),
     Column("disambiguation", String, nullable=True),
+    Column("aliases", StringListType(), nullable=True),
 )
 
 recording_contribution_table = Table(
@@ -240,9 +437,9 @@ recording_contribution_table = Table(
         "artist_id", UUIDColumnType, ForeignKey("artist.id", ondelete="CASCADE"), nullable=False
     ),
     Column("role", Enum(ArtistRole, native_enum=False), nullable=True),
-    Column("instrument", String, nullable=True),
     Column("credit_order", Integer, nullable=True),
     Column("credited_as", String, nullable=True),
+    Column("join_phrase", String, nullable=True),
 )
 
 release_track_table = Table(

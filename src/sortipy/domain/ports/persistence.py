@@ -111,3 +111,11 @@ class UserRepository(Repository[User], Protocol):
 @runtime_checkable
 class LibraryItemRepository(Repository[LibraryItem], Protocol):
     """Repository contract for saved library items."""
+
+    def exists(
+        self,
+        *,
+        user_id: UUID,
+        target_type: EntityType,
+        target_id: UUID,
+    ) -> bool: ...

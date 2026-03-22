@@ -1,4 +1,4 @@
-"""MusicBrainz enrichment entry points."""
+"""MusicBrainz reconciliation entry points."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from .translator import (
 
 if TYPE_CHECKING:
     from sortipy.config.musicbrainz import MusicBrainzConfig
-    from sortipy.domain.entity_updates import ReleaseCandidate, ReleaseUpdate
-    from sortipy.domain.model import Artist, Recording, ReleaseSet
+    from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
+    from sortipy.domain.ports.enrichment import ReleaseCandidate
 
     from .client import MusicBrainzLookupClient
     from .schema import MBRecording
@@ -25,13 +25,13 @@ if TYPE_CHECKING:
 log = getLogger(__name__)
 
 
-def fetch_release_update(
+def fetch_release_graph(
     candidate: ReleaseCandidate,
     *,
     config: MusicBrainzConfig,
     client: MusicBrainzLookupClient | None = None,
-) -> ReleaseUpdate:
-    """Fetch a full release update graph from MusicBrainz."""
+) -> Release:
+    """Fetch a full release aggregate graph from MusicBrainz."""
 
     active_client = client or MusicBrainzClient(config=config)
     payload = active_client.fetch_release(mbid=candidate.mbid)

@@ -24,6 +24,7 @@ from .mappings import (
     CLASS_BY_ENTITY_TYPE,
     ENTITY_TYPE_BY_CLASS,
     external_id_table,
+    library_item_table,
     normalization_sidecar_table,
     play_event_table,
 )
@@ -186,6 +187,22 @@ class SqlAlchemyLibraryItemRepository:
         # populate the FK, and we explicitly avoid cascade persistence.
         attached.rehydrate_library_item(entity)
         self.session.add(entity)
+
+    def exists(
+        self,
+        *,
+        user_id: uuid.UUID,
+        target_type: EntityType,
+        target_id: uuid.UUID,
+    ) -> bool:
+        stmt = (
+            select(library_item_table.c.id)
+            .where(library_item_table.c.user_id == user_id)
+            .where(library_item_table.c._target_type == target_type)  # noqa: SLF001
+            .where(library_item_table.c._target_id == target_id)  # noqa: SLF001
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none() is not None
 
 
 class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):

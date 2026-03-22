@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 
 from sortipy.app import (
     create_user,
-    enrich_musicbrainz_releases,
-    sync_lastfm_play_events,
-    sync_spotify_library_items,
+    reconcile_lastfm_play_events,
+    reconcile_musicbrainz_releases,
+    reconcile_spotify_library_items,
 )
 from sortipy.config import configure_logging
 
@@ -26,10 +26,13 @@ log = logging.getLogger(__name__)
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Synchronise Sortipy data")
+    parser = argparse.ArgumentParser(description="Reconcile Sortipy data")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    lastfm = subparsers.add_parser("lastfm", help="Sync Last.fm play events")
+    reconcile = subparsers.add_parser("reconcile", help="Run reconciliation workflows")
+    reconcile_sub = reconcile.add_subparsers(dest="reconcile_command", required=True)
+
+    lastfm = reconcile_sub.add_parser("lastfm", help="Reconcile Last.fm play events")
     lastfm.add_argument(
         "--batch-size",
         type=int,
@@ -62,7 +65,10 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Relative lookback window in hours (overrides start if larger)",
     )
 
-    spotify = subparsers.add_parser("spotify-library", help="Sync Spotify library items")
+    spotify = reconcile_sub.add_parser(
+        "spotify-library",
+        help="Reconcile Spotify library items",
+    )
     spotify.add_argument(
         "--batch-size",
         type=int,
@@ -73,11 +79,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--user-id",
         type=str,
         help="Existing user id to attach to imported library items",
-    )
-    spotify.add_argument(
-        "--spotify-user-id",
-        type=str,
-        help="Optional Spotify user id to store on the user entity",
     )
     spotify.add_argument(
         "--max-tracks",
@@ -95,14 +96,14 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Maximum number of followed artists to fetch before stopping",
     )
 
-    musicbrainz = subparsers.add_parser(
+    musicbrainz = reconcile_sub.add_parser(
         "musicbrainz-releases",
-        help="Enrich releases using MusicBrainz",
+        help="Reconcile MusicBrainz release graphs",
     )
     musicbrainz.add_argument(
         "--limit",
         type=int,
-        help="Maximum number of recordings to enrich",
+        help="Maximum number of releases to reconcile",
     )
 
     user = subparsers.add_parser("user", help="User management commands")
@@ -190,47 +191,68 @@ def _compute_time_bounds(
 def main(argv: Sequence[str] | None = None) -> None:
     """Main application entry point."""
     configure_logging()
-    parsed_args: argparse.Namespace
     args_list = list(argv) if argv is not None else list(sys.argv[1:])
     try:
         parsed_args = _parse_args(args_list)
         start, end = (None, None)
-        if parsed_args.command == "lastfm":
+        if parsed_args.command == "reconcile" and parsed_args.reconcile_command == "lastfm":
             start, end = _compute_time_bounds(parsed_args)
     except ValueError:
         log.exception("CLI validation error")
         sys.exit(2)
 
     try:
-        if parsed_args.command == "lastfm":
+        if parsed_args.command == "reconcile" and parsed_args.reconcile_command == "lastfm":
             if parsed_args.user_id is None:
                 raise ValueError("Missing --user-id (create a user first)")  # noqa: TRY301
-            sync_lastfm_play_events(
+            result = reconcile_lastfm_play_events(
                 user_id=_parse_uuid(parsed_args.user_id),
                 batch_size=parsed_args.batch_size,
                 max_events=parsed_args.max_events,
                 from_timestamp=start,
                 to_timestamp=end,
             )
-        elif parsed_args.command == "spotify-library":
+            log.info(
+                "Last.fm reconciliation finished: stored=%s fetched=%s entities=%s sidecars=%s",
+                result.stored_events,
+                result.fetched,
+                result.persisted_entities,
+                result.persisted_sidecars,
+            )
+        elif (
+            parsed_args.command == "reconcile"
+            and parsed_args.reconcile_command == "spotify-library"
+        ):
             if parsed_args.user_id is None:
                 raise ValueError("Missing --user-id (create a user first)")  # noqa: TRY301
-            sync_spotify_library_items(
+            result = reconcile_spotify_library_items(
                 user_id=_parse_uuid(parsed_args.user_id),
                 batch_size=parsed_args.batch_size,
                 max_tracks=parsed_args.max_tracks,
                 max_albums=parsed_args.max_albums,
                 max_artists=parsed_args.max_artists,
             )
-        elif parsed_args.command == "musicbrainz-releases":
-            result = enrich_musicbrainz_releases(
-                limit=parsed_args.limit,
-            )
             log.info(
-                "MusicBrainz enrichment finished: candidates=%s, updates=%s, applied=%s",
-                result.candidates,
-                result.updates,
-                result.applied,
+                "Spotify reconciliation finished: stored=%s skipped=%s fetched=%s "
+                "entities=%s sidecars=%s",
+                result.stored_items,
+                result.skipped_existing,
+                result.fetched,
+                result.persisted_entities,
+                result.persisted_sidecars,
+            )
+        elif (
+            parsed_args.command == "reconcile"
+            and parsed_args.reconcile_command == "musicbrainz-releases"
+        ):
+            result = reconcile_musicbrainz_releases(limit=parsed_args.limit)
+            log.info(
+                "MusicBrainz reconciliation finished: candidates=%s fetched=%s "
+                "applied=%s anchor_mismatches=%s",
+                result.candidate_releases,
+                result.fetched_updates,
+                result.applied_releases,
+                result.anchor_mismatches,
             )
         elif parsed_args.command == "user" and parsed_args.user_command == "create":
             user = create_user(
@@ -242,9 +264,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             log.info("Created user %s", user.id)
         else:
             raise ValueError(f"Unsupported command: {parsed_args.command}")  # noqa: TRY301
-
     except Exception:
-        log.exception("Fatal error during sync")
+        log.exception("Fatal error during reconcile")
         sys.exit(1)
 
 

@@ -1,12 +1,10 @@
 # TODOs
 
-- [x] Wire up pre-commit hooks that run `.venv/bin/ruff check`, `.venv/bin/pyright`, and `.venv/bin/pytest`.
-- [x] Define logging policy (levels, destinations) and document expectations for agents (`docs/policies/logging.md`).
-- [ ] Add structured logging to sync orchestration and adapters.
-- [ ] Establish an issue-tracking workflow accessible to both user and agent (no external GitHub reliance).
-- [ ] Model user-linked external accounts (Spotify, Last.fm, etc.) instead of storing IDs directly on `User`.
-- [ ] Evaluate automating canonical merges and extend `EntityMerge` with confidence metadata if needed.
-- [ ] Introduce database migrations (e.g. Alembic) so schema changes apply across existing installs.
-- [ ] Investigate SQLAlchemy autoflush warnings emitted during canonical merge tests and decide whether to suppress via `no_autoflush` or refactor merge helpers.
-- [ ] Introduce helper utilities for wiring domain object graphs (e.g., ensure play events, releases, and recordings attach to collections symmetrically).
-- [ ] Evaluate adopting schema validation for adapter responses (Pydantic v2 or alternative) and replace TypedDict casts when feasible.
+- [ ] Add structured logging to reconciliation workflows and provider adapters so runs expose fetched counts, manual-review counts, and checkpoint-like context consistently.
+- [ ] Investigate the remaining SQLAlchemy autoflush warnings around `PlayEvent` and `ReleaseTrack` attachment; decide whether to use `no_autoflush` or adjust the attachment flow.
+- [ ] Implement ADR-0007 provenance storage: `SourceIngest` checkpoints plus raw-payload tables for replay and debugging.
+- [ ] Extend repository/query helpers so canonical self-pointers from ADR-0008 are resolved consistently for read paths, not just reconciliation-time entity resolution.
+- [ ] Model user-linked external accounts explicitly instead of storing provider identifiers directly on `User`.
+- [ ] Decide whether adapters should eventually emit claim graphs directly instead of fresh domain aggregates.
+- [ ] Evaluate schema validation and projection boundaries for adapter payloads beyond the current Pydantic coverage.
+- [ ] Establish an issue-tracking workflow accessible inside the repo for both humans and agents.

@@ -3,25 +3,25 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
-from sortipy.app import sync_lastfm_play_events
+from sortipy.app import reconcile_lastfm_play_events
 from sortipy.config.http_resilience import CacheConfig, RateLimit, ResilienceConfig
 from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS, LastFmConfig
 from sortipy.config.storage import DatabaseConfig
-from sortipy.domain.data_integration import SyncPlayEventsResult
 from sortipy.domain.model import User
+from sortipy.domain.reconciliation import LastfmReconciliationResult
 from tests.helpers.play_events import (
-    FakeIngestUnitOfWork,
     FakePlayEventRepository,
     FakePlayEventSource,
     make_play_event,
+    make_reconciliation_uow_factory,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
-    from sortipy.domain.ingest_pipeline.ingest_ports import PlayEventSyncUnitOfWork
     from sortipy.domain.ports.fetching import PlayEventFetchResult
+    from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
 
 
 class MonkeyPatch(Protocol):
@@ -39,7 +39,7 @@ def _make_lastfm_config(**_: object) -> LastFmConfig:
     return LastFmConfig(api_key="demo", user_name="demo-user", resilience=resilience)
 
 
-def _patch_lastfm_sync(
+def _patch_lastfm_reconciliation(
     monkeypatch: MonkeyPatch,
     *,
     source: FakePlayEventSource,
@@ -64,8 +64,8 @@ def _patch_lastfm_sync(
             max_events=max_events,
         )
 
-    def fake_uow_factory(**_: object) -> Callable[[], PlayEventSyncUnitOfWork]:
-        return lambda: FakeIngestUnitOfWork(repository)
+    def fake_uow_factory(**_: object) -> Callable[[], ReconciliationUnitOfWork]:
+        return make_reconciliation_uow_factory(repository)
 
     def fake_load_user(*, user_id: UUID) -> User:  # noqa: ARG001
         return user
@@ -80,7 +80,9 @@ def _patch_lastfm_sync(
     monkeypatch.setattr("sortipy.app.load_user", fake_load_user)
 
 
-def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPatch) -> None:
+def test_reconcile_lastfm_play_events_orchestrates_dependencies(
+    monkeypatch: MonkeyPatch,
+) -> None:
     play_event = make_play_event(
         "Example Track",
         timestamp=datetime.now(tz=UTC).replace(microsecond=0),
@@ -89,21 +91,23 @@ def test_sync_lastfm_play_events_orchestrates_dependencies(monkeypatch: MonkeyPa
     source = FakePlayEventSource([[play_event]])
     repository = FakePlayEventRepository()
 
-    _patch_lastfm_sync(monkeypatch, source=source, repository=repository, user=user)
+    _patch_lastfm_reconciliation(monkeypatch, source=source, repository=repository, user=user)
 
-    result = sync_lastfm_play_events(
+    result = reconcile_lastfm_play_events(
         user_id=user.id,
         batch_size=1,
     )
 
-    assert isinstance(result, SyncPlayEventsResult)
-    assert result.stored == 1
+    assert isinstance(result, LastfmReconciliationResult)
+    assert result.stored_events == 1
     assert repository.items == [play_event]
     assert source.calls[0]["batch_size"] == 1
     assert source.calls[0]["user"] is user
 
 
-def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPatch) -> None:
+def test_reconcile_lastfm_play_events_respects_existing_entries(
+    monkeypatch: MonkeyPatch,
+) -> None:
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
     existing = make_play_event("Existing", timestamp=base_time)
     newer = make_play_event("Newer", timestamp=base_time + timedelta(seconds=60))
@@ -111,19 +115,21 @@ def test_sync_lastfm_play_events_respects_existing_entries(monkeypatch: MonkeyPa
 
     repository = FakePlayEventRepository([existing])
     source = FakePlayEventSource([[existing, newer]])
-    _patch_lastfm_sync(monkeypatch, source=source, repository=repository, user=user)
+    _patch_lastfm_reconciliation(monkeypatch, source=source, repository=repository, user=user)
 
-    result = sync_lastfm_play_events(
+    result = reconcile_lastfm_play_events(
         user_id=user.id,
         batch_size=2,
     )
 
-    assert result.stored == 1
+    assert result.stored_events == 1
     assert newer in repository.items
     assert existing in repository.items
 
 
-def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatch) -> None:
+def test_reconcile_lastfm_play_events_respects_request_bounds(
+    monkeypatch: MonkeyPatch,
+) -> None:
     now = datetime(2025, 3, 5, 12, tzinfo=UTC)
     lookback = timedelta(hours=2)
     older = make_play_event("Older", timestamp=now - lookback - timedelta(minutes=10))
@@ -132,16 +138,16 @@ def test_sync_lastfm_play_events_respects_request_bounds(monkeypatch: MonkeyPatc
 
     repository = FakePlayEventRepository()
     source = FakePlayEventSource([[older, recent]])
-    _patch_lastfm_sync(monkeypatch, source=source, repository=repository, user=user)
+    _patch_lastfm_reconciliation(monkeypatch, source=source, repository=repository, user=user)
 
-    result = sync_lastfm_play_events(
+    result = reconcile_lastfm_play_events(
         user_id=user.id,
         batch_size=5,
         from_timestamp=now - lookback,
         to_timestamp=now,
     )
 
-    assert result.stored == 1
+    assert result.stored_events == 1
     assert repository.items == [recent]
 
     recorded_call = source.calls[0]

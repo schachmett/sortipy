@@ -18,7 +18,6 @@ from sortipy.config.lastfm import (
     RateLimit,
     ResilienceConfig,
 )
-from sortipy.domain.data_integration import PlayEventSyncRequest, sync_play_events
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
@@ -28,6 +27,7 @@ from sortipy.domain.model import (
     ReleaseSet,
     User,
 )
+from sortipy.domain.reconciliation import PlayEventReconciliationRequest, reconcile_play_events
 from tests.helpers.play_events import FakePlayEventSource
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ def _make_client_factory(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("recent_tracks_payload", range(4), indirect=True)
-def test_sync_play_events_persists_payload(
+def test_reconcile_play_events_persists_payload(
     sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
     recent_tracks_payload: RecentTracksResponse,
 ) -> None:
@@ -103,14 +103,14 @@ def test_sync_play_events_persists_payload(
             max_events=max_events,
         )
 
-    result = sync_play_events(
-        request=PlayEventSyncRequest(batch_size=5, max_events=total_expected),
+    result = reconcile_play_events(
+        request=PlayEventReconciliationRequest(batch_size=5, max_events=total_expected),
         fetcher=fetcher,
         user=user,
         unit_of_work_factory=sqlite_unit_of_work,
     )
 
-    assert result.stored == total_expected
+    assert result.stored_events == total_expected
     assert result.fetched >= total_expected
     assert result.now_playing is None
 
@@ -153,7 +153,7 @@ def _make_play_event(
 
 
 @pytest.mark.integration
-def test_sync_play_events_stores_tracks_with_same_name_different_artists(
+def test_reconcile_play_events_stores_tracks_with_same_name_different_artists(
     sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
 ) -> None:
     base_time = datetime.now(tz=UTC).replace(microsecond=0)
@@ -177,14 +177,14 @@ def test_sync_play_events_stores_tracks_with_same_name_different_artists(
         user=user,
     )
 
-    result = sync_play_events(
-        request=PlayEventSyncRequest(batch_size=5),
+    result = reconcile_play_events(
+        request=PlayEventReconciliationRequest(batch_size=5),
         fetcher=FakePlayEventSource([[first, second]]),
         user=user,
         unit_of_work_factory=sqlite_unit_of_work,
     )
 
-    assert result.stored == 2
+    assert result.stored_events == 2
 
     with sqlite_unit_of_work() as uow:
         persisted = uow.session.execute(select(PlayEvent)).scalars().all()

@@ -1,4 +1,4 @@
-"""MusicBrainz response schemas for recording enrichment."""
+"""MusicBrainz response schemas for reconciliation payloads."""
 
 # switch off type warnings because of default_factory=list or set
 # pyright: reportUnknownVariableType=false

@@ -25,14 +25,23 @@ from sortipy.adapters.sqlalchemy.mappings import (
     user_table,
 )
 from sortipy.domain.model import (
+    Area,
+    AreaRole,
+    AreaType,
     Artist,
+    ArtistKind,
     ArtistRole,
     EntityType,
     ExternalNamespace,
     Label,
+    LifeSpan,
+    PartialDate,
     Provider,
     Recording,
+    ReleasePackaging,
     ReleaseSet,
+    ReleaseSetSecondaryType,
+    ReleaseStatus,
     User,
 )
 
@@ -56,21 +65,41 @@ def test_create_all_tables_registers_core_tables(sqlite_engine: Engine) -> None:
         assert required in table_names
 
 
-def test_mappings_round_trip_entity_graph(sqlite_session: Session) -> None:
+def test_mappings_round_trip_entity_graph(sqlite_session: Session) -> None:  # noqa: PLR0915
     def _row_count(table: Table) -> int:
         return sqlite_session.execute(select(func.count()).select_from(table)).scalar_one()
 
     artist = Artist(name="Radiohead")
+    artist.kind = ArtistKind.GROUP
+    artist.life_span = LifeSpan(
+        begin=PartialDate(year=1985),
+        end=PartialDate(year=2025),
+        ended=False,
+    )
+    artist.areas.append(
+        Area(
+            name="Abingdon",
+            area_type=AreaType.CITY,
+            role=AreaRole.BEGIN,
+            country_codes=("GB",),
+        )
+    )
+    artist.aliases.extend(["On A Friday"])
     artist.add_external_id(ExternalNamespace.MUSICBRAINZ_ARTIST, "mbid-artist-1")
     artist.add_source(Provider.MUSICBRAINZ)
 
     release_set = ReleaseSet(title="OK Computer")
-    release_set.add_artist(artist, role=ArtistRole.PRIMARY)
+    release_set.secondary_types.append(ReleaseSetSecondaryType.LIVE)
+    release_set.aliases.append("OKC")
+    release_set.add_artist(artist, role=ArtistRole.PRIMARY, join_phrase=" feat. ")
     release_set.add_source(Provider.MUSICBRAINZ)
 
     release = release_set.create_release(title="OK Computer")
+    release.status = ReleaseStatus.OFFICIAL
+    release.packaging = ReleasePackaging.DIGIPAK
     recording = Recording(title="Paranoid Android", duration_ms=387000)
-    recording.add_artist(artist, role=ArtistRole.PRIMARY)
+    recording.aliases.append("PA")
+    recording.add_artist(artist, role=ArtistRole.PRIMARY, join_phrase=" feat. ")
 
     track = release.add_track(recording, track_number=2, disc_number=1)
     track.add_external_id(ExternalNamespace.MUSICBRAINZ_RECORDING, "mbid-track-1")
@@ -104,8 +133,33 @@ def test_mappings_round_trip_entity_graph(sqlite_session: Session) -> None:
     sqlite_session.expire_all()
     loaded_release_set = sqlite_session.get(ReleaseSet, release_set.id)
     assert loaded_release_set is not None
+    assert loaded_release_set.secondary_types == [ReleaseSetSecondaryType.LIVE]
+    assert loaded_release_set.aliases == ["OKC"]
+    assert loaded_release_set.contributions[0].join_phrase == " feat. "
     assert loaded_release_set.releases[0].tracks[0].recording.title == "Paranoid Android"
+    assert loaded_release_set.releases[0].status is ReleaseStatus.OFFICIAL
+    assert loaded_release_set.releases[0].packaging is ReleasePackaging.DIGIPAK
+    assert loaded_release_set.releases[0].tracks[0].recording.aliases == ["PA"]
+    assert (
+        loaded_release_set.releases[0].tracks[0].recording.contributions[0].join_phrase == " feat. "
+    )
     assert loaded_release_set.artists[0].name == "Radiohead"
+    assert loaded_release_set.artists[0].kind is ArtistKind.GROUP
+    assert loaded_release_set.artists[0].life_span == LifeSpan(
+        begin=PartialDate(year=1985),
+        end=PartialDate(year=2025),
+        ended=False,
+    )
+    assert loaded_release_set.artists[0].areas == [
+        Area(
+            name="Abingdon",
+            area_type=AreaType.CITY,
+            role=AreaRole.BEGIN,
+            country_codes=("GB",),
+        )
+    ]
+    assert loaded_release_set.artists[0].aliases == ["On A Friday"]
+    assert "instrument" not in recording_contribution_table.c
 
 
 def test_mappings_load_entity_graph_from_core(sqlite_session: Session) -> None:

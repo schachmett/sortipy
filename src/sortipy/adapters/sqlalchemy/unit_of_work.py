@@ -1,4 +1,4 @@
-"""SQLAlchemy-backed units of work for play events and ingest pipeline."""
+"""SQLAlchemy-backed units of work for reconciliation workflows."""
 
 from __future__ import annotations
 
@@ -158,13 +158,7 @@ def create_unit_of_work_factory(
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from sortipy.domain.ingest_pipeline import (
-        IngestionUnitOfWork,
-        LibraryItemSyncUnitOfWork,
-        PlayEventSyncUnitOfWork,
-    )
+    from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
 
     _factory = create_unit_of_work_factory(database_uri="sqlite+pysqlite:///:memory:")
-    _uow_check: IngestionUnitOfWork = _factory()
-    _uow_pe_check: PlayEventSyncUnitOfWork = _factory()
-    _uow_li_check: LibraryItemSyncUnitOfWork = _factory()
+    _uow_check: ReconciliationUnitOfWork = _factory()

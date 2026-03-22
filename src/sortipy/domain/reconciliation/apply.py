@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Protocol
 
 from sortipy.domain.model import (
     Artist,
-    ArtistRole,
     Label,
     LibraryItem,
     PlayEvent,
@@ -27,6 +26,9 @@ from sortipy.domain.model import (
     ReleaseSetContribution,
     ReleaseTrack,
     User,
+)
+from sortipy.domain.model import (
+    _internal as internal,
 )
 
 from .claims import (
@@ -92,6 +94,14 @@ def _new_manual_review_items() -> list[ManualReviewItem]:
     return []
 
 
+def _new_entities_by_claim() -> dict[UUID, IdentifiedEntity]:
+    return {}
+
+
+def _new_associations_by_claim() -> dict[UUID, AssociationEntity]:
+    return {}
+
+
 @dataclass(slots=True)
 class ApplyResult:
     """Summary of in-memory mutations performed by the applier."""
@@ -100,6 +110,10 @@ class ApplyResult:
     associations: ApplyCounters = field(default_factory=ApplyCounters)
     links: ApplyCounters = field(default_factory=ApplyCounters)
     manual_review_items: list[ManualReviewItem] = field(default_factory=_new_manual_review_items)
+    entities_by_claim: dict[UUID, IdentifiedEntity] = field(default_factory=_new_entities_by_claim)
+    associations_by_claim: dict[UUID, AssociationEntity] = field(
+        default_factory=_new_associations_by_claim
+    )
 
 
 class ApplyReconciliationInstructions(Protocol):
@@ -139,6 +153,7 @@ def apply_reconciliation_instructions(
         materialized = _apply_entity_instruction(claim, instruction, result=result)
         if materialized is not None:
             entities_by_claim[claim_id] = materialized
+            result.entities_by_claim[claim_id] = materialized
 
     for claim_id, instruction in association_instructions_by_claim.items():
         association = graph.require_association(claim_id)
@@ -205,16 +220,21 @@ def _apply_association_instruction(
 ) -> None:
     match instruction:
         case CreateInstruction():
-            _create_association(association, entities_by_claim=entities_by_claim)
+            created = _create_association(association, entities_by_claim=entities_by_claim)
             result.associations.created += 1
+            if created is not None:
+                result.associations_by_claim[association.claim_id] = created
         case MergeInstruction():
             _merge_association(
                 association,
                 target=instruction.target,
             )
             result.associations.merged += 1
+            result.associations_by_claim[association.claim_id] = instruction.target
         case NoopInstruction():
             result.associations.skipped += 1
+            if instruction.target is not None:
+                result.associations_by_claim[association.claim_id] = instruction.target
         case ManualReviewInstruction():
             result.associations.manual_review += 1
             result.manual_review_items.append(
@@ -419,7 +439,7 @@ def _create_association(
     association: AssociationClaim,
     *,
     entities_by_claim: dict[UUID, IdentifiedEntity],
-) -> None:
+) -> AssociationEntity | None:
     source = _entity_for_relationship_endpoint(
         association.source_claim_id,
         entities_by_claim=entities_by_claim,
@@ -435,11 +455,11 @@ def _create_association(
 
     match association.kind:
         case AssociationKind.RELEASE_SET_CONTRIBUTION:
-            _create_release_set_contribution(association, source=source, target=target)
+            return _create_release_set_contribution(association, source=source, target=target)
         case AssociationKind.RECORDING_CONTRIBUTION:
-            _create_recording_contribution(association, source=source, target=target)
+            return _create_recording_contribution(association, source=source, target=target)
         case AssociationKind.RELEASE_TRACK:
-            _create_release_track(association, source=source, target=target)
+            return _create_release_track(association, source=source, target=target)
 
 
 def _merge_association(
@@ -513,25 +533,32 @@ def _create_release_set_contribution(
     *,
     source: IdentifiedEntity,
     target: IdentifiedEntity,
-) -> None:
+) -> ReleaseSetContribution:
     release_set = expect_relationship_entity(source, ReleaseSet, relationship_claim=association)
     artist = expect_relationship_entity(target, Artist, relationship_claim=association)
     payload = association.payload
     if payload is None:
-        release_set.add_artist(artist)
-        return
+        return release_set.add_artist(artist)
     contribution = expect_association_payload(
         payload,
         ReleaseSetContribution,
         relationship_claim=association,
     )
-    release_set.add_artist(
-        artist,
-        role=contribution.role if contribution.role is not None else ArtistRole.UNKNOWN,
-        credit_order=contribution.credit_order,
-        credited_as=contribution.credited_as,
-        join_phrase=contribution.join_phrase,
-    )
+    if contribution.release_set is not release_set:
+        internal.detach_release_set_contribution_from_release_set(
+            contribution.release_set,
+            contribution,
+        )
+        internal.set_release_set_contribution_release_set(contribution, release_set)
+        internal.attach_release_set_contribution_to_release_set(release_set, contribution)
+    if contribution.artist is not artist:
+        internal.detach_release_set_contribution_from_artist(
+            contribution.artist,
+            contribution,
+        )
+        internal.set_release_set_contribution_artist(contribution, artist)
+        internal.attach_release_set_contribution_to_artist(artist, contribution)
+    return contribution
 
 
 def _create_recording_contribution(
@@ -539,25 +566,32 @@ def _create_recording_contribution(
     *,
     source: IdentifiedEntity,
     target: IdentifiedEntity,
-) -> None:
+) -> RecordingContribution:
     recording = expect_relationship_entity(source, Recording, relationship_claim=association)
     artist = expect_relationship_entity(target, Artist, relationship_claim=association)
     payload = association.payload
     if payload is None:
-        recording.add_artist(artist)
-        return
+        return recording.add_artist(artist)
     contribution = expect_association_payload(
         payload,
         RecordingContribution,
         relationship_claim=association,
     )
-    recording.add_artist(
-        artist,
-        role=contribution.role if contribution.role is not None else ArtistRole.UNKNOWN,
-        credit_order=contribution.credit_order,
-        credited_as=contribution.credited_as,
-        join_phrase=contribution.join_phrase,
-    )
+    if contribution.recording is not recording:
+        internal.detach_recording_contribution_from_recording(
+            contribution.recording,
+            contribution,
+        )
+        internal.set_recording_contribution_recording(contribution, recording)
+        internal.attach_recording_contribution_to_recording(recording, contribution)
+    if contribution.artist is not artist:
+        internal.detach_recording_contribution_from_artist(
+            contribution.artist,
+            contribution,
+        )
+        internal.set_recording_contribution_artist(contribution, artist)
+        internal.attach_recording_contribution_to_artist(artist, contribution)
+    return contribution
 
 
 def _create_release_track(
@@ -565,25 +599,26 @@ def _create_release_track(
     *,
     source: IdentifiedEntity,
     target: IdentifiedEntity,
-) -> None:
+) -> ReleaseTrack:
     release = expect_relationship_entity(source, Release, relationship_claim=association)
     recording = expect_relationship_entity(target, Recording, relationship_claim=association)
     payload = association.payload
     if payload is None:
-        release.add_track(recording)
-        return
+        return release.add_track(recording)
     track = expect_association_payload(
         payload,
         ReleaseTrack,
         relationship_claim=association,
     )
-    release.add_track(
-        recording,
-        disc_number=track.disc_number,
-        track_number=track.track_number,
-        title_override=track.title_override,
-        duration_ms=track.duration_ms,
-    )
+    if track.release is not release:
+        internal.detach_release_track_from_release(track.release, track)
+        internal.set_release_track_release(track, release)
+        internal.attach_release_track_to_release(release, track)
+    if track.recording is not recording:
+        internal.detach_release_track_from_recording(track.recording, track)
+        internal.set_release_track_recording(track, recording)
+        internal.attach_release_track_to_recording(recording, track)
+    return track
 
 
 def _merge_release_set_contribution(
@@ -595,6 +630,7 @@ def _merge_release_set_contribution(
     target.credit_order = payload.credit_order
     target.credited_as = payload.credited_as
     target.join_phrase = payload.join_phrase
+    _merge_sources(payload, target)
 
 
 def _merge_recording_contribution(
@@ -606,6 +642,7 @@ def _merge_recording_contribution(
     target.credit_order = payload.credit_order
     target.credited_as = payload.credited_as
     target.join_phrase = payload.join_phrase
+    _merge_sources(payload, target)
 
 
 def _merge_release_track(
@@ -617,6 +654,8 @@ def _merge_release_track(
     target.track_number = payload.track_number
     target.title_override = payload.title_override
     target.duration_ms = payload.duration_ms
+    _merge_external_ids(payload, target)
+    _merge_sources(payload, target)
 
 
 def _entity_for_relationship_endpoint(

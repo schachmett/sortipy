@@ -95,6 +95,16 @@ class User(ProvenanceTrackedMixin):
         if item not in self._library_items:
             self._library_items.append(item)
 
+    def retarget_library_item(self, item: LibraryItem, target: IdentifiedEntity) -> None:
+        if item.user is not self:
+            raise ValueError("library item not owned by this user")
+        internal.set_library_item_target(item, target)
+        internal.set_library_item_target_identity(
+            item,
+            target_type=target.entity_type,
+            target_id=target.resolved_id,
+        )
+
     def log_play(
         self,
         *,
@@ -135,6 +145,20 @@ class User(ProvenanceTrackedMixin):
             internal.set_play_event_user(event, self)
         if event not in self._play_events:
             self._play_events.append(event)
+
+    def rebind_play_event(
+        self,
+        event: PlayEvent,
+        *,
+        recording: Recording,
+        track: ReleaseTrack | None = None,
+    ) -> None:
+        if event.user is not self:
+            raise ValueError("play event not owned by this user")
+        if track is not None and track.recording is not recording:
+            raise ValueError("track.recording must match recording")
+        internal.set_play_event_track(event, track)
+        internal.set_play_event_recording_ref(event, None if track is not None else recording)
 
     def link_play_to_track(self, event: PlayEvent, track: ReleaseTrack) -> None:
         if event.user is not self:

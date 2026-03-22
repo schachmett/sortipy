@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, Self, cast
 
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
+    Label,
     Provider,
     Recording,
     Release,
@@ -17,15 +18,18 @@ from sortipy.domain.model import (
 from sortipy.domain.ports.fetching import LibraryItemFetcher, LibraryItemFetchResult
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
+    from uuid import UUID
 
-    from sortipy.domain.ingest_pipeline.context import NormalizationData
     from sortipy.domain.model import (
         EntityType,
         IdentifiedEntity,
         LibraryItem,
         Namespace,
+        PlayEvent,
     )
+    from sortipy.domain.ports.persistence import PriorityKeysData
+    from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
 
 
 def make_recording_library_item(user: User | None = None) -> LibraryItem:
@@ -93,9 +97,19 @@ class FakeLibraryItemRepository:
     def add(self, entity: LibraryItem) -> None:
         self.items.append(entity)
 
-    def find_by_normalized_key(self, key: tuple[object, ...]) -> tuple[LibraryItem, ...]:
-        _ = key
-        return ()
+    def exists(
+        self,
+        *,
+        user_id: object,
+        target_type: EntityType,
+        target_id: object,
+    ) -> bool:
+        return any(
+            item.user.id == user_id
+            and item.target_type is target_type
+            and item.target_id == target_id
+            for item in self.items
+        )
 
 
 class _NullCanonicalRepository[TCanonical]:
@@ -119,7 +133,7 @@ class _NullSidecarRepository:
     def save(
         self,
         entity: IdentifiedEntity,
-        data: NormalizationData[IdentifiedEntity],
+        data: PriorityKeysData,
     ) -> None:  # pragma: no cover - trivial
         _ = (entity, data)
 
@@ -132,13 +146,37 @@ class _NullSidecarRepository:
         return {}
 
 
+class _NullUserRepository:
+    def add(self, entity: User) -> None:
+        _ = entity
+
+    def get(self, user_id: UUID) -> User | None:
+        _ = user_id
+        return None
+
+
+class _NullPlayEventRepository:
+    def add(self, entity: PlayEvent) -> None:
+        _ = entity
+
+    def exists(self, event: PlayEvent) -> bool:
+        _ = event
+        return False
+
+    def latest_timestamp(self) -> None:
+        return None
+
+
 @dataclass(slots=True)
 class _FakeLibraryItemRepositories:
     library_items: FakeLibraryItemRepository
     artists: _NullCanonicalRepository[Artist]
+    labels: _NullCanonicalRepository[Label]
     release_sets: _NullCanonicalRepository[ReleaseSet]
     releases: _NullCanonicalRepository[Release]
     recordings: _NullCanonicalRepository[Recording]
+    users: _NullUserRepository
+    play_events: _NullPlayEventRepository
     normalization_sidecars: _NullSidecarRepository
 
 
@@ -149,9 +187,12 @@ class FakeIngestUnitOfWork:
         self.repositories = _FakeLibraryItemRepositories(
             library_items=repository,
             artists=_NullCanonicalRepository[Artist](),
+            labels=_NullCanonicalRepository[Label](),
             release_sets=_NullCanonicalRepository[ReleaseSet](),
             releases=_NullCanonicalRepository[Release](),
             recordings=_NullCanonicalRepository[Recording](),
+            users=_NullUserRepository(),
+            play_events=_NullPlayEventRepository(),
             normalization_sidecars=_NullSidecarRepository(),
         )
         self.committed = False
@@ -177,7 +218,22 @@ class FakeIngestUnitOfWork:
         self.rollback_called = True
 
 
+def make_reconciliation_uow_factory(
+    repository_or_uow: FakeLibraryItemRepository | FakeIngestUnitOfWork,
+) -> Callable[[], ReconciliationUnitOfWork]:
+    def factory() -> ReconciliationUnitOfWork:
+        uow = (
+            repository_or_uow
+            if isinstance(repository_or_uow, FakeIngestUnitOfWork)
+            else FakeIngestUnitOfWork(repository_or_uow)
+        )
+        return cast("ReconciliationUnitOfWork", uow)
+
+    return factory
+
+
 if TYPE_CHECKING:
     from sortipy.domain.ports.persistence import LibraryItemRepository
 
     _check_repo: LibraryItemRepository = FakeLibraryItemRepository()
+    _uow_check = cast("ReconciliationUnitOfWork", FakeIngestUnitOfWork(_check_repo))

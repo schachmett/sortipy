@@ -1,4 +1,4 @@
-"""Fetcher checks for MusicBrainz enrichment."""
+"""Fetcher checks for MusicBrainz reconciliation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from sortipy.adapters.musicbrainz.fetcher import (
     fetch_release_candidates_from_recording,
-    fetch_release_update,
+    fetch_release_graph,
 )
 from sortipy.adapters.musicbrainz.schema import (
     MBRecordingSearch,
@@ -14,14 +14,15 @@ from sortipy.adapters.musicbrainz.schema import (
     MBReleaseSearch,
 )
 from sortipy.adapters.musicbrainz.translator import translate_release
-from sortipy.domain.entity_updates import ReleaseCandidate
 from sortipy.domain.model import Artist, ExternalNamespace, Recording
+from sortipy.domain.ports.enrichment import ReleaseCandidate
 
 if TYPE_CHECKING:
     from sortipy.adapters.musicbrainz.schema import (
         MBRecording,
     )
     from sortipy.config.musicbrainz import MusicBrainzConfig
+    from sortipy.domain.model import Namespace, Release
 
 
 class FakeMusicBrainzClient:
@@ -194,7 +195,7 @@ def test_fetch_release_candidates_skips_on_empty_search(
         assert candidates == []
 
 
-def test_fetch_release_update_full_adapter(
+def test_fetch_release_graph_full_adapter(
     release_payloads_by_id: dict[str, dict[str, object]],
     musicbrainz_config: MusicBrainzConfig,
 ) -> None:
@@ -206,9 +207,47 @@ def test_fetch_release_update_full_adapter(
     )
 
     for mbid, release in payloads.items():
-        update = fetch_release_update(
+        graph = fetch_release_graph(
             ReleaseCandidate(mbid=mbid),
             config=musicbrainz_config,
             client=fake,
         )
-        assert update == translate_release(release)
+        assert fake.fetch_release_mbid == mbid
+        assert _release_signature(graph) == _release_signature(translate_release(release))
+
+
+def _release_signature(release: Release) -> dict[str, object]:
+    def _namespace_value(namespace: Namespace) -> str:
+        return str(namespace)
+
+    return {
+        "release_title": release.title,
+        "release_external_ids": sorted(
+            (_namespace_value(external_id.namespace), external_id.value)
+            for external_id in release.external_ids
+        ),
+        "release_set_title": release.release_set.title,
+        "release_set_external_ids": sorted(
+            (_namespace_value(external_id.namespace), external_id.value)
+            for external_id in release.release_set.external_ids
+        ),
+        "release_set_credits": [
+            (
+                contribution.artist.name,
+                contribution.role.value if contribution.role is not None else None,
+                contribution.credit_order,
+                contribution.credited_as,
+                contribution.join_phrase,
+            )
+            for contribution in release.release_set.contributions
+        ],
+        "track_titles": [track.recording.title for track in release.tracks],
+        "track_recording_external_ids": [
+            sorted(
+                (_namespace_value(external_id.namespace), external_id.value)
+                for external_id in track.recording.external_ids
+            )
+            for track in release.tracks
+        ],
+        "labels": sorted(label.name for label in release.labels),
+    }

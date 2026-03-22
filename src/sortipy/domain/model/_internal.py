@@ -10,11 +10,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from .associations import (
         RecordingContribution,
         ReleaseSetContribution,
         ReleaseTrack,
     )
+    from .entity import IdentifiedEntity
+    from .enums import EntityType
     from .music import Artist, Recording, Release, ReleaseSet
     from .user import LibraryItem, PlayEvent, User
 
@@ -76,6 +80,20 @@ def set_play_event_user(event: PlayEvent, user: User) -> None:
 
 def set_library_item_user(item: LibraryItem, user: User) -> None:
     item._user = user
+
+
+def set_library_item_target(item: LibraryItem, target: IdentifiedEntity | None) -> None:
+    item._target = target
+
+
+def set_library_item_target_identity(
+    item: LibraryItem,
+    *,
+    target_type: EntityType,
+    target_id: UUID,
+) -> None:
+    item._target_type = target_type
+    item._target_id = target_id
 
 
 def attach_release_set_contribution_to_release_set(
