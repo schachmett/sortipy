@@ -71,11 +71,10 @@ def parse_play_event(
 
     active_user = user
     artist = _build_artist(payload)
-    release_set, release = _build_release_set_and_release(payload)
+    _release_set, release = _build_release_set_and_release(payload)
     recording = _build_recording(payload)
     track = _build_track(release=release, recording=recording)
 
-    release_set.add_artist(artist, role=ArtistRole.PRIMARY)
     recording.add_artist(artist, role=ArtistRole.PRIMARY)
 
     return active_user.log_play(

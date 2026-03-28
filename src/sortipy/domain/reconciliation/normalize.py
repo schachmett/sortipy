@@ -114,22 +114,31 @@ def _(release_set: ReleaseSet, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]
     normalized_title = _normalize_text(release_set.title)
     normalized_artist = _release_set_primary_artist_name(release_set)
     sources = _normalized_sources(release_set)
-    return _filter_and_dedupe_keys(
+    release_identifier_keys = _release_set_child_release_external_id_keys(release_set)
+    has_identifier_context = bool(release_set.external_ids or release_identifier_keys)
+    keys: list[ClaimKey] = [
+        *_external_id_keys("release_set", release_set),
+        *release_identifier_keys,
         (
-            *_external_id_keys("release_set", release_set),
-            (
-                "release_set:mbid",
-                _external_id_value(release_set, ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP),
-            ),
-            (
-                "release_set:source-artist-title",
-                _primary_source(sources),
-                normalized_artist,
-                normalized_title,
-            ),
-            ("release_set:artist-title", normalized_artist, normalized_title),
+            "release_set:mbid",
+            _external_id_value(release_set, ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP),
+        ),
+    ]
+    if normalized_artist is not None:
+        keys.extend(
+            [
+                (
+                    "release_set:source-artist-title",
+                    _primary_source(sources),
+                    normalized_artist,
+                    normalized_title,
+                ),
+                ("release_set:artist-title", normalized_artist, normalized_title),
+            ]
         )
-    )
+    elif not has_identifier_context:
+        keys.append(("release_set:source-title", _primary_source(sources), normalized_title))
+    return _filter_and_dedupe_keys(tuple(keys))
 
 
 @_keys_for_entity.register
@@ -137,19 +146,26 @@ def _(release: Release, _duration_bucket_ms: int) -> tuple[ClaimKey, ...]:
     normalized_title = _normalize_text(release.title)
     normalized_artist = _release_artist_name(release)
     sources = _normalized_sources(release)
-    return _filter_and_dedupe_keys(
-        (
-            *_external_id_keys("release", release),
-            ("release:mbid", _external_id_value(release, ExternalNamespace.MUSICBRAINZ_RELEASE)),
-            (
-                "release:source-artist-title",
-                _primary_source(sources),
-                normalized_artist,
-                normalized_title,
-            ),
-            ("release:artist-title", normalized_artist, normalized_title),
+    has_identifier_context = bool(release.external_ids)
+    keys: list[ClaimKey] = [
+        *_external_id_keys("release", release),
+        ("release:mbid", _external_id_value(release, ExternalNamespace.MUSICBRAINZ_RELEASE)),
+    ]
+    if normalized_artist is not None:
+        keys.extend(
+            [
+                (
+                    "release:source-artist-title",
+                    _primary_source(sources),
+                    normalized_artist,
+                    normalized_title,
+                ),
+                ("release:artist-title", normalized_artist, normalized_title),
+            ]
         )
-    )
+    elif not has_identifier_context:
+        keys.append(("release:source-title", _primary_source(sources), normalized_title))
+    return _filter_and_dedupe_keys(tuple(keys))
 
 
 @_keys_for_entity.register
@@ -401,14 +417,21 @@ def _release_set_primary_artist_name(release_set: ReleaseSet) -> str | None:
 
 
 def _release_artist_name(release: Release) -> str | None:
-    from_release_set = _release_set_primary_artist_name(release.release_set)
-    if from_release_set:
-        return from_release_set
-    for track in release.tracks:
-        recording_name = _recording_primary_artist_name(track.recording)
-        if recording_name:
-            return recording_name
-    return None
+    return _release_set_primary_artist_name(release.release_set)
+
+
+def _release_set_child_release_external_id_keys(release_set: ReleaseSet) -> tuple[ClaimKey, ...]:
+    release_external_ids = sorted(
+        {
+            (str(external_id.namespace), external_id.value)
+            for release in release_set.releases
+            for external_id in release.external_ids
+        }
+    )
+    return tuple(
+        ("release_set:child_release_external_id", namespace, value)
+        for namespace, value in release_external_ids
+    )
 
 
 def _recording_primary_artist_name(recording: Recording) -> str | None:

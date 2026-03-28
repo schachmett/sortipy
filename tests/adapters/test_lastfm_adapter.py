@@ -158,8 +158,8 @@ def test_parse_play_event_model_creates_domain_model_entities(
     assert recording.artists
     artist = recording.artists[0]
     assert artist.name == validated.artist.name
-    assert release_set.artists
-    assert release_set.artists[0] is artist
+    assert release_set.artists == ()
+    assert release_set.contributions == ()
 
     assert artist.provenance is not None
     assert Provider.LASTFM in artist.provenance.sources

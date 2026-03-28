@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.adapters.lastfm import fetch_play_events
 from sortipy.adapters.lastfm.client import LastFmClient
+from sortipy.adapters.lastfm.translator import parse_play_event
 from sortipy.application import PlayEventIngestRequest, ingest_play_events
 from sortipy.config.lastfm import (
     LASTFM_BASE_URL,
@@ -25,6 +26,7 @@ from sortipy.domain.model import (
     PlayEvent,
     Provider,
     Recording,
+    Release,
     ReleaseSet,
     User,
 )
@@ -153,6 +155,38 @@ def _make_play_event(
     )
 
 
+def _make_lastfm_payload(
+    *,
+    track_name: str,
+    artist_name: str,
+    artist_url: str,
+    album_title: str,
+    album_mbid: str,
+    track_url: str,
+    timestamp: datetime,
+) -> dict[str, object]:
+    return {
+        "artist": {
+            "#text": artist_name,
+            "url": artist_url,
+            "mbid": None,
+        },
+        "streamable": "0",
+        "image": [],
+        "mbid": None,
+        "album": {
+            "#text": album_title,
+            "mbid": album_mbid,
+        },
+        "name": track_name,
+        "url": track_url,
+        "date": {
+            "uts": str(int(timestamp.timestamp())),
+            "#text": timestamp.strftime("%d %b %Y, %H:%M"),
+        },
+    }
+
+
 @pytest.mark.integration
 def test_reconcile_play_events_stores_tracks_with_same_name_different_artists(
     sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
@@ -201,3 +235,70 @@ def test_reconcile_play_events_stores_tracks_with_same_name_different_artists(
     assert len(persisted) == 2
     assert artist_names == {"First Artist", "Second Artist"}
     assert track_names == {"Common Title"}
+
+
+@pytest.mark.integration
+def test_reconcile_play_events_does_not_split_release_set_on_track_artist_mismatch(
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
+) -> None:
+    user = User(display_name="Last.fm")
+    with sqlite_unit_of_work() as uow:
+        uow.repositories.users.add(user)
+        uow.commit()
+
+    base_time = datetime(2026, 3, 28, 12, 0, 0, tzinfo=UTC)
+    bowie_track = parse_play_event(
+        _make_lastfm_payload(
+            track_name="Sound and Vision - 2017 Remaster",
+            artist_name="David Bowie",
+            artist_url="https://www.last.fm/music/David+Bowie",
+            album_title="Best of Bowie",
+            album_mbid="0603828a-4dfe-4608-8193-4e3a94b8baf0",
+            track_url="https://www.last.fm/music/David+Bowie/_/Sound+and+Vision+-+2017+Remaster",
+            timestamp=base_time,
+        ),
+        user=user,
+    )
+    under_pressure = parse_play_event(
+        _make_lastfm_payload(
+            track_name="Under Pressure - Remastered 2011",
+            artist_name="Queen",
+            artist_url="https://www.last.fm/music/Queen",
+            album_title="Best of Bowie",
+            album_mbid="0603828a-4dfe-4608-8193-4e3a94b8baf0",
+            track_url="https://www.last.fm/music/Queen/_/Under+Pressure+-+Remastered+2011",
+            timestamp=base_time + timedelta(minutes=1),
+        ),
+        user=user,
+    )
+
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5, max_events=2),
+        fetcher=FakePlayEventSource([[bowie_track, under_pressure]]),
+        user=user,
+        unit_of_work_factory=sqlite_unit_of_work,
+        source=Provider.LASTFM,
+    )
+
+    assert result.stored_events == 2
+
+    with sqlite_unit_of_work() as uow:
+        release_sets = uow.session.execute(select(ReleaseSet)).scalars().all()
+        releases = uow.session.execute(select(Release)).scalars().all()
+        recordings = uow.session.execute(select(Recording)).scalars().all()
+        assert len(release_sets) == 1
+        assert len(releases) == 1
+
+        release_set = release_sets[0]
+        release = releases[0]
+        assert release_set.title == "Best of Bowie"
+        assert release.release_set is release_set
+        assert release_set.contributions == ()
+        assert len(release.tracks) == 2
+
+        artists_by_recording = {
+            recording.title: {contribution.artist.name for contribution in recording.contributions}
+            for recording in recordings
+        }
+        assert artists_by_recording["Sound and Vision - 2017 Remaster"] == {"David Bowie"}
+        assert artists_by_recording["Under Pressure - Remastered 2011"] == {"Queen"}

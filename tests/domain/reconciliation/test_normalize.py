@@ -87,6 +87,59 @@ def test_release_set_normalization_uses_primary_artist_priority() -> None:
     assert ("release_set:artist-title", "featured artist", "kid a") not in keys
 
 
+def test_release_set_normalization_uses_child_release_external_ids_without_artist() -> None:
+    release_set = ReleaseSet(title="Best of Bowie")
+    release_set.add_source(Provider.LASTFM)
+    release = release_set.create_release(title="Best of Bowie")
+    release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "0603828a-4dfe-4608-8193-4e3a94b8baf0",
+    )
+
+    claim = EntityClaim(entity=release_set, metadata=ClaimMetadata(source=Provider.LASTFM))
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    keys = normalize_claim_graph(graph)[claim.claim_id]
+
+    assert (
+        "release_set:child_release_external_id",
+        str(ExternalNamespace.MUSICBRAINZ_RELEASE),
+        "0603828a-4dfe-4608-8193-4e3a94b8baf0",
+    ) in keys
+    assert ("release_set:source-title", Provider.LASTFM, "best of bowie") not in keys
+
+
+def test_release_set_normalization_falls_back_to_source_title_without_artist_or_ids() -> None:
+    release_set = ReleaseSet(title="Best of Bowie")
+    release_set.add_source(Provider.LASTFM)
+
+    claim = EntityClaim(entity=release_set, metadata=ClaimMetadata(source=Provider.LASTFM))
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    keys = normalize_claim_graph(graph)[claim.claim_id]
+
+    assert ("release_set:source-title", Provider.LASTFM, "best of bowie") in keys
+    assert not any(key[0] == "release_set:artist-title" for key in keys)
+
+
+def test_release_normalization_falls_back_to_source_title_without_album_artist() -> None:
+    release_set = ReleaseSet(title="Best of Bowie")
+    release_set.add_source(Provider.LASTFM)
+    release = release_set.create_release(title="Best of Bowie")
+    release.add_source(Provider.LASTFM)
+
+    claim = EntityClaim(entity=release, metadata=ClaimMetadata(source=Provider.LASTFM))
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    keys = normalize_claim_graph(graph)[claim.claim_id]
+
+    assert ("release:source-title", Provider.LASTFM, "best of bowie") in keys
+    assert not any(key[0] == "release:artist-title" for key in keys)
+
+
 def test_play_event_normalization_includes_track_key_when_available() -> None:
     user = User(display_name="listener")
     artist = Artist(name="Massive Attack")
