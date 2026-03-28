@@ -306,7 +306,7 @@ class MusicBrainzClient:
         base_url = self._resilience.base_url
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
-        response = await client.get(path, params=params)
+        response = await client.get(path, params=params, follow_redirects=True)
         response.raise_for_status()
 
         payload = response.json()
@@ -325,7 +325,7 @@ class MusicBrainzClient:
         base_url = self._resilience.base_url
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
-        response = await client.get(path, params=params)
+        response = await client.get(path, params=params, follow_redirects=True)
         response.raise_for_status()
 
         payload = response.json()
@@ -344,7 +344,7 @@ class MusicBrainzClient:
         base_url = self._resilience.base_url
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
-        response = await client.get(path, params=params)
+        response = await client.get(path, params=params, follow_redirects=True)
         response.raise_for_status()
 
         payload = response.json()
@@ -363,7 +363,7 @@ class MusicBrainzClient:
         base_url = self._resilience.base_url
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
-        response = await client.get(path, params=params)
+        response = await client.get(path, params=params, follow_redirects=True)
         response.raise_for_status()
 
         payload = response.json()
