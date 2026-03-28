@@ -27,9 +27,6 @@ from sortipy.domain.model import (
     ReleaseTrack,
     User,
 )
-from sortipy.domain.model import (
-    _internal as internal,
-)
 
 from .claims import (
     AssociationKind,
@@ -172,6 +169,11 @@ def apply_reconciliation_instructions(
             entities_by_claim=entities_by_claim,
             result=result,
         )
+
+    _prune_superseded_entities(
+        graph,
+        entity_instructions_by_claim=entity_instructions_by_claim,
+    )
 
     return result
 
@@ -460,6 +462,8 @@ def _create_association(
             return _create_recording_contribution(association, source=source, target=target)
         case AssociationKind.RELEASE_TRACK:
             return _create_release_track(association, source=source, target=target)
+        case _:
+            raise ValueError(f"Unsupported association kind: {association.kind}")
 
 
 def _merge_association(
@@ -526,6 +530,8 @@ def _create_link(
             user = expect_relationship_entity(source, User, relationship_claim=link)
             play_event = expect_relationship_entity(target, PlayEvent, relationship_claim=link)
             user.rehydrate_play_event(play_event)
+        case _:
+            raise ValueError(f"Unsupported link kind: {link.kind}")
 
 
 def _create_release_set_contribution(
@@ -544,21 +550,7 @@ def _create_release_set_contribution(
         ReleaseSetContribution,
         relationship_claim=association,
     )
-    if contribution.release_set is not release_set:
-        internal.detach_release_set_contribution_from_release_set(
-            contribution.release_set,
-            contribution,
-        )
-        internal.set_release_set_contribution_release_set(contribution, release_set)
-        internal.attach_release_set_contribution_to_release_set(release_set, contribution)
-    if contribution.artist is not artist:
-        internal.detach_release_set_contribution_from_artist(
-            contribution.artist,
-            contribution,
-        )
-        internal.set_release_set_contribution_artist(contribution, artist)
-        internal.attach_release_set_contribution_to_artist(artist, contribution)
-    return contribution
+    return release_set.adopt_contribution(contribution, artist=artist)
 
 
 def _create_recording_contribution(
@@ -577,21 +569,7 @@ def _create_recording_contribution(
         RecordingContribution,
         relationship_claim=association,
     )
-    if contribution.recording is not recording:
-        internal.detach_recording_contribution_from_recording(
-            contribution.recording,
-            contribution,
-        )
-        internal.set_recording_contribution_recording(contribution, recording)
-        internal.attach_recording_contribution_to_recording(recording, contribution)
-    if contribution.artist is not artist:
-        internal.detach_recording_contribution_from_artist(
-            contribution.artist,
-            contribution,
-        )
-        internal.set_recording_contribution_artist(contribution, artist)
-        internal.attach_recording_contribution_to_artist(artist, contribution)
-    return contribution
+    return recording.adopt_contribution(contribution, artist=artist)
 
 
 def _create_release_track(
@@ -610,15 +588,7 @@ def _create_release_track(
         ReleaseTrack,
         relationship_claim=association,
     )
-    if track.release is not release:
-        internal.detach_release_track_from_release(track.release, track)
-        internal.set_release_track_release(track, release)
-        internal.attach_release_track_to_release(release, track)
-    if track.recording is not recording:
-        internal.detach_release_track_from_recording(track.recording, track)
-        internal.set_release_track_recording(track, recording)
-        internal.attach_release_track_to_recording(recording, track)
-    return track
+    return release.adopt_track(track, recording=recording)
 
 
 def _merge_release_set_contribution(
@@ -656,6 +626,24 @@ def _merge_release_track(
     target.duration_ms = payload.duration_ms
     _merge_external_ids(payload, target)
     _merge_sources(payload, target)
+
+
+def _prune_superseded_entities(
+    graph: ClaimGraph,
+    *,
+    entity_instructions_by_claim: EntityInstructionsByClaim,
+) -> None:
+    for claim_id, instruction in entity_instructions_by_claim.items():
+        claim = graph.require_claim(claim_id)
+        match (claim.entity, instruction):
+            case (Release() as release, MergeInstruction(target=target)) if target is not release:
+                release.release_set.remove_release(release)
+            case (Release() as release, NoopInstruction(target=target)) if (
+                target is not None and target is not release
+            ):
+                release.release_set.remove_release(release)
+            case _:
+                pass
 
 
 def _entity_for_relationship_endpoint(

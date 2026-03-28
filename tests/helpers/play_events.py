@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self, cast
@@ -251,6 +252,9 @@ class FakeIngestUnitOfWork:
 
     def rollback(self) -> None:
         self.rollback_called = True
+
+    def suspend_autoflush(self) -> contextlib.AbstractContextManager[object]:
+        return contextlib.nullcontext(cast("object", None))
 
 
 def make_reconciliation_uow_factory(

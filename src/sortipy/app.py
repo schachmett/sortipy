@@ -14,6 +14,13 @@ from sortipy.adapters.musicbrainz import (
 )
 from sortipy.adapters.spotify import fetch_library_items
 from sortipy.adapters.sqlalchemy import create_unit_of_work_factory
+from sortipy.application import (
+    LibraryItemIngestRequest,
+    PlayEventIngestRequest,
+    ingest_library_items,
+    ingest_play_events,
+    reconcile_release_updates,
+)
 from sortipy.config import (
     get_database_config,
     get_lastfm_config,
@@ -21,29 +28,20 @@ from sortipy.config import (
     get_spotify_config,
     get_sync_config,
 )
-from sortipy.domain.model import User
-from sortipy.domain.reconciliation import (
-    LibraryItemReconciliationRequest,
-    PlayEventReconciliationRequest,
-    reconcile_library_items,
-    reconcile_play_events,
-)
-from sortipy.domain.reconciliation import (
-    reconcile_musicbrainz_releases as reconcile_musicbrainz_release_graphs,
-)
+from sortipy.domain.model import Provider, User
 
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
+    from sortipy.adapters.musicbrainz import MusicBrainzReleaseCandidate
+    from sortipy.application import (
+        LibraryItemIngestResult,
+        PlayEventIngestResult,
+        ReleaseUpdateResult,
+    )
     from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
-    from sortipy.domain.ports.enrichment import ReleaseCandidate
-    from sortipy.domain.reconciliation import (
-        LastfmReconciliationResult,
-        MusicBrainzReconciliationResult,
-        SpotifyLibraryReconciliationResult,
-    )
 
 
 log = getLogger(__name__)
@@ -91,7 +89,7 @@ def reconcile_lastfm_play_events(
     max_events: int | None = None,
     from_timestamp: datetime | None = None,
     to_timestamp: datetime | None = None,
-) -> LastfmReconciliationResult:
+) -> PlayEventIngestResult:
     """Reconcile Last.fm play events using the configured adapters."""
 
     user = load_user(user_id=user_id)
@@ -126,8 +124,8 @@ def reconcile_lastfm_play_events(
         to_timestamp,
     )
 
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(
             batch_size=effective_batch_size,
             max_events=max_events,
             from_timestamp=from_timestamp,
@@ -136,6 +134,7 @@ def reconcile_lastfm_play_events(
         fetcher=_fetcher,
         user=user,
         unit_of_work_factory=unit_of_work_factory,
+        source=Provider.LASTFM,
     )
 
     log.info(
@@ -155,7 +154,7 @@ def reconcile_spotify_library_items(
     max_tracks: int | None = None,
     max_albums: int | None = None,
     max_artists: int | None = None,
-) -> SpotifyLibraryReconciliationResult:
+) -> LibraryItemIngestResult:
     """Reconcile Spotify library items using the configured adapters."""
 
     user = load_user(user_id=user_id)
@@ -191,8 +190,8 @@ def reconcile_spotify_library_items(
         max_artists,
     )
 
-    result = reconcile_library_items(
-        request=LibraryItemReconciliationRequest(
+    result = ingest_library_items(
+        request=LibraryItemIngestRequest(
             batch_size=effective_batch_size,
             max_tracks=max_tracks,
             max_albums=max_albums,
@@ -201,6 +200,7 @@ def reconcile_spotify_library_items(
         fetcher=_fetcher,
         unit_of_work_factory=unit_of_work_factory,
         user=user,
+        source=Provider.SPOTIFY,
     )
 
     log.info(
@@ -218,45 +218,46 @@ def reconcile_spotify_library_items(
 def reconcile_musicbrainz_releases(
     *,
     limit: int | None = None,
-) -> MusicBrainzReconciliationResult:
+) -> ReleaseUpdateResult:
     """Reconcile MusicBrainz release graphs into the configured catalog."""
 
     musicbrainz_config = get_musicbrainz_config()
     database_config = get_database_config()
     unit_of_work_factory = create_unit_of_work_factory(database_uri=database_config.uri)
 
-    def _from_recording(recording: Recording) -> list[ReleaseCandidate]:
+    def _from_recording(recording: Recording) -> list[MusicBrainzReleaseCandidate]:
         return fetch_release_candidates_from_recording(
             recording,
             config=musicbrainz_config,
         )
 
-    def _from_release_set(release_set: ReleaseSet) -> list[ReleaseCandidate]:
+    def _from_release_set(release_set: ReleaseSet) -> list[MusicBrainzReleaseCandidate]:
         return fetch_release_candidates_from_release_set(
             release_set,
             config=musicbrainz_config,
         )
 
-    def _from_artist(artist: Artist) -> list[ReleaseCandidate]:
+    def _from_artist(artist: Artist) -> list[MusicBrainzReleaseCandidate]:
         return fetch_release_candidates_from_artist(
             artist,
             config=musicbrainz_config,
         )
 
-    def _fetch_graph(candidate: ReleaseCandidate) -> Release:
+    def _fetch_graph(candidate: MusicBrainzReleaseCandidate) -> Release:
         return fetch_release_graph(
             candidate,
             config=musicbrainz_config,
         )
 
     log.info("Starting MusicBrainz reconciliation: limit=%s", limit)
-    result = reconcile_musicbrainz_release_graphs(
+    result = reconcile_release_updates(
         fetch_release_graph=_fetch_graph,
         fetch_candidates_from_recording=_from_recording,
         fetch_candidates_from_release_set=_from_release_set,
         fetch_candidates_from_artist=_from_artist,
         unit_of_work_factory=unit_of_work_factory,
         limit=limit,
+        source=Provider.MUSICBRAINZ,
     )
     log.info(
         "Finished MusicBrainz reconciliation: candidates=%s, fetched=%s, applied=%s, anchors=%s",

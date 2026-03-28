@@ -1,35 +1,26 @@
-"""Catalog claim-graph builders for workflow-owned reconciliation."""
+"""Application-local helpers for building catalog claim graphs."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from sortipy.domain.model import (
-    Artist,
-    Label,
-    Recording,
-    Release,
-    ReleaseSet,
-)
-
-from .claims import (
+from sortipy.domain.model import Artist, Label, Recording, Release, ReleaseSet
+from sortipy.domain.reconciliation import (
     AssociationClaim,
     AssociationKind,
+    ClaimGraph,
     ClaimMetadata,
     EntityClaim,
     LinkClaim,
     LinkKind,
 )
-from .graph import ClaimGraph
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sortipy.domain.model import AssociationEntity, CatalogEntity, Provider
-    from sortipy.domain.reconciliation.apply import ApplyResult
-
-    from .contracts import RepresentativesByClaim
+    from sortipy.domain.reconciliation import ApplyResult, RepresentativesByClaim
 
 
 def _representative_claim_id(
@@ -44,27 +35,24 @@ def _representative_claim_id(
 
 
 @dataclass(slots=True)
-class CatalogClaimGraphBundle:
-    """Claim graph plus source-object lookup metadata for workflow rebinding."""
+class CatalogGraphBuildResult:
+    """Claim graph plus object-identity lookup metadata for rebinding."""
 
     graph: ClaimGraph
-    entity_claim_ids: dict[int, UUID]
-    association_claim_ids: dict[int, UUID]
-    root_claim_ids: tuple[UUID, ...]
+    entity_claim_ids_by_object_id: dict[int, UUID]
+    association_claim_ids_by_object_id: dict[int, UUID]
 
     def require_entity_claim_id(self, entity: CatalogEntity) -> UUID:
         try:
-            return self.entity_claim_ids[id(entity)]
+            return self.entity_claim_ids_by_object_id[id(entity)]
         except KeyError as exc:
-            raise ValueError(f"Entity is not present in claim bundle: {entity!r}") from exc
+            raise ValueError(f"Entity is not present in claim graph: {entity!r}") from exc
 
     def require_association_claim_id(self, association: AssociationEntity) -> UUID:
         try:
-            return self.association_claim_ids[id(association)]
+            return self.association_claim_ids_by_object_id[id(association)]
         except KeyError as exc:
-            raise ValueError(
-                f"Association is not present in claim bundle: {association!r}"
-            ) from exc
+            raise ValueError(f"Association is not present in claim graph: {association!r}") from exc
 
     def representative_entity_claim_id(
         self,
@@ -134,20 +122,15 @@ class _CatalogClaimGraphBuilder:
         self._visited_entity_ids: set[int] = set()
         self._link_keys: set[tuple[LinkKind, UUID, UUID]] = set()
 
-    def build(self, roots: tuple[CatalogEntity, ...]) -> CatalogClaimGraphBundle:
-        root_claim_ids: list[UUID] = []
+    def build(self, roots: tuple[CatalogEntity, ...]) -> CatalogGraphBuildResult:
         for root in roots:
             claim_id = self._visit_catalog_entity(root)
-            claim = self._graph.require_claim(claim_id)
-            self._graph.add_root(claim)
-            if claim_id not in root_claim_ids:
-                root_claim_ids.append(claim_id)
+            self._graph.add_root(self._graph.require_claim(claim_id))
         self._graph.validate_invariants()
-        return CatalogClaimGraphBundle(
+        return CatalogGraphBuildResult(
             graph=self._graph,
-            entity_claim_ids=dict(self._entity_claim_ids),
-            association_claim_ids=dict(self._association_claim_ids),
-            root_claim_ids=tuple(root_claim_ids),
+            entity_claim_ids_by_object_id=dict(self._entity_claim_ids),
+            association_claim_ids_by_object_id=dict(self._association_claim_ids),
         )
 
     def _visit_catalog_entity(self, entity: CatalogEntity) -> UUID:
@@ -289,8 +272,7 @@ def build_catalog_claim_graph(
     *,
     roots: tuple[CatalogEntity, ...],
     source: Provider,
-) -> CatalogClaimGraphBundle:
-    """Build a claim graph bundle rooted at fresh catalog aggregates."""
+) -> CatalogGraphBuildResult:
+    """Build a claim graph rooted at fresh catalog aggregates."""
 
-    builder = _CatalogClaimGraphBuilder(source=source)
-    return builder.build(roots)
+    return _CatalogClaimGraphBuilder(source=source).build(roots)

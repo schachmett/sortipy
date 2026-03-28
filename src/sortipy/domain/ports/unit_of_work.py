@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    import contextlib
+
     from .persistence import (
         ArtistRepository,
         RecordingRepository,
@@ -37,6 +39,8 @@ class UnitOfWork[TRepositories: RepositoryCollection](Protocol):
     def commit(self) -> None: ...
 
     def rollback(self) -> None: ...
+
+    def suspend_autoflush(self) -> contextlib.AbstractContextManager[object]: ...
 
 
 @runtime_checkable

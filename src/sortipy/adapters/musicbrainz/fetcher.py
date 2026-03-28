@@ -7,18 +7,25 @@ from typing import TYPE_CHECKING
 
 from sortipy.domain.model import ExternalNamespace
 
-from .client import MusicBrainzAPIError, MusicBrainzClient
-from .translator import (
+from .candidates import (
     release_candidate_from_release,
     release_candidate_from_release_ref,
+)
+from .client import MusicBrainzAPIError, MusicBrainzClient
+from .translator import (
+    parse_partial_date,
+    release_media_formats,
+    release_packaging,
+    release_status,
+    release_track_count,
     translate_release,
 )
 
 if TYPE_CHECKING:
     from sortipy.config.musicbrainz import MusicBrainzConfig
     from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
-    from sortipy.domain.ports.enrichment import ReleaseCandidate
 
+    from .candidates import MusicBrainzReleaseCandidate
     from .client import MusicBrainzLookupClient
     from .schema import MBRecording
 
@@ -26,7 +33,7 @@ log = getLogger(__name__)
 
 
 def fetch_release_graph(
-    candidate: ReleaseCandidate,
+    candidate: MusicBrainzReleaseCandidate,
     *,
     config: MusicBrainzConfig,
     client: MusicBrainzLookupClient | None = None,
@@ -43,14 +50,24 @@ def fetch_release_candidates_from_recording(
     *,
     config: MusicBrainzConfig,
     client: MusicBrainzLookupClient | None = None,
-) -> list[ReleaseCandidate]:
+) -> list[MusicBrainzReleaseCandidate]:
     """Find release candidates for a recording via MusicBrainz."""
 
     active_client = client or MusicBrainzClient(config=config)
     payload = _recording_payload(active_client, recording)
     if payload is None:
         return []
-    return [release_candidate_from_release(release) for release in payload.releases]
+    return [
+        release_candidate_from_release(
+            release,
+            release_date=parse_partial_date(release.date),
+            status=release_status(release.status),
+            packaging=release_packaging(release.packaging),
+            track_count=release_track_count(release),
+            media_formats=release_media_formats(release),
+        )
+        for release in payload.releases
+    ]
 
 
 def fetch_release_candidates_from_release_set(
@@ -58,7 +75,7 @@ def fetch_release_candidates_from_release_set(
     *,
     config: MusicBrainzConfig,
     client: MusicBrainzLookupClient | None = None,
-) -> list[ReleaseCandidate]:
+) -> list[MusicBrainzReleaseCandidate]:
     """Find release candidates for a release set via MusicBrainz."""
 
     mbid = _release_set_mbid(release_set)
@@ -66,7 +83,15 @@ def fetch_release_candidates_from_release_set(
         return []
     active_client = client or MusicBrainzClient(config=config)
     results = active_client.browse_releases_by_release_group(release_group_mbid=mbid)
-    return [release_candidate_from_release_ref(release) for release in results.releases]
+    return [
+        release_candidate_from_release_ref(
+            release,
+            release_date=parse_partial_date(release.date),
+            status=release_status(release.status),
+            packaging=release_packaging(release.packaging),
+        )
+        for release in results.releases
+    ]
 
 
 def fetch_release_candidates_from_artist(
@@ -74,7 +99,7 @@ def fetch_release_candidates_from_artist(
     *,
     config: MusicBrainzConfig,
     client: MusicBrainzLookupClient | None = None,
-) -> list[ReleaseCandidate]:
+) -> list[MusicBrainzReleaseCandidate]:
     """Find release candidates for an artist via MusicBrainz."""
 
     mbid = _artist_mbid(artist)
@@ -82,7 +107,15 @@ def fetch_release_candidates_from_artist(
         return []
     active_client = client or MusicBrainzClient(config=config)
     results = active_client.browse_releases_by_artist(artist_mbid=mbid)
-    return [release_candidate_from_release_ref(release) for release in results.releases]
+    return [
+        release_candidate_from_release_ref(
+            release,
+            release_date=parse_partial_date(release.date),
+            status=release_status(release.status),
+            packaging=release_packaging(release.packaging),
+        )
+        for release in results.releases
+    ]
 
 
 def _recording_payload(

@@ -2,13 +2,6 @@
 
 from __future__ import annotations
 
-from .enrichment import (
-    ReleaseCandidate,
-    ReleaseCandidatesFromArtist,
-    ReleaseCandidatesFromRecording,
-    ReleaseCandidatesFromReleaseSet,
-    ReleaseGraphFetcher,
-)
 from .fetching import (
     LibraryItemFetcher,
     LibraryItemFetchResult,
@@ -49,11 +42,6 @@ __all__ = [
     "PlayEventRepository",
     "PriorityKeysData",
     "RecordingRepository",
-    "ReleaseCandidate",
-    "ReleaseCandidatesFromArtist",
-    "ReleaseCandidatesFromRecording",
-    "ReleaseCandidatesFromReleaseSet",
-    "ReleaseGraphFetcher",
     "ReleaseRepository",
     "ReleaseSetRepository",
     "Repository",

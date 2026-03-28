@@ -10,26 +10,23 @@ from tests.helpers.play_events import (
     make_reconciliation_uow_factory,
 )
 
-from sortipy.domain.model import User
-from sortipy.domain.reconciliation import (
-    LastfmReconciliationResult,
-    PlayEventReconciliationRequest,
-    reconcile_play_events,
-)
+from sortipy.application import PlayEventIngestRequest, PlayEventIngestResult, ingest_play_events
+from sortipy.domain.model import Provider, User
 
 
 def test_reconcile_play_events_persists_results() -> None:
     event = make_play_event()
     user = event.user
     repo = FakePlayEventRepository()
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=FakePlayEventSource([[event]]),
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
-    assert isinstance(result, LastfmReconciliationResult)
+    assert isinstance(result, PlayEventIngestResult)
     assert result.stored_events == 1
     assert result.fetched == 1
     assert repo.items == [event]
@@ -40,11 +37,12 @@ def test_reconcile_play_events_skips_commit_when_empty() -> None:
     repo = FakePlayEventRepository()
     uow = FakeIngestUnitOfWork(repo)
     user = User(display_name="Listener")
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=FakePlayEventSource([[]]),
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(uow),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 0
@@ -56,11 +54,12 @@ def test_reconcile_play_events_skips_existing_timestamps() -> None:
     event = make_play_event()
     user = event.user
     repo = FakePlayEventRepository([event])
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=FakePlayEventSource([[event]]),
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 0
@@ -75,11 +74,12 @@ def test_reconcile_play_events_respects_from_timestamp() -> None:
     user = User(display_name="Listener")
     repo = FakePlayEventRepository([older])
     fake_source = FakePlayEventSource([[older, newer]])
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5, from_timestamp=older.played_at),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5, from_timestamp=older.played_at),
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 1
@@ -93,11 +93,12 @@ def test_reconcile_play_events_returns_now_playing_without_persisting() -> None:
     user = User(display_name="Listener")
     repo = FakePlayEventRepository()
     fake_source = FakePlayEventSource([[logged]], now_playing=in_progress)
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.now_playing is in_progress
@@ -113,11 +114,12 @@ def test_reconcile_play_events_respects_to_timestamp_upper_bound() -> None:
     repo = FakePlayEventRepository()
     fake_source = FakePlayEventSource([[within_window, beyond_window]])
     window_end = base_time + timedelta(seconds=10)
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5, to_timestamp=window_end),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5, to_timestamp=window_end),
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 1
@@ -131,11 +133,12 @@ def test_reconcile_play_events_reports_latest_timestamp_from_new_data() -> None:
     second = make_play_event("Second", timestamp=base_time + timedelta(seconds=30))
     user = User(display_name="Listener")
     repo = FakePlayEventRepository()
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=FakePlayEventSource([[first, second]]),
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.latest_timestamp == second.played_at
@@ -148,11 +151,12 @@ def test_reconcile_play_events_uses_repository_latest_timestamp_when_request_mis
     next_event = make_play_event("Next", timestamp=base_time + timedelta(seconds=25))
     user = User(display_name="Listener")
     fake_source = FakePlayEventSource([[next_event]])
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 1
@@ -169,11 +173,12 @@ def test_reconcile_play_events_honours_max_events_limit() -> None:
     user = User(display_name="Listener")
     repo = FakePlayEventRepository()
     fake_source = FakePlayEventSource([events])
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5, max_events=2),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5, max_events=2),
         fetcher=fake_source,
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 2
@@ -188,11 +193,12 @@ def test_reconcile_play_events_skips_commit_when_upper_bound_filters_all_events(
     repo = FakePlayEventRepository()
     uow = FakeIngestUnitOfWork(repo)
     window_end = base_time
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5, to_timestamp=window_end),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5, to_timestamp=window_end),
         fetcher=FakePlayEventSource([[out_of_range]]),
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(uow),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 0
@@ -206,11 +212,12 @@ def test_reconcile_play_events_deduplicates_events_with_same_timestamp_in_batch(
     duplicate_b = make_play_event("Dup B", timestamp=base_time)
     user = User(display_name="Listener")
     repo = FakePlayEventRepository()
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=FakePlayEventSource([[duplicate_a, duplicate_b]]),
         user=user,
         unit_of_work_factory=make_reconciliation_uow_factory(repo),
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 1

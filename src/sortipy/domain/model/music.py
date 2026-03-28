@@ -171,6 +171,31 @@ class ReleaseSet(CanonicalEntity):
             internal.set_release_set_contribution_release_set(c, new_owner)
             internal.attach_release_set_contribution_to_release_set(new_owner, c)
 
+    def adopt_contribution(
+        self,
+        contribution: ReleaseSetContribution,
+        *,
+        artist: Artist | None = None,
+    ) -> ReleaseSetContribution:
+        target_artist = contribution.artist if artist is None else artist
+        if contribution.release_set is self and contribution.artist is target_artist:
+            return contribution
+        if contribution.release_set is not self:
+            internal.detach_release_set_contribution_from_release_set(
+                contribution.release_set,
+                contribution,
+            )
+            internal.set_release_set_contribution_release_set(contribution, self)
+            internal.attach_release_set_contribution_to_release_set(self, contribution)
+        if contribution.artist is not target_artist:
+            internal.detach_release_set_contribution_from_artist(
+                contribution.artist,
+                contribution,
+            )
+            internal.set_release_set_contribution_artist(contribution, target_artist)
+            internal.attach_release_set_contribution_to_artist(target_artist, contribution)
+        return contribution
+
     def replace_artist(self, old: Artist, new: Artist) -> None:
         if old is new:
             return
@@ -262,6 +287,25 @@ class Release(CanonicalEntity):
             internal.set_release_track_release(track, new_release)
             internal.attach_release_track_to_release(new_release, track)
 
+    def adopt_track(
+        self,
+        track: ReleaseTrack,
+        *,
+        recording: Recording | None = None,
+    ) -> ReleaseTrack:
+        target_recording = track.recording if recording is None else recording
+        if track.release is self and track.recording is target_recording:
+            return track
+        if track.release is not self:
+            internal.detach_release_track_from_release(track.release, track)
+            internal.set_release_track_release(track, self)
+            internal.attach_release_track_to_release(self, track)
+        if track.recording is not target_recording:
+            internal.detach_release_track_from_recording(track.recording, track)
+            internal.set_release_track_recording(track, target_recording)
+            internal.attach_release_track_to_recording(target_recording, track)
+        return track
+
     def move_track_to_recording(self, track: ReleaseTrack, recording: Recording) -> None:
         if track.release is not self:
             raise ValueError("track not owned by this release")
@@ -347,6 +391,31 @@ class Recording(CanonicalEntity):
             internal.detach_recording_contribution_from_recording(self, c)
             internal.set_recording_contribution_recording(c, new_recording)
             internal.attach_recording_contribution_to_recording(new_recording, c)
+
+    def adopt_contribution(
+        self,
+        contribution: RecordingContribution,
+        *,
+        artist: Artist | None = None,
+    ) -> RecordingContribution:
+        target_artist = contribution.artist if artist is None else artist
+        if contribution.recording is self and contribution.artist is target_artist:
+            return contribution
+        if contribution.recording is not self:
+            internal.detach_recording_contribution_from_recording(
+                contribution.recording,
+                contribution,
+            )
+            internal.set_recording_contribution_recording(contribution, self)
+            internal.attach_recording_contribution_to_recording(self, contribution)
+        if contribution.artist is not target_artist:
+            internal.detach_recording_contribution_from_artist(
+                contribution.artist,
+                contribution,
+            )
+            internal.set_recording_contribution_artist(contribution, target_artist)
+            internal.attach_recording_contribution_to_artist(target_artist, contribution)
+        return contribution
 
     def replace_artist(self, old: Artist, new: Artist) -> None:
         if old is new:

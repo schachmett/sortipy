@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sortipy.adapters.http_resilience import ResilientClient
 from sortipy.adapters.lastfm import fetch_play_events
 from sortipy.adapters.lastfm.client import LastFmClient
+from sortipy.application import PlayEventIngestRequest, ingest_play_events
 from sortipy.config.lastfm import (
     LASTFM_BASE_URL,
     LASTFM_TIMEOUT_SECONDS,
@@ -27,7 +28,6 @@ from sortipy.domain.model import (
     ReleaseSet,
     User,
 )
-from sortipy.domain.reconciliation import PlayEventReconciliationRequest, reconcile_play_events
 from tests.helpers.play_events import FakePlayEventSource
 
 if TYPE_CHECKING:
@@ -103,11 +103,12 @@ def test_reconcile_play_events_persists_payload(
             max_events=max_events,
         )
 
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5, max_events=total_expected),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5, max_events=total_expected),
         fetcher=fetcher,
         user=user,
         unit_of_work_factory=sqlite_unit_of_work,
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == total_expected
@@ -177,11 +178,12 @@ def test_reconcile_play_events_stores_tracks_with_same_name_different_artists(
         user=user,
     )
 
-    result = reconcile_play_events(
-        request=PlayEventReconciliationRequest(batch_size=5),
+    result = ingest_play_events(
+        request=PlayEventIngestRequest(batch_size=5),
         fetcher=FakePlayEventSource([[first, second]]),
         user=user,
         unit_of_work_factory=sqlite_unit_of_work,
+        source=Provider.LASTFM,
     )
 
     assert result.stored_events == 2

@@ -28,6 +28,7 @@ from .repositories import (
 )
 
 if TYPE_CHECKING:
+    import contextlib
     from collections.abc import Callable
 
     from sqlalchemy.engine import Engine
@@ -80,6 +81,9 @@ class BaseSqlAlchemyUnitOfWork[TRepositories: RepositoryCollection](ABC):
 
     def rollback(self) -> None:
         self.session.rollback()
+
+    def suspend_autoflush(self) -> contextlib.AbstractContextManager[object]:
+        return self.session.no_autoflush
 
     @property
     def repositories(self) -> TRepositories:

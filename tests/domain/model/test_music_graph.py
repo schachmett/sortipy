@@ -64,3 +64,59 @@ def test_release_add_track_attaches_release_track_to_recording() -> None:
     assert track.recording is recording
     assert track in recording.release_tracks
     assert release in recording.releases
+
+
+def test_release_set_adopt_contribution_rehomes_existing_association() -> None:
+    original_release_set = ReleaseSet(title="Original")
+    target_release_set = ReleaseSet(title="Target")
+    original_artist = Artist(name="Original Artist")
+    target_artist = Artist(name="Target Artist")
+    contribution = original_release_set.add_artist(original_artist, role=ArtistRole.PRIMARY)
+
+    adopted = target_release_set.adopt_contribution(contribution, artist=target_artist)
+
+    assert adopted is contribution
+    assert contribution.release_set is target_release_set
+    assert contribution.artist is target_artist
+    assert contribution not in original_release_set.contributions
+    assert contribution in target_release_set.contributions
+    assert contribution not in original_artist.release_set_contributions
+    assert contribution in target_artist.release_set_contributions
+
+
+def test_recording_adopt_contribution_rehomes_existing_association() -> None:
+    original_recording = Recording(title="Original")
+    target_recording = Recording(title="Target")
+    original_artist = Artist(name="Original Artist")
+    target_artist = Artist(name="Target Artist")
+    contribution = original_recording.add_artist(original_artist)
+
+    adopted = target_recording.adopt_contribution(contribution, artist=target_artist)
+
+    assert adopted is contribution
+    assert contribution.recording is target_recording
+    assert contribution.artist is target_artist
+    assert contribution not in original_recording.contributions
+    assert contribution in target_recording.contributions
+    assert contribution not in original_artist.recording_contributions
+    assert contribution in target_artist.recording_contributions
+
+
+def test_release_adopt_track_rehomes_existing_association() -> None:
+    original_release_set = ReleaseSet(title="Original")
+    target_release_set = ReleaseSet(title="Target")
+    original_release = original_release_set.create_release(title="Original Release")
+    target_release = target_release_set.create_release(title="Target Release")
+    original_recording = Recording(title="Original Recording")
+    target_recording = Recording(title="Target Recording")
+    track = original_release.add_track(original_recording, track_number=1)
+
+    adopted = target_release.adopt_track(track, recording=target_recording)
+
+    assert adopted is track
+    assert track.release is target_release
+    assert track.recording is target_recording
+    assert track not in original_release.tracks
+    assert track in target_release.tracks
+    assert track not in original_recording.release_tracks
+    assert track in target_recording.release_tracks

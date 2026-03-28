@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from sortipy.domain.model import (
@@ -24,9 +24,13 @@ from sortipy.domain.model import (
     ReleaseSetType,
     ReleaseStatus,
 )
-from sortipy.domain.ports.enrichment import ReleaseCandidate
 
-from .schema import MBReleaseGroupPrimaryType, MBReleaseGroupSecondaryType, MBReleaseStatus
+from .schema import (
+    MBRecording,
+    MBReleaseGroupPrimaryType,
+    MBReleaseGroupSecondaryType,
+    MBReleaseStatus,
+)
 
 _ARTIST_KIND_MAP: dict[str, ArtistKind] = {
     "person": ArtistKind.PERSON,
@@ -90,6 +94,10 @@ _RELEASE_PACKAGING_MAP: dict[str, ReleasePackaging] = {
     "cardboard/paper sleeve": ReleasePackaging.CARDBOARD_PAPER_SLEEVE,
 }
 
+_BARCODE_LENGTH_UPC = 12
+_BARCODE_LENGTH_EAN = 13
+_DATE_DAY_INDEX = 2
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -97,35 +105,17 @@ if TYPE_CHECKING:
 
     from .schema import (
         MBArtistCredit,
+        MBLabel,
         MBLabelInfo,
-        MBRecording,
         MBRecordingRef,
         MBRelation,
         MBRelease,
         MBReleaseGroup,
-        MBReleaseRef,
         MusicBrainzAlias,
+        MusicBrainzArea,
         MusicBrainzArtist,
+        MusicBrainzLifeSpan,
     )
-
-
-def translate_recording(recording: MBRecording) -> Release:
-    """Translate a MusicBrainz recording payload into a release aggregate."""
-
-    release = _select_release(recording)
-    if release is None:
-        release_set = ReleaseSet(title=recording.title)
-        release_set.add_source(Provider.MUSICBRAINZ)
-        release_entity = release_set.create_release(title=recording.title)
-        release_entity.add_source(Provider.MUSICBRAINZ)
-        recording_entity = _recording_entity(
-            recording,
-            artist_cache={},
-            fallback_credits=recording.artist_credit,
-        )
-        release_entity.add_track(recording_entity)
-        return release_entity
-    return translate_release(release)
 
 
 def translate_release(release: MBRelease) -> Release:
@@ -141,14 +131,14 @@ def translate_release(release: MBRelease) -> Release:
     )
     release_entity = release_set.create_release(
         title=release.title,
-        release_date=_parse_partial_date(release.date),
+        release_date=parse_partial_date(release.date),
         country=release.country,
-        format_=_primary_release_format(release),
+        format_=primary_release_format(release),
         medium_count=len(release.media) if release.media else None,
     )
     release_entity.add_source(Provider.MUSICBRAINZ)
-    release_entity.status = _release_status(release.status)
-    release_entity.packaging = _release_packaging(release.packaging)
+    release_entity.status = release_status(release.status)
+    release_entity.packaging = release_packaging(release.packaging)
     _add_external_ids(release_entity, _release_external_ids(release))
     _add_labels(release_entity, release.label_info)
     _add_release_tracks(
@@ -160,32 +150,73 @@ def translate_release(release: MBRelease) -> Release:
     return release_entity
 
 
-def release_candidate_from_release(release: MBRelease) -> ReleaseCandidate:
-    artist_names = [credit.artist.name for credit in release.artist_credit]
-    release_set_mbid = release.release_group.id if release.release_group is not None else None
-    return ReleaseCandidate(
-        mbid=release.id,
-        title=release.title,
-        release_date=_parse_partial_date(release.date),
-        status=_release_status(release.status),
-        packaging=_release_packaging(release.packaging),
-        country=release.country,
-        release_set_mbid=release_set_mbid,
-        artist_names=artist_names,
-        track_count=_release_track_count(release),
-        media_formats=_release_media_formats(release),
-    )
+def parse_partial_date(raw: str | None) -> PartialDate | None:
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    parts = text.split("-")
+    try:
+        year = int(parts[0]) if parts[0] else None
+    except ValueError:
+        return None
+    if year is None:
+        return None
+    month = None
+    day = None
+    if len(parts) > 1 and parts[1]:
+        try:
+            month = int(parts[1])
+        except ValueError:
+            month = None
+    if len(parts) > _DATE_DAY_INDEX and parts[_DATE_DAY_INDEX]:
+        try:
+            day = int(parts[_DATE_DAY_INDEX])
+        except ValueError:
+            day = None
+    return PartialDate(year=year, month=month, day=day)
 
 
-def release_candidate_from_release_ref(release: MBReleaseRef) -> ReleaseCandidate:
-    return ReleaseCandidate(
-        mbid=release.id,
-        title=release.title,
-        release_date=_parse_partial_date(release.date),
-        status=_release_status(release.status),
-        packaging=_release_packaging(release.packaging),
-        country=release.country,
-    )
+def release_status(raw: MBReleaseStatus | None) -> ReleaseStatus | None:
+    if raw is None:
+        return None
+    return _RELEASE_STATUS_MAP.get(raw)
+
+
+def release_packaging(raw: str | None) -> ReleasePackaging | None:
+    if raw is None:
+        return None
+    normalized = raw.strip().lower()
+    if not normalized:
+        return None
+    return _RELEASE_PACKAGING_MAP.get(normalized, ReleasePackaging.OTHER)
+
+
+def release_track_count(release: MBRelease) -> int | None:
+    if release.track_count is not None:
+        return release.track_count
+    counts = [medium.track_count for medium in release.media if medium.track_count]
+    if not counts:
+        return None
+    return sum(counts)
+
+
+def release_media_formats(release: MBRelease) -> list[str]:
+    formats = [medium.format for medium in release.media if medium.format]
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in formats:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def primary_release_format(release: MBRelease) -> str | None:
+    formats = release_media_formats(release)
+    return formats[0] if formats else None
 
 
 def _release_set_entity(
@@ -203,7 +234,7 @@ def _release_set_entity(
             title=release_group.title,
             primary_type=_release_set_type(release_group.primary_type),
             secondary_types=_release_set_secondary_types(release_group.secondary_types),
-            first_release=_parse_partial_date(release_group.first_release_date),
+            first_release=parse_partial_date(release_group.first_release_date),
             aliases=_alias_names(release_group.aliases),
         )
         _add_external_ids(release_set, _release_group_external_ids(release_group))
@@ -245,11 +276,10 @@ def _add_release_tracks(
                 continue
             recording_entity = recording_cache.get(recording_payload.id)
             if recording_entity is None:
-                artist_credits = track.artist_credit or release.artist_credit
                 recording_entity = _recording_entity(
                     recording_payload,
                     artist_cache=artist_cache,
-                    fallback_credits=artist_credits,
+                    fallback_credits=track.artist_credit or release.artist_credit,
                 )
                 recording_cache[recording_payload.id] = recording_entity
             title_override = (
@@ -271,17 +301,22 @@ def _recording_entity(
     artist_cache: dict[str, Artist],
     fallback_credits: list[MBArtistCredit],
 ) -> Recording:
-    aliases = _recording_aliases(getattr(recording, "aliases", []))
+    if isinstance(recording, MBRecording):
+        aliases = _alias_names(recording.aliases)
+        artist_credits = recording.artist_credit or fallback_credits
+    else:
+        aliases = []
+        artist_credits = fallback_credits
+
     entity = Recording(
         title=recording.title,
         duration_ms=recording.length,
         disambiguation=recording.disambiguation or None,
-        aliases=_alias_names(aliases),
+        aliases=aliases,
     )
     entity.add_source(Provider.MUSICBRAINZ)
     _add_external_ids(entity, _recording_external_ids(recording))
     prev_join: str | None = None
-    artist_credits = _artist_credits(getattr(recording, "artist_credit", [])) or fallback_credits
     for index, credit in enumerate(artist_credits):
         contribution = entity.add_artist(
             _artist_entity(credit.artist, artist_cache),
@@ -317,25 +352,26 @@ def _artist_entity(
     return entity
 
 
-def _add_labels(release: Release, label_infos: list[MBLabelInfo]) -> None:
+def _add_labels(release: Release, label_infos: Sequence[MBLabelInfo]) -> None:
     for info in label_infos:
-        label = getattr(info, "label", None)
-        label_name = getattr(label, "name", None)
-        label_id = getattr(label, "id", None)
-        if not label_name and not label_id:
+        label = info.label
+        if label is None:
             continue
-        entity = Label(name=label_name or label_id or "unknown-label")
-        entity.add_source(Provider.MUSICBRAINZ)
-        if label_id:
-            entity.add_external_id(ExternalNamespace.MUSICBRAINZ_LABEL, label_id)
-        if label is not None:
-            _add_external_ids(entity, _urls_as_external_ids(getattr(label, "relations", [])))
+        entity = _label_entity(label)
         release.add_label(entity)
+
+
+def _label_entity(label: MBLabel) -> Label:
+    entity = Label(name=label.name or label.id)
+    entity.add_source(Provider.MUSICBRAINZ)
+    entity.add_external_id(ExternalNamespace.MUSICBRAINZ_LABEL, label.id)
+    _add_external_ids(entity, _urls_as_external_ids(label.relations))
+    return entity
 
 
 def _add_external_ids(
     entity: Artist | Label | Recording | Release | ReleaseSet,
-    ids: list[tuple[Namespace, str]],
+    ids: Sequence[tuple[Namespace, str]],
 ) -> None:
     existing = set(entity.external_ids_by_namespace)
     for namespace, value in ids:
@@ -349,9 +385,9 @@ def _artist_external_ids(artist: MusicBrainzArtist) -> list[tuple[Namespace, str
     ids: list[tuple[Namespace, str]] = [
         (ExternalNamespace.MUSICBRAINZ_ARTIST, artist.id),
     ]
-    ids.extend(("artist:ipi", ipi) for ipi in getattr(artist, "ipis", []))
-    ids.extend(("artist:isni", isni) for isni in getattr(artist, "isnis", []))
-    ids.extend(_urls_as_external_ids(_relations(getattr(artist, "relations", []))))
+    ids.extend(("artist:ipi", ipi) for ipi in artist.ipis)
+    ids.extend(("artist:isni", isni) for isni in artist.isnis)
+    ids.extend(_urls_as_external_ids(artist.relations))
     return ids
 
 
@@ -359,8 +395,9 @@ def _recording_external_ids(recording: MBRecording | MBRecordingRef) -> list[tup
     ids: list[tuple[Namespace, str]] = [
         (ExternalNamespace.MUSICBRAINZ_RECORDING, recording.id),
     ]
-    ids.extend((ExternalNamespace.RECORDING_ISRC, isrc) for isrc in getattr(recording, "isrcs", ()))
-    ids.extend(_urls_as_external_ids(_relations(getattr(recording, "relations", []))))
+    if isinstance(recording, MBRecording):
+        ids.extend((ExternalNamespace.RECORDING_ISRC, isrc) for isrc in recording.isrcs)
+        ids.extend(_urls_as_external_ids(recording.relations))
     return ids
 
 
@@ -382,7 +419,7 @@ def _release_external_ids(release: MBRelease) -> list[tuple[Namespace, str]]:
     return ids
 
 
-def _urls_as_external_ids(relations: list[MBRelation]) -> list[tuple[Namespace, str]]:
+def _urls_as_external_ids(relations: Sequence[MBRelation]) -> list[tuple[Namespace, str]]:
     ids: list[tuple[Namespace, str]] = []
     for relation in relations:
         if relation.url is None:
@@ -396,15 +433,13 @@ def _urls_as_external_ids(relations: list[MBRelation]) -> list[tuple[Namespace, 
 def _artist_kind(raw: str | None) -> ArtistKind | None:
     if raw is None:
         return None
-    normalized = raw.strip().lower()
-    return _ARTIST_KIND_MAP.get(normalized)
+    return _ARTIST_KIND_MAP.get(raw.strip().lower())
 
 
 def _area_type(raw: str | None) -> AreaType | None:
     if raw is None:
         return None
-    normalized = raw.strip().lower()
-    return _AREA_TYPE_MAP.get(normalized, AreaType.OTHER)
+    return _AREA_TYPE_MAP.get(raw.strip().lower(), AreaType.OTHER)
 
 
 def _areas_for_artist(artist: MusicBrainzArtist) -> list[Area]:
@@ -418,22 +453,22 @@ def _areas_for_artist(artist: MusicBrainzArtist) -> list[Area]:
     return areas
 
 
-def _area_from_mb(area: object, role: AreaRole) -> Area:
+def _area_from_mb(area: MusicBrainzArea, role: AreaRole) -> Area:
     return Area(
-        name=getattr(area, "name", ""),
-        area_type=_area_type(getattr(area, "type", None)),
+        name=area.name,
+        area_type=_area_type(area.type),
         role=role,
-        country_codes=tuple(getattr(area, "iso_3166_1_codes", []) or ()),
+        country_codes=tuple(area.iso_3166_1_codes or ()),
     )
 
 
-def _life_span(life_span: object | None) -> LifeSpan | None:
+def _life_span(life_span: MusicBrainzLifeSpan | None) -> LifeSpan | None:
     if life_span is None:
         return None
     return LifeSpan(
-        begin=_parse_partial_date(getattr(life_span, "begin", None)),
-        end=_parse_partial_date(getattr(life_span, "end", None)),
-        ended=getattr(life_span, "ended", None),
+        begin=parse_partial_date(life_span.begin),
+        end=parse_partial_date(life_span.end),
+        ended=life_span.ended,
     )
 
 
@@ -444,7 +479,7 @@ def _release_set_type(raw: MBReleaseGroupPrimaryType | None) -> ReleaseSetType |
 
 
 def _release_set_secondary_types(
-    raw_values: list[MBReleaseGroupSecondaryType],
+    raw_values: Sequence[MBReleaseGroupSecondaryType],
 ) -> list[ReleaseSetSecondaryType]:
     resolved: list[ReleaseSetSecondaryType] = []
     for value in raw_values:
@@ -452,49 +487,6 @@ def _release_set_secondary_types(
         if enum_value is not None:
             resolved.append(enum_value)
     return resolved
-
-
-def _parse_partial_date(raw: str | None) -> PartialDate | None:
-    if raw is None:
-        return None
-    text = raw.strip()
-    if not text:
-        return None
-    parts = text.split("-")
-    try:
-        year = int(parts[0]) if parts[0] else None
-    except ValueError:
-        return None
-    if year is None:
-        return None
-    month = None
-    day = None
-    if len(parts) > 1 and parts[1]:
-        try:
-            month = int(parts[1])
-        except ValueError:
-            month = None
-    if len(parts) > 2 and parts[2]:  # noqa: PLR2004
-        try:
-            day = int(parts[2])
-        except ValueError:
-            day = None
-    return PartialDate(year=year, month=month, day=day)
-
-
-def _release_status(raw: MBReleaseStatus | None) -> ReleaseStatus | None:
-    if raw is None:
-        return None
-    return _RELEASE_STATUS_MAP.get(raw)
-
-
-def _release_packaging(raw: str | None) -> ReleasePackaging | None:
-    if raw is None:
-        return None
-    normalized = raw.strip().lower()
-    if not normalized:
-        return None
-    return _RELEASE_PACKAGING_MAP.get(normalized, ReleasePackaging.OTHER)
 
 
 def _role_for_credit(*, index: int, prev_join_phrase: str | None) -> ArtistRole:
@@ -518,70 +510,8 @@ def _is_featuring(join_phrase: str | None) -> bool:
     return "feat" in lowered or "ft." in lowered
 
 
-def _alias_names(aliases: Sequence[MusicBrainzAlias | dict[str, object]]) -> list[str]:
-    names: list[str] = []
-    for alias in aliases:
-        if isinstance(alias, dict):
-            name = alias.get("name")
-            if isinstance(name, str):
-                names.append(name)
-            continue
-        names.append(alias.name)
-    return names
-
-
-def _artist_credits(value: object) -> list[MBArtistCredit]:
-    if not isinstance(value, list):
-        return []
-    return cast("list[MBArtistCredit]", value)
-
-
-def _recording_aliases(value: object) -> list[MusicBrainzAlias | dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return cast("list[MusicBrainzAlias | dict[str, object]]", value)
-
-
-def _relations(value: object) -> list[MBRelation]:
-    if not isinstance(value, list):
-        return []
-    return cast("list[MBRelation]", value)
-
-
-def _select_release(recording: MBRecording) -> MBRelease | None:
-    if not recording.releases:
-        return None
-    return recording.releases[0]
-
-
-def _primary_release_format(release: MBRelease) -> str | None:
-    formats = _release_media_formats(release)
-    return formats[0] if formats else None
-
-
-def _release_track_count(release: MBRelease) -> int | None:
-    if release.track_count is not None:
-        return release.track_count
-    counts = [medium.track_count for medium in release.media if medium.track_count]
-    if not counts:
-        return None
-    return sum(counts)
-
-
-def _release_media_formats(release: MBRelease) -> list[str]:
-    formats = [medium.format for medium in release.media if medium.format]
-    seen: set[str] = set()
-    unique: list[str] = []
-    for value in formats:
-        if value in seen:
-            continue
-        seen.add(value)
-        unique.append(value)
-    return unique
-
-
-_BARCODE_LENGTH_UPC = 12
-_BARCODE_LENGTH_EAN = 13
+def _alias_names(aliases: Sequence[MusicBrainzAlias]) -> list[str]:
+    return [alias.name for alias in aliases]
 
 
 def _barcode_external_ids(barcode: str) -> list[tuple[Namespace, str]]:

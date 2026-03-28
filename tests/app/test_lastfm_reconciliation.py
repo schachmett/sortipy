@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from sortipy.app import reconcile_lastfm_play_events
+from sortipy.application import PlayEventIngestResult
 from sortipy.config.http_resilience import CacheConfig, RateLimit, ResilienceConfig
 from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS, LastFmConfig
 from sortipy.config.storage import DatabaseConfig
 from sortipy.domain.model import User
-from sortipy.domain.reconciliation import LastfmReconciliationResult
 from tests.helpers.play_events import (
     FakePlayEventRepository,
     FakePlayEventSource,
@@ -98,7 +98,7 @@ def test_reconcile_lastfm_play_events_orchestrates_dependencies(
         batch_size=1,
     )
 
-    assert isinstance(result, LastfmReconciliationResult)
+    assert isinstance(result, PlayEventIngestResult)
     assert result.stored_events == 1
     assert repository.items == [play_event]
     assert source.calls[0]["batch_size"] == 1

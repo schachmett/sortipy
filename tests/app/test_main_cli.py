@@ -5,7 +5,8 @@ from uuid import UUID
 
 import pytest
 
-from sortipy.domain.reconciliation import ApplyCounters, LastfmReconciliationResult
+from sortipy.application import PlayEventIngestResult
+from sortipy.domain.reconciliation import ApplyCounters
 from sortipy.ui import cli as main_module
 
 
@@ -15,7 +16,7 @@ def test_main_cli_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LASTFM_USER_NAME", "demo-user")
     monkeypatch.setenv("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
-    def fake_sync(**kwargs: object) -> LastfmReconciliationResult:
+    def fake_sync(**kwargs: object) -> PlayEventIngestResult:
         captured.update(kwargs)
         return _lastfm_result()
 
@@ -36,7 +37,7 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LASTFM_USER_NAME", "demo-user")
     monkeypatch.setenv("DATABASE_URI", "sqlite+pysqlite:///:memory:")
 
-    def fake_sync(**kwargs: object) -> LastfmReconciliationResult:
+    def fake_sync(**kwargs: object) -> PlayEventIngestResult:
         captured.update(kwargs)
         return _lastfm_result()
 
@@ -69,7 +70,7 @@ def test_main_cli_with_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_sync(*_: object, **__: object) -> LastfmReconciliationResult:
+    def fake_sync(*_: object, **__: object) -> PlayEventIngestResult:
         return _lastfm_result()
 
     monkeypatch.setattr(main_module, "reconcile_lastfm_play_events", fake_sync)
@@ -92,8 +93,8 @@ def test_main_cli_invalid_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
     assert excinfo.value.code == 2
 
 
-def _lastfm_result() -> LastfmReconciliationResult:
-    return LastfmReconciliationResult(
+def _lastfm_result() -> PlayEventIngestResult:
+    return PlayEventIngestResult(
         fetched=0,
         persisted_entities=0,
         persisted_sidecars=0,

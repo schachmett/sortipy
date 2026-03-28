@@ -10,12 +10,12 @@ from tests.helpers.library_items import (
     make_release_set_library_item,
 )
 
-from sortipy.domain.model import User
-from sortipy.domain.reconciliation import (
-    LibraryItemReconciliationRequest,
-    SpotifyLibraryReconciliationResult,
-    reconcile_library_items,
+from sortipy.application import (
+    LibraryItemIngestRequest,
+    LibraryItemIngestResult,
+    ingest_library_items,
 )
+from sortipy.domain.model import Provider, User
 
 
 def test_reconcile_library_items_persists_results() -> None:
@@ -28,14 +28,15 @@ def test_reconcile_library_items_persists_results() -> None:
     fetcher = FakeLibraryItemSource(items)
     uow = FakeIngestUnitOfWork(FakeLibraryItemRepository())
 
-    result = reconcile_library_items(
-        request=LibraryItemReconciliationRequest(batch_size=10),
+    result = ingest_library_items(
+        request=LibraryItemIngestRequest(batch_size=10),
         fetcher=fetcher,
         unit_of_work_factory=make_reconciliation_uow_factory(uow),
         user=user,
+        source=Provider.SPOTIFY,
     )
 
-    assert isinstance(result, SpotifyLibraryReconciliationResult)
+    assert isinstance(result, LibraryItemIngestResult)
     assert result.fetched == 3
     assert result.stored_items == 3
     assert uow.committed is True
@@ -46,11 +47,12 @@ def test_reconcile_library_items_skips_commit_when_empty() -> None:
     fetcher = FakeLibraryItemSource([])
     uow = FakeIngestUnitOfWork(FakeLibraryItemRepository())
 
-    result = reconcile_library_items(
-        request=LibraryItemReconciliationRequest(batch_size=10),
+    result = ingest_library_items(
+        request=LibraryItemIngestRequest(batch_size=10),
         fetcher=fetcher,
         unit_of_work_factory=make_reconciliation_uow_factory(uow),
         user=user,
+        source=Provider.SPOTIFY,
     )
 
     assert result.stored_items == 0

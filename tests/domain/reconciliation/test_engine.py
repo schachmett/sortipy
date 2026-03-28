@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, cast
 
-from sortipy.domain.model import Artist, Provider
+from sortipy.domain.model import Artist, Provider, Release, ReleaseSet
 from sortipy.domain.reconciliation import ClaimGraph, ClaimMetadata, EntityClaim
-from sortipy.domain.reconciliation.apply import ApplyResult
-from sortipy.domain.reconciliation.engine import ReconciliationEngine
-from sortipy.domain.reconciliation.persist import PersistenceResult
+from sortipy.domain.reconciliation.apply import ApplyResult, apply_reconciliation_instructions
+from sortipy.domain.reconciliation.contracts import Representative
+from sortipy.domain.reconciliation.deduplicate import deduplicate_claim_graph
+from sortipy.domain.reconciliation.engine import (
+    PreparedReconciliation,
+    ReconciliationEngine,
+)
+from sortipy.domain.reconciliation.normalize import normalize_claim_graph
+from sortipy.domain.reconciliation.persist import PersistenceResult, persist_reconciliation
+from sortipy.domain.reconciliation.policy import decide_apply_instructions
+from sortipy.domain.reconciliation.resolve import resolve_claim_graph
 
 if TYPE_CHECKING:
     from sortipy.domain.reconciliation.contracts import (
@@ -46,6 +55,9 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
     class _FakeUow:
         def __init__(self) -> None:
             self.repositories = fake_repositories
+
+        def suspend_autoflush(self):
+            return nullcontext()
 
     fake_uow = cast("ReconciliationUnitOfWork", _FakeUow())
 
@@ -147,7 +159,7 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
         apply=_Applier(),
         persist=_Persister(),
     )
-    engine.reconcile(original_graph, uow=fake_uow)
+    executed = engine.reconcile(original_graph, uow=fake_uow)
 
     assert observed["resolver"] is deduplicated_graph
     assert observed["resolve_repositories"] is fake_repositories
@@ -156,3 +168,117 @@ def test_engine_uses_deduplicated_graph_after_deduplication() -> None:
     assert observed["persister"] is deduplicated_graph
     assert observed["persist_keys"] == {claim.claim_id: () for claim in original_graph.claims}
     assert observed["persist_uow"] is fake_uow
+    assert executed.persistence_result == PersistenceResult(committed=True)
+
+
+def test_default_engine_wires_production_stages() -> None:
+    engine = ReconciliationEngine.default()
+
+    assert engine.normalize is normalize_claim_graph
+    assert engine.deduplicate is deduplicate_claim_graph
+    assert engine.resolve is resolve_claim_graph
+    assert engine.decide is decide_apply_instructions
+    assert engine.apply is apply_reconciliation_instructions
+    assert engine.persist is persist_reconciliation
+
+
+def test_execute_prunes_release_objects_represented_by_other_claims() -> None:
+    release_set = ReleaseSet(title="Best of Bowie")
+    surviving_release = release_set.create_release(title="Best of Bowie")
+    duplicate_release = release_set.create_release(title="Best of Bowie")
+
+    original_graph = ClaimGraph()
+    surviving_claim = EntityClaim(
+        entity=surviving_release,
+        metadata=ClaimMetadata(source=Provider.LASTFM),
+    )
+    duplicate_claim = EntityClaim(
+        entity=duplicate_release,
+        metadata=ClaimMetadata(source=Provider.LASTFM),
+    )
+    original_graph.add(surviving_claim)
+    original_graph.add(duplicate_claim)
+
+    deduplicated_graph = ClaimGraph()
+    deduplicated_graph.add(surviving_claim)
+
+    class _FakeUow:
+        repositories = cast("ResolveRepositories", object())
+
+        def suspend_autoflush(self):
+            return nullcontext()
+
+    fake_uow = cast("ReconciliationUnitOfWork", _FakeUow())
+    observed: dict[str, object] = {}
+
+    class _Policy:
+        def __call__(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> tuple[
+            EntityInstructionsByClaim,
+            AssociationInstructionsByClaim,
+            LinkInstructionsByClaim,
+        ]:
+            return {}, {}, {}
+
+    class _Applier:
+        def __call__(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> ApplyResult:
+            return ApplyResult()
+
+    class _Persister:
+        def __call__(
+            self,
+            *,
+            graph: ClaimGraph,
+            keys_by_claim: KeysByClaim,
+            entity_instructions_by_claim: EntityInstructionsByClaim,
+            association_instructions_by_claim: AssociationInstructionsByClaim,
+            link_instructions_by_claim: LinkInstructionsByClaim,
+            apply_result: ApplyResult,
+            uow: ReconciliationUnitOfWork,
+        ) -> PersistenceResult:
+            surviving_entity = graph.require_claim(surviving_claim.claim_id).entity
+            assert isinstance(surviving_entity, Release)
+            observed["releases"] = surviving_entity.release_set.releases
+            _ = (
+                keys_by_claim,
+                entity_instructions_by_claim,
+                association_instructions_by_claim,
+                link_instructions_by_claim,
+                apply_result,
+                uow,
+            )
+            return PersistenceResult(committed=True)
+
+    engine = ReconciliationEngine(
+        normalize=normalize_claim_graph,
+        deduplicate=deduplicate_claim_graph,
+        resolve=resolve_claim_graph,
+        decide=_Policy(),
+        apply=_Applier(),
+        persist=_Persister(),
+    )
+    prepared = PreparedReconciliation(
+        graph=original_graph,
+        keys_by_claim={},
+        deduplicated_graph=deduplicated_graph,
+        representatives_by_claim={
+            duplicate_claim.claim_id: Representative(
+                claim_id=surviving_claim.claim_id,
+                matched_key=("release:mbid", "0603828a-4dfe-4608-8193-4e3a94b8baf0"),
+            )
+        },
+        entity_resolutions_by_claim={},
+        association_resolutions_by_claim={},
+        link_resolutions_by_claim={},
+    )
+
+    engine.execute(prepared, uow=fake_uow)
+
+    assert observed["releases"] == (surviving_release,)

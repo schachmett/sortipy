@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sortipy.adapters.musicbrainz.candidates import MusicBrainzReleaseCandidate
 from sortipy.adapters.musicbrainz.fetcher import (
     fetch_release_candidates_from_recording,
     fetch_release_graph,
@@ -15,7 +16,6 @@ from sortipy.adapters.musicbrainz.schema import (
 )
 from sortipy.adapters.musicbrainz.translator import translate_release
 from sortipy.domain.model import Artist, ExternalNamespace, Recording
-from sortipy.domain.ports.enrichment import ReleaseCandidate
 
 if TYPE_CHECKING:
     from sortipy.adapters.musicbrainz.schema import (
@@ -208,7 +208,7 @@ def test_fetch_release_graph_full_adapter(
 
     for mbid, release in payloads.items():
         graph = fetch_release_graph(
-            ReleaseCandidate(mbid=mbid),
+            MusicBrainzReleaseCandidate(mbid=mbid),
             config=musicbrainz_config,
             client=fake,
         )
