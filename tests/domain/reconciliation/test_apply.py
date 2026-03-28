@@ -8,6 +8,7 @@ import pytest
 from sortipy.domain.model import (
     Artist,
     ArtistRole,
+    ExternalNamespace,
     Label,
     Provider,
     Recording,
@@ -110,6 +111,37 @@ def test_apply_reconciliation_instructions_merges_entity_fields_into_target() ->
     assert canonical.name == "Incoming"
     assert result.entities.applied == 1
     assert result.entities.merged == 1
+
+
+def test_apply_reconciliation_rejects_conflicting_external_id_namespace_merge() -> None:
+    incoming = Recording(title="Man Made of Meat")
+    incoming.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RECORDING,
+        "incoming-mbid",
+    )
+    canonical = Recording(title="Man Made of Meat")
+    canonical.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RECORDING,
+        "canonical-mbid",
+    )
+    claim = EntityClaim(
+        entity=incoming,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    entity_instructions: EntityInstructionsByClaim = {
+        claim.claim_id: MergeInstruction(target=canonical)
+    }
+
+    with pytest.raises(ValueError, match="Conflicting external ID namespace during merge"):
+        apply_reconciliation_instructions(
+            graph,
+            entity_instructions_by_claim=entity_instructions,
+            association_instructions_by_claim={},
+            link_instructions_by_claim={},
+        )
 
 
 def test_apply_reconciliation_instructions_rejects_merge_without_target() -> None:

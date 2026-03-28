@@ -423,18 +423,26 @@ def _merge_external_ids(
     target_entity: ExternallyIdentifiable,
 ) -> None:
     source_external_ids = source_entity.external_ids
-    target_external_ids = target_entity.external_ids
-    existing = {(external_id.namespace, external_id.value) for external_id in target_external_ids}
+    existing_by_namespace = {
+        str(external_id.namespace): external_id.value for external_id in target_entity.external_ids
+    }
     for external_id in source_external_ids:
-        key = (external_id.namespace, external_id.value)
-        if key in existing:
+        namespace = str(external_id.namespace)
+        existing_value = existing_by_namespace.get(namespace)
+        if existing_value == external_id.value:
             continue
+        if existing_value is not None:
+            msg = (
+                "Conflicting external ID namespace during merge: "
+                f"{external_id.namespace} has values {existing_value!r} and {external_id.value!r}"
+            )
+            raise ValueError(msg)
         target_entity.add_external_id(
             external_id.namespace,
             external_id.value,
             provider=external_id.provider,
         )
-        existing.add(key)
+        existing_by_namespace[namespace] = external_id.value
 
 
 def _create_association(

@@ -334,6 +334,16 @@ def _resolution_for_claim(
             reason="candidate_type_mismatch",
         )
 
+    if any(
+        _has_external_id_namespace_conflict(claim.entity, candidate) for candidate in candidates
+    ):
+        return ConflictResolution(
+            candidates=candidates,
+            matched_key=matched_key,
+            match_kind=MatchKind.EXACT,
+            reason="external_id_namespace_conflict",
+        )
+
     if not candidates:
         return NewResolution(reason="no_exact_match")
 
@@ -351,6 +361,35 @@ def _resolution_for_claim(
         match_kind=MatchKind.EXACT,
         reason="multiple_exact_matches",
     )
+
+
+type _ExternallyIdentifiableClaimEntity = Artist | Label | ReleaseSet | Release | Recording
+
+
+def _has_external_id_namespace_conflict(
+    claim_entity: ClaimEntity,
+    candidate: ClaimEntity,
+) -> bool:
+    match (claim_entity, candidate):
+        case (
+            (Artist() | Label() | ReleaseSet() | Release() | Recording()) as claim_identified,
+            (Artist() | Label() | ReleaseSet() | Release() | Recording()) as candidate_identified,
+        ):
+            claim_external_ids = _external_ids_by_namespace(claim_identified)
+            candidate_external_ids = _external_ids_by_namespace(candidate_identified)
+            return any(
+                candidate_value != claim_value
+                for namespace, claim_value in claim_external_ids.items()
+                if (candidate_value := candidate_external_ids.get(namespace)) is not None
+            )
+        case _:
+            return False
+
+
+def _external_ids_by_namespace(
+    entity: _ExternallyIdentifiableClaimEntity,
+) -> dict[str, str]:
+    return {str(external_id.namespace): external_id.value for external_id in entity.external_ids}
 
 
 def _association_resolution_for_claim(

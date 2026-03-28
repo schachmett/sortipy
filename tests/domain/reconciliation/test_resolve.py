@@ -155,6 +155,102 @@ def test_resolve_claim_graph_marks_conflict_for_mismatched_candidate_type() -> N
     assert link_resolutions_by_claim == {}
 
 
+def test_resolve_claim_graph_marks_conflict_for_external_id_namespace_collision() -> None:
+    claim_recording = Recording(title="Man Made of Meat")
+    claim_recording.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RECORDING,
+        "incoming-mbid",
+    )
+    claim = EntityClaim(
+        entity=claim_recording,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    candidate = Recording(title="Man Made of Meat")
+    candidate.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RECORDING,
+        "canonical-mbid",
+    )
+    keys_by_claim: KeysByClaim = {claim.claim_id: (("recording:title", "man made of meat"),)}
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
+        graph,
+        keys_by_claim=keys_by_claim,
+        find_by_normalized_key=lambda _claim, key: (
+            (candidate,) if key[1] == "man made of meat" else ()
+        ),
+    )
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
+
+    assert resolution is not None
+    assert resolution.status is ResolutionStatus.CONFLICT
+    assert resolution.match_kind is MatchKind.EXACT
+    assert resolution.reason == "external_id_namespace_conflict"
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
+
+
+def test_resolve_claim_graph_rejects_exact_match_when_another_namespace_conflicts() -> None:
+    claim_recording = Recording(title="Man Made of Meat")
+    claim_recording.add_external_id(
+        ExternalNamespace.LASTFM_RECORDING,
+        "https://www.last.fm/music/Viagra+Boys/_/Man+Made+of+Meat",
+    )
+    claim_recording.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RECORDING,
+        "incoming-mbid",
+    )
+    claim = EntityClaim(
+        entity=claim_recording,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    candidate = Recording(title="Man Made of Meat")
+    candidate.add_external_id(
+        ExternalNamespace.LASTFM_RECORDING,
+        "https://www.last.fm/music/Viagra+Boys/_/Man+Made+of+Meat",
+    )
+    candidate.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RECORDING,
+        "canonical-mbid",
+    )
+    keys_by_claim: KeysByClaim = {claim.claim_id: (("recording:title", "man made of meat"),)}
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
+        graph,
+        keys_by_claim=keys_by_claim,
+        find_by_external_id=lambda _claim, namespace, value: (
+            (candidate,)
+            if namespace is ExternalNamespace.LASTFM_RECORDING
+            and value == "https://www.last.fm/music/Viagra+Boys/_/Man+Made+of+Meat"
+            else ()
+        ),
+    )
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
+
+    assert resolution is not None
+    assert resolution.status is ResolutionStatus.CONFLICT
+    assert resolution.match_kind is MatchKind.EXACT
+    assert resolution.reason == "external_id_namespace_conflict"
+    assert resolution.matched_key == (
+        "external_id",
+        ExternalNamespace.LASTFM_RECORDING,
+        "https://www.last.fm/music/Viagra+Boys/_/Man+Made+of+Meat",
+    )
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
+
+
 def test_resolve_claim_graph_forwards_normalization_keys_to_finder() -> None:
     claim = EntityClaim(
         entity=Artist(name="Skee Mask"),
