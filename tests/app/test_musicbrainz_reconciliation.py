@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Self, cast
 
 from sortipy.adapters.musicbrainz.candidates import MusicBrainzReleaseGraphFetchResult
+from sortipy.adapters.musicbrainz.client import MusicBrainzAPIError
 from sortipy.application.release_updates import reconcile_release_updates
 from sortipy.domain.model import ExternalNamespace, Provider, ReleaseSet
 from sortipy.domain.reconciliation import (
@@ -374,3 +375,63 @@ def test_reconcile_release_updates_logs_redirect_collision(
     assert fake_uow.repositories.external_id_redirects.saved == []
     assert result.manual_review_items[0].reason == "musicbrainz_redirect_collision"
     assert "MusicBrainz redirect collision for release BLUSH" in caplog.text
+
+
+def test_reconcile_release_updates_logs_fetch_failures_and_continues(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    target_release_set = ReleaseSet(title="Somersaults")
+    target_release = target_release_set.create_release(title="Somersaults")
+    target_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38",
+    )
+
+    def fake_fetch_release_graph(
+        candidate: MusicBrainzReleaseCandidate,
+    ) -> MusicBrainzReleaseGraphFetchResult:
+        raise MusicBrainzAPIError(f"404 for {candidate.mbid}")
+
+    def fake_fetch_candidates_from_recording(
+        recording: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = recording
+        return []
+
+    def fake_fetch_candidates_from_release_set(
+        release_set: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release_set
+        return [
+            cast(
+                "MusicBrainzReleaseCandidate",
+                SimpleNamespace(mbid="6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38"),
+            )
+        ]
+
+    def fake_fetch_candidates_from_artist(artist: object) -> list[MusicBrainzReleaseCandidate]:
+        _ = artist
+        return []
+
+    fake_uow = _FakeUnitOfWork([target_release])
+    fake_engine = _PreparedEngine(target_release)
+
+    def fake_uow_factory() -> ReconciliationUnitOfWork:
+        return cast("ReconciliationUnitOfWork", fake_uow)
+
+    caplog.set_level("INFO")
+    result = reconcile_release_updates(
+        fetch_release_graph=fake_fetch_release_graph,
+        fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
+        fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
+        unit_of_work_factory=fake_uow_factory,
+        limit=1,
+        source=Provider.MUSICBRAINZ,
+        engine=cast("ReconciliationEngine", fake_engine),
+    )
+
+    assert result.fetched_updates == 0
+    assert result.applied_releases == 0
+    assert fake_engine.execute_calls == 0
+    assert "MusicBrainz fetch failed for release Somersaults" in caplog.text

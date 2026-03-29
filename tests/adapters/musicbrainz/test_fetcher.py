@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.musicbrainz.candidates import MusicBrainzReleaseCandidate
+from sortipy.adapters.musicbrainz.client import MusicBrainzAPIError, MusicBrainzNotFoundError
 from sortipy.adapters.musicbrainz.fetcher import (
     fetch_release_candidates_from_recording,
     fetch_release_graph,
@@ -32,6 +33,7 @@ class FakeMusicBrainzClient:
         recording_payload: MBRecording | dict[str, MBRecording] | None = None,
         release_payloads: dict[str, MBRelease] | None = None,
         search_results: MBRecordingSearch | None = None,
+        recording_error: Exception | None = None,
     ) -> None:
         if isinstance(recording_payload, dict):
             self._recording_payloads = recording_payload
@@ -41,6 +43,7 @@ class FakeMusicBrainzClient:
             self._recording_payload = recording_payload
         self._release_payloads = release_payloads or {}
         self._search_results = search_results or MBRecordingSearch(recordings=[])
+        self._recording_error = recording_error
         self.fetch_recording_mbid: str | None = None
         self.fetch_release_mbid: str | None = None
         self.search_query: str | None = None
@@ -52,6 +55,8 @@ class FakeMusicBrainzClient:
         inc: tuple[str, ...] | None = None,
     ) -> MBRecording:
         del inc
+        if self._recording_error is not None:
+            raise self._recording_error
         if self._recording_payloads is not None and mbid in self._recording_payloads:
             self.fetch_recording_mbid = mbid
             return self._recording_payloads[mbid]
@@ -172,6 +177,63 @@ def test_fetch_release_candidates_searches_without_mbid(
         assert [candidate.mbid for candidate in candidates] == [
             release.id for release in recording.releases
         ]
+
+
+def test_fetch_release_candidates_falls_back_to_search_when_recording_mbid_is_missing(
+    recordings: list[MBRecording],
+    musicbrainz_config: MusicBrainzConfig,
+) -> None:
+    for recording in recordings:
+        artist_name = recording.artist_credit[0].artist.name if recording.artist_credit else None
+        domain_recording = _domain_recording(title=recording.title, artist_name=artist_name)
+        domain_recording.add_external_id(
+            ExternalNamespace.MUSICBRAINZ_RECORDING,
+            recording.id,
+            replace=True,
+        )
+        fake = FakeMusicBrainzClient(
+            recording_payload=recording,
+            search_results=MBRecordingSearch(recordings=[recording]),
+            recording_error=MusicBrainzNotFoundError("missing"),
+        )
+
+        candidates = fetch_release_candidates_from_recording(
+            domain_recording,
+            config=musicbrainz_config,
+            client=fake,
+        )
+
+        assert fake.fetch_recording_mbid is None
+        assert fake.search_query is not None
+        assert [candidate.mbid for candidate in candidates] == [
+            release.id for release in recording.releases
+        ]
+
+
+def test_fetch_release_candidates_skips_on_recording_fetch_error(
+    recordings: list[MBRecording],
+    musicbrainz_config: MusicBrainzConfig,
+) -> None:
+    for recording in recordings:
+        artist_name = recording.artist_credit[0].artist.name if recording.artist_credit else None
+        domain_recording = _domain_recording(title=recording.title, artist_name=artist_name)
+        domain_recording.add_external_id(
+            ExternalNamespace.MUSICBRAINZ_RECORDING,
+            recording.id,
+            replace=True,
+        )
+        fake = FakeMusicBrainzClient(
+            recording_payload=recording,
+            recording_error=MusicBrainzAPIError("boom"),
+        )
+
+        candidates = fetch_release_candidates_from_recording(
+            domain_recording,
+            config=musicbrainz_config,
+            client=fake,
+        )
+
+        assert candidates == []
 
 
 def test_fetch_release_candidates_skips_on_empty_search(

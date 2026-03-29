@@ -12,7 +12,7 @@ from .candidates import (
     release_candidate_from_release,
     release_candidate_from_release_ref,
 )
-from .client import MusicBrainzAPIError, MusicBrainzClient
+from .client import MusicBrainzAPIError, MusicBrainzClient, MusicBrainzNotFoundError
 from .translator import (
     parse_partial_date,
     release_media_formats,
@@ -130,11 +130,17 @@ def _recording_payload(
 ) -> MBRecording | None:
     mbid = _recording_mbid(recording)
     try:
-        payload = (
-            client.fetch_recording(mbid=mbid)
-            if mbid is not None
-            else _search_recording(client, recording)
-        )
+        if mbid is not None:
+            try:
+                return client.fetch_recording(mbid=mbid)
+            except MusicBrainzNotFoundError:
+                log.info(
+                    "MusicBrainz recording %s not found for recording %s; falling back to search",
+                    mbid,
+                    recording.id,
+                )
+                return _search_recording(client, recording)
+        payload = _search_recording(client, recording)
     except MusicBrainzAPIError as exc:
         log.warning("MusicBrainz fetch failed for recording %s: %s", recording.id, exc)
         return None

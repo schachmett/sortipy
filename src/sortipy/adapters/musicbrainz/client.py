@@ -6,6 +6,8 @@ import asyncio
 from logging import getLogger
 from typing import TYPE_CHECKING, Protocol
 
+import httpx
+
 from sortipy.adapters.http_resilience import ResilientClient
 
 from .schema import MBEntityType, MBRecording, MBRecordingSearch, MBRelease, MBReleaseSearch
@@ -30,10 +32,15 @@ DEFAULT_RECORDING_INC = (
 )
 
 DEFAULT_RELEASE_INC = ("artists", "recordings", "release-groups", "labels", "url-rels", "aliases")
+HTTP_NOT_FOUND = 404
 
 
 class MusicBrainzAPIError(RuntimeError):
     """Raised when the MusicBrainz API returns an unexpected response."""
+
+
+class MusicBrainzNotFoundError(MusicBrainzAPIError):
+    """Raised when a MusicBrainz entity lookup returns 404."""
 
 
 class MusicBrainzClient:
@@ -307,7 +314,7 @@ class MusicBrainzClient:
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
         response = await client.get(path, params=params, follow_redirects=True)
-        response.raise_for_status()
+        self._raise_for_status(response=response, path=path)
 
         payload = response.json()
         if not isinstance(payload, dict):
@@ -326,7 +333,7 @@ class MusicBrainzClient:
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
         response = await client.get(path, params=params, follow_redirects=True)
-        response.raise_for_status()
+        self._raise_for_status(response=response, path=path)
 
         payload = response.json()
         if not isinstance(payload, dict):
@@ -345,7 +352,7 @@ class MusicBrainzClient:
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
         response = await client.get(path, params=params, follow_redirects=True)
-        response.raise_for_status()
+        self._raise_for_status(response=response, path=path)
 
         payload = response.json()
         if not isinstance(payload, dict):
@@ -364,13 +371,23 @@ class MusicBrainzClient:
         if base_url is None:
             raise MusicBrainzAPIError("Missing MusicBrainz base_url in resilience configuration")
         response = await client.get(path, params=params, follow_redirects=True)
-        response.raise_for_status()
+        self._raise_for_status(response=response, path=path)
 
         payload = response.json()
         if not isinstance(payload, dict):
             raise MusicBrainzAPIError("Unexpected MusicBrainz response payload")
 
         return MBReleaseSearch.model_validate(payload)
+
+    @staticmethod
+    def _raise_for_status(*, response: httpx.Response, path: str) -> None:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            message = f"MusicBrainz request failed for {path}: {exc}"
+            if exc.response.status_code == HTTP_NOT_FOUND:
+                raise MusicBrainzNotFoundError(message) from exc
+            raise MusicBrainzAPIError(message) from exc
 
 
 class MusicBrainzLookupClient(Protocol):

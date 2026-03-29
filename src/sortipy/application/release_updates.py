@@ -7,6 +7,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.musicbrainz.candidates import resolve_release_candidate
+from sortipy.adapters.musicbrainz.client import MusicBrainzAPIError
 from sortipy.domain.model import EntityType, ExternalNamespace, Provider
 from sortipy.domain.reconciliation import (
     AmbiguousResolution,
@@ -108,7 +109,17 @@ def reconcile_release_updates(  # noqa: PLR0913
                 )
                 continue
 
-            fetch_result = fetch_release_graph(candidate)
+            try:
+                fetch_result = fetch_release_graph(candidate)
+            except MusicBrainzAPIError as exc:
+                log.warning(
+                    "MusicBrainz fetch failed for release %s (%s): candidate_mbid=%s error=%s",
+                    release.title,
+                    release.id,
+                    candidate.mbid,
+                    exc,
+                )
+                continue
             fetched_updates += 1
             redirect_restore = _apply_release_redirect_if_needed(
                 release,
