@@ -31,6 +31,7 @@ from sortipy.config import (
 from sortipy.domain.model import Provider, User
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import datetime
     from uuid import UUID
 
@@ -42,9 +43,28 @@ if TYPE_CHECKING:
     )
     from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
+    from sortipy.domain.reconciliation import ManualReviewItem
 
 
 log = getLogger(__name__)
+
+
+def _log_manual_review_items(
+    *,
+    workflow: str,
+    items: Iterable[ManualReviewItem],
+    skip_reasons: frozenset[str] = frozenset(),
+) -> None:
+    for item in items:
+        if item.reason in skip_reasons:
+            continue
+        blocked_by = ",".join(str(claim_id) for claim_id in item.blocked_by_claim_ids) or "-"
+        candidates = ",".join(str(entity_id) for entity_id in item.candidate_entity_ids) or "-"
+        log.warning(
+            f"{workflow} manual review: claim_id={item.claim_id} "
+            f"subject={item.subject} kind={item.kind} reason={item.reason or '-'} "
+            f"blocked_by={blocked_by} candidate_entity_ids={candidates}"
+        )
 
 
 def create_user(
@@ -136,13 +156,16 @@ def reconcile_lastfm_play_events(
         unit_of_work_factory=unit_of_work_factory,
         source=Provider.LASTFM,
     )
+    _log_manual_review_items(workflow="Last.fm", items=result.manual_review_items)
 
     log.info(
-        "Finished Last.fm reconciliation: stored=%s, fetched=%s, catalog_entities=%s, sidecars=%s",
+        "Finished Last.fm reconciliation: stored=%s, fetched=%s, catalog_entities=%s, "
+        "sidecars=%s, manual_reviews=%s",
         result.stored_events,
         result.fetched,
         result.persisted_entities,
         result.persisted_sidecars,
+        len(result.manual_review_items),
     )
     return result
 
@@ -202,15 +225,17 @@ def reconcile_spotify_library_items(
         user=user,
         source=Provider.SPOTIFY,
     )
+    _log_manual_review_items(workflow="Spotify", items=result.manual_review_items)
 
     log.info(
         "Finished Spotify reconciliation: stored=%s, skipped=%s, fetched=%s, "
-        "catalog_entities=%s, sidecars=%s",
+        "catalog_entities=%s, sidecars=%s, manual_reviews=%s",
         result.stored_items,
         result.skipped_existing,
         result.fetched,
         result.persisted_entities,
         result.persisted_sidecars,
+        len(result.manual_review_items),
     )
     return result
 
@@ -259,11 +284,18 @@ def reconcile_musicbrainz_releases(
         limit=limit,
         source=Provider.MUSICBRAINZ,
     )
+    _log_manual_review_items(
+        workflow="MusicBrainz",
+        items=result.manual_review_items,
+        skip_reasons=frozenset({"musicbrainz_anchor_mismatch"}),
+    )
     log.info(
-        "Finished MusicBrainz reconciliation: candidates=%s, fetched=%s, applied=%s, anchors=%s",
+        "Finished MusicBrainz reconciliation: candidates=%s, fetched=%s, applied=%s, "
+        "anchors=%s, manual_reviews=%s",
         result.candidate_releases,
         result.fetched_updates,
         result.applied_releases,
         result.anchor_mismatches,
+        len(result.manual_review_items),
     )
     return result

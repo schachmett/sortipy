@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from logging import getLogger
 from typing import TYPE_CHECKING
 
 from sortipy.adapters.musicbrainz.candidates import (
     resolve_release_candidate,
 )
-from sortipy.domain.model import EntityType, Provider
+from sortipy.domain.model import EntityType, ExternalNamespace, Provider
 from sortipy.domain.reconciliation import (
     AmbiguousResolution,
     ApplyCounters,
@@ -36,6 +37,9 @@ if TYPE_CHECKING:
     from sortipy.domain.model import Release
     from sortipy.domain.reconciliation import PreparedReconciliation
     from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
+
+
+log = getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -99,6 +103,10 @@ def reconcile_release_updates(  # noqa: PLR0913
                 policy=policy,
             )
             if candidate is None:
+                log.info(
+                    f"Skipping MusicBrainz reconciliation for release {release.title} "
+                    f"({release.id}): no candidate found"
+                )
                 continue
 
             graph_release = fetch_release_graph(candidate)
@@ -113,6 +121,13 @@ def reconcile_release_updates(  # noqa: PLR0913
             if anchor_review is not None:
                 anchor_mismatches += 1
                 manual_review_items.append(anchor_review)
+                fetched_mbid = _release_mbid(graph_release)
+                log.warning(
+                    f"MusicBrainz anchor mismatch for release {release.title} "
+                    f"({release.id}): requested_mbid={candidate.mbid} "
+                    f"fetched_mbid={fetched_mbid or '-'} "
+                    f"candidate_entity_ids={_format_uuid_tuple(anchor_review.candidate_entity_ids)}"
+                )
                 continue
 
             executed = active_engine.execute(prepared, uow=uow)
@@ -203,3 +218,16 @@ def _bump_counters(target: ApplyCounters, source: ApplyCounters) -> None:
     target.merged += source.merged
     target.skipped += source.skipped
     target.manual_review += source.manual_review
+
+
+def _release_mbid(release: Release) -> str | None:
+    entry = release.external_ids_by_namespace.get(ExternalNamespace.MUSICBRAINZ_RELEASE)
+    if entry is None:
+        return None
+    return entry.value
+
+
+def _format_uuid_tuple(values: tuple[UUID, ...]) -> str:
+    if not values:
+        return "-"
+    return ",".join(str(value) for value in values)

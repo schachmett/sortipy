@@ -8,7 +8,13 @@ from sortipy.application import PlayEventIngestResult
 from sortipy.config.http_resilience import CacheConfig, RateLimit, ResilienceConfig
 from sortipy.config.lastfm import LASTFM_BASE_URL, LASTFM_TIMEOUT_SECONDS, LastFmConfig
 from sortipy.config.storage import DatabaseConfig
+from sortipy.config.sync import SyncConfig
 from sortipy.domain.model import User
+from sortipy.domain.reconciliation import (
+    ApplyCounters,
+    ManualReviewItem,
+    ManualReviewSubject,
+)
 from tests.helpers.play_events import (
     FakePlayEventRepository,
     FakePlayEventSource,
@@ -19,6 +25,8 @@ from tests.helpers.play_events import (
 if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
+
+    import pytest
 
     from sortipy.domain.ports.fetching import PlayEventFetchResult
     from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
@@ -153,3 +161,53 @@ def test_reconcile_lastfm_play_events_respects_request_bounds(
     recorded_call = source.calls[0]
     assert recorded_call["since"] == now - lookback
     assert recorded_call["until"] == now
+
+
+def test_reconcile_lastfm_play_events_logs_manual_review_items(
+    monkeypatch: MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    user = User(display_name="Listener")
+
+    def fake_load_user(*, user_id: UUID) -> User:  # noqa: ARG001
+        return user
+
+    def fake_ingest_play_events(**_: object) -> PlayEventIngestResult:
+        return PlayEventIngestResult(
+            fetched=1,
+            persisted_entities=0,
+            persisted_sidecars=0,
+            entities=ApplyCounters(),
+            associations=ApplyCounters(),
+            links=ApplyCounters(),
+            manual_review_items=[
+                ManualReviewItem(
+                    claim_id=user.id,
+                    subject=ManualReviewSubject.ENTITY,
+                    kind=user.entity_type,
+                    candidate_entity_ids=(user.id,),
+                    reason="duplicate_user_candidate",
+                )
+            ],
+            stored_events=0,
+        )
+
+    monkeypatch.setattr("sortipy.app.load_user", fake_load_user)
+    monkeypatch.setattr("sortipy.app.ingest_play_events", fake_ingest_play_events)
+    monkeypatch.setattr("sortipy.app.get_lastfm_config", _make_lastfm_config)
+    monkeypatch.setattr("sortipy.app.get_sync_config", lambda: SyncConfig())
+    monkeypatch.setattr(
+        "sortipy.app.get_database_config",
+        lambda: DatabaseConfig(uri="sqlite+pysqlite:///:memory:"),
+    )
+
+    def fake_uow_factory(**_: object) -> Callable[[], ReconciliationUnitOfWork]:
+        return make_reconciliation_uow_factory(FakePlayEventRepository())
+
+    monkeypatch.setattr("sortipy.app.create_unit_of_work_factory", fake_uow_factory)
+
+    caplog.set_level("WARNING")
+    reconcile_lastfm_play_events(user_id=user.id)
+
+    assert "Last.fm manual review" in caplog.text
+    assert "duplicate_user_candidate" in caplog.text
