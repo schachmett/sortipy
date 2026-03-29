@@ -90,6 +90,11 @@ def resolve_release_candidate(
         candidates = fetch_candidates_from_artist(entity)
     else:
         candidates = fetch_candidates_from_release_set(entity.release_set)
+        if not candidates:
+            candidates = _release_candidates_from_recordings(
+                entity,
+                fetch_candidates_from_recording=fetch_candidates_from_recording,
+            )
 
     if not candidates:
         return None
@@ -204,3 +209,75 @@ def _choose_candidate(
     if policy is not None:
         return policy.choose(entity=entity, candidates=candidates)
     return candidates[0] if candidates else None
+
+
+@dataclass(slots=True)
+class _AggregatedReleaseCandidate:
+    candidate: MusicBrainzReleaseCandidate
+    recording_hits: int = 0
+
+
+def _release_candidates_from_recordings(
+    release: Release,
+    *,
+    fetch_candidates_from_recording: MusicBrainzReleaseCandidatesFromRecording,
+) -> list[MusicBrainzReleaseCandidate]:
+    aggregated_by_mbid: dict[Mbid, _AggregatedReleaseCandidate] = {}
+    for recording in dict.fromkeys(release.recordings):
+        recording_candidates = fetch_candidates_from_recording(recording)
+        seen_mbids: set[Mbid] = set()
+        for candidate in recording_candidates:
+            if candidate.mbid in seen_mbids:
+                continue
+            seen_mbids.add(candidate.mbid)
+            aggregate = aggregated_by_mbid.setdefault(
+                candidate.mbid,
+                _AggregatedReleaseCandidate(candidate=candidate),
+            )
+            aggregate.recording_hits += 1
+
+    return [
+        aggregate.candidate
+        for aggregate in sorted(
+            aggregated_by_mbid.values(),
+            key=lambda aggregate: _release_candidate_sort_key(release, aggregate),
+        )
+    ]
+
+
+def _release_candidate_sort_key(
+    release: Release,
+    aggregate: _AggregatedReleaseCandidate,
+) -> tuple[int, int, int, str, str]:
+    candidate = aggregate.candidate
+    return (
+        -_title_match_score(release.title, candidate.title),
+        -aggregate.recording_hits,
+        -_track_count_match_score(len(release.tracks), candidate.track_count),
+        candidate.title or "",
+        candidate.mbid,
+    )
+
+
+def _title_match_score(local_title: str, candidate_title: str | None) -> int:
+    if candidate_title is None:
+        return 0
+    local = _normalize_title(local_title)
+    candidate = _normalize_title(candidate_title)
+    if not local or not candidate:
+        return 0
+    if local == candidate:
+        return 2
+    if local in candidate or candidate in local:
+        return 1
+    return 0
+
+
+def _track_count_match_score(local_track_count: int, candidate_track_count: int | None) -> int:
+    if local_track_count <= 0 or candidate_track_count is None:
+        return 0
+    return max(0, local_track_count + 1 - abs(local_track_count - candidate_track_count))
+
+
+def _normalize_title(value: str) -> str:
+    return " ".join(value.casefold().split())
