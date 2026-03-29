@@ -34,6 +34,13 @@ class _ArtistContribution(ProvenanceTrackedMixin):
     def artist(self) -> Artist:
         return self._artist
 
+    def _absorb_artist_contribution(self, other: _ArtistContribution) -> None:
+        self._set_field("role", other.role)
+        self._set_field("credit_order", other.credit_order)
+        self._set_field("credited_as", other.credited_as)
+        self._set_field("join_phrase", other.join_phrase)
+        self.absorb_sources(other)
+
 
 @dataclass(eq=False, kw_only=True)
 class ReleaseSetContribution(_ArtistContribution):
@@ -45,6 +52,9 @@ class ReleaseSetContribution(_ArtistContribution):
     def release_set(self) -> ReleaseSet:
         return self._release_set
 
+    def absorb(self, other: ReleaseSetContribution) -> None:
+        self._absorb_artist_contribution(other)
+
 
 @dataclass(eq=False, kw_only=True)
 class RecordingContribution(_ArtistContribution):
@@ -55,6 +65,9 @@ class RecordingContribution(_ArtistContribution):
     @property
     def recording(self) -> Recording:
         return self._recording
+
+    def absorb(self, other: RecordingContribution) -> None:
+        self._absorb_artist_contribution(other)
 
 
 @dataclass(eq=False, kw_only=True)
@@ -78,3 +91,11 @@ class ReleaseTrack(ProvenanceTrackedMixin, ExternallyIdentifiableMixin):
     @property
     def recording(self) -> Recording:
         return self._recording
+
+    def absorb(self, other: ReleaseTrack) -> None:
+        self._set_field("disc_number", other.disc_number)
+        self._set_field("track_number", other.track_number)
+        self._set_field("title_override", other.title_override)
+        self._set_field("duration_ms", other.duration_ms)
+        self.absorb_external_ids(other)
+        self.absorb_sources(other)

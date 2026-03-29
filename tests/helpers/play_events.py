@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sortipy.domain.model import (
+        Entity,
         EntityType,
         IdentifiedEntity,
         LibraryItem,
@@ -203,6 +204,14 @@ class _NullLibraryItemRepository:
         return False
 
 
+class _NullMutationRepository:
+    def attach_created(self, entity: Entity) -> None:
+        _ = entity
+
+    def update(self, entity: Entity, *, changed_fields: frozenset[str]) -> None:
+        _ = (entity, changed_fields)
+
+
 @dataclass(slots=True)
 class _FakePlayEventRepositories:
     play_events: FakePlayEventRepository
@@ -214,6 +223,7 @@ class _FakePlayEventRepositories:
     users: _NullUserRepository
     library_items: _NullLibraryItemRepository
     normalization_sidecars: _NullSidecarRepository
+    mutations: _NullMutationRepository
 
 
 class FakeIngestUnitOfWork:
@@ -230,6 +240,7 @@ class FakeIngestUnitOfWork:
             users=_NullUserRepository(),
             library_items=_NullLibraryItemRepository(),
             normalization_sidecars=_NullSidecarRepository(),
+            mutations=_NullMutationRepository(),
         )
         self.committed = False
         self.rollback_called = False

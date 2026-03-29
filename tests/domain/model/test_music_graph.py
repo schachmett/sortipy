@@ -12,6 +12,8 @@ def test_release_set_add_release_maintains_release_set_pointer() -> None:
 
     assert release.release_set is a
     assert release in a.releases
+    assert a.changed_fields == frozenset({"releases"})
+    assert release.changed_fields == frozenset({"release_set"})
 
 
 def test_release_set_create_release_attaches_and_returns_release() -> None:
@@ -120,3 +122,4 @@ def test_release_adopt_track_rehomes_existing_association() -> None:
     assert track in target_release.tracks
     assert track not in original_recording.release_tracks
     assert track in target_recording.release_tracks
+    assert track.changed_fields == frozenset({"recording", "release"})

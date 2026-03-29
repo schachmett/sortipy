@@ -90,6 +90,8 @@ class ExternallyIdentifiable(ExternalIdCollection, Protocol):
     @property
     def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]: ...
 
+    def absorb_external_ids(self, other: ExternalIdCollection) -> None: ...
+
 
 @dataclass(eq=False, kw_only=True)
 class ExternallyIdentifiableMixin(Entity, ABC):
@@ -125,10 +127,14 @@ class ExternallyIdentifiableMixin(Entity, ABC):
             provider=resolved_provider,
         )
         if replace:
+            existing_same_namespace = any(e for e in self._external_ids if e.namespace == namespace)
             self._external_ids[:] = [e for e in self._external_ids if e.namespace != namespace]
+            if existing_same_namespace:
+                self.mark_changed("external_ids")
         if any(e for e in self._external_ids if e.namespace == namespace):
             raise ValueError(f"External ID {namespace} already exists on {self}")
         self._external_ids.append(ext)
+        self.mark_changed("external_ids")
 
     @property
     def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]:
@@ -136,3 +142,26 @@ class ExternallyIdentifiableMixin(Entity, ABC):
         for e in self._external_ids:
             mapping[e.namespace] = e
         return mapping
+
+    def absorb_external_ids(self, other: ExternalIdCollection) -> None:
+        existing_by_namespace = {
+            str(external_id.namespace): external_id.value for external_id in self.external_ids
+        }
+        for external_id in other.external_ids:
+            namespace = str(external_id.namespace)
+            existing_value = existing_by_namespace.get(namespace)
+            if existing_value == external_id.value:
+                continue
+            if existing_value is not None:
+                msg = (
+                    "Conflicting external ID namespace during merge: "
+                    f"{external_id.namespace} has values {existing_value!r} "
+                    f"and {external_id.value!r}"
+                )
+                raise ValueError(msg)
+            self.add_external_id(
+                external_id.namespace,
+                external_id.value,
+                provider=external_id.provider,
+            )
+            existing_by_namespace[namespace] = external_id.value

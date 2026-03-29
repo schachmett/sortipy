@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sortipy.domain.model import (
+        Entity,
         EntityType,
         IdentifiedEntity,
         Namespace,
@@ -32,6 +33,15 @@ class Repository[TEntity](Protocol):
     """Minimal repository contract for a persistent aggregate store."""
 
     def add(self, entity: TEntity) -> None: ...
+
+
+@runtime_checkable
+class MutationRepository(Protocol):
+    """Persistence contract for already-attached objects with explicit dirty fields."""
+
+    def attach_created(self, entity: Entity) -> None: ...
+
+    def update(self, entity: Entity, *, changed_fields: frozenset[str]) -> None: ...
 
 
 @runtime_checkable

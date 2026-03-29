@@ -14,6 +14,7 @@ def test_add_source_creates_provenance_on_demand() -> None:
 
     assert artist.provenance is not None
     assert artist.provenance.sources == {Provider.LASTFM}
+    assert artist.changed_fields == frozenset({"provenance"})
 
 
 def test_set_provenance_sets_and_clears() -> None:
@@ -25,6 +26,7 @@ def test_set_provenance_sets_and_clears() -> None:
     assert current is provenance
     assert current is not None
     assert current.sources == {Provider.SPOTIFY}
+    assert artist.changed_fields == frozenset({"provenance"})
 
     artist.set_provenance(None)
     assert artist.provenance is None

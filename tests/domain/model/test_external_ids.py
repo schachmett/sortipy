@@ -15,6 +15,7 @@ def test_add_external_id_infers_provider_and_sets_owner_to_resolved_id() -> None
     assert eid.provider is Provider.SPOTIFY
     assert eid.owner_type == artist.entity_type
     assert eid.owner_id == artist.resolved_id
+    assert artist.changed_fields == frozenset({"external_ids"})
 
 
 def test_add_external_id_uses_resolved_id_after_canonicalization() -> None:

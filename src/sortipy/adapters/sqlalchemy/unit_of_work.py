@@ -19,6 +19,7 @@ from .repositories import (
     SqlAlchemyArtistRepository,
     SqlAlchemyLabelRepository,
     SqlAlchemyLibraryItemRepository,
+    SqlAlchemyMutationRepository,
     SqlAlchemyNormalizationSidecarRepository,
     SqlAlchemyPlayEventRepository,
     SqlAlchemyRecordingRepository,
@@ -115,6 +116,7 @@ class SqlAlchemyRepositories(RepositoryCollection):
     releases: SqlAlchemyReleaseRepository
     recordings: SqlAlchemyRecordingRepository
     normalization_sidecars: SqlAlchemyNormalizationSidecarRepository
+    mutations: SqlAlchemyMutationRepository
 
 
 class SqlAlchemyUnitOfWork(BaseSqlAlchemyUnitOfWork[SqlAlchemyRepositories]):
@@ -134,6 +136,7 @@ class SqlAlchemyUnitOfWork(BaseSqlAlchemyUnitOfWork[SqlAlchemyRepositories]):
             releases=SqlAlchemyReleaseRepository(session),
             recordings=SqlAlchemyRecordingRepository(session),
             normalization_sidecars=SqlAlchemyNormalizationSidecarRepository(session),
+            mutations=SqlAlchemyMutationRepository(session),
         )
 
 

@@ -49,6 +49,8 @@ class ProvenanceTracked(Provenanced, Protocol):
 
     def add_source(self, source: Provider) -> None: ...
 
+    def absorb_sources(self, other: Provenanced) -> None: ...
+
 
 @dataclass(eq=False, kw_only=True)
 class ProvenanceTrackedMixin(Entity, ABC):
@@ -61,9 +63,12 @@ class ProvenanceTrackedMixin(Entity, ABC):
         return self._provenance
 
     def set_provenance(self, provenance: Provenance | None) -> None:
+        if self._provenance is provenance:
+            return
         self._provenance = provenance
         if provenance is not None and provenance.owner_type is None:
             provenance.set_owner(owner_type=self.entity_type, owner_id=self.id)
+        self.mark_changed("provenance")
 
     def ensure_provenance(self) -> Provenance:
         if self._provenance is None:
@@ -73,4 +78,15 @@ class ProvenanceTrackedMixin(Entity, ABC):
         return self._provenance
 
     def add_source(self, source: Provider) -> None:
-        self.ensure_provenance().sources.add(source)
+        provenance = self.ensure_provenance()
+        if source in provenance.sources:
+            return
+        provenance.sources.add(source)
+        self.mark_changed("provenance")
+
+    def absorb_sources(self, other: Provenanced) -> None:
+        source_provenance = other.provenance
+        if source_provenance is None:
+            return
+        for source in source_provenance.sources:
+            self.add_source(source)

@@ -9,10 +9,11 @@ Responsibilities of this stage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from sortipy.domain.model import (
     Artist,
+    Entity,
     Label,
     LibraryItem,
     PlayEvent,
@@ -23,6 +24,7 @@ from sortipy.domain.model import (
 )
 from sortipy.domain.ports.unit_of_work import RepositoryCollection, UnitOfWork
 
+from .claims import AssociationClaim
 from .contracts import (
     CreateInstruction,
     ManualReviewInstruction,
@@ -31,6 +33,7 @@ from .contracts import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from uuid import UUID
 
     from sortipy.domain.model import (
@@ -40,6 +43,7 @@ if TYPE_CHECKING:
         ArtistRepository,
         LabelRepository,
         LibraryItemRepository,
+        MutationRepository,
         NormalizationSidecarRepository,
         PlayEventRepository,
         RecordingRepository,
@@ -90,6 +94,9 @@ class ReconciliationRepositories(RepositoryCollection, Protocol):
     @property
     def normalization_sidecars(self) -> NormalizationSidecarRepository: ...
 
+    @property
+    def mutations(self) -> MutationRepository: ...
+
 
 type ReconciliationUnitOfWork = UnitOfWork[ReconciliationRepositories]
 
@@ -136,8 +143,7 @@ def persist_reconciliation(
     uow: ReconciliationUnitOfWork,
 ) -> PersistenceResult:
     """Persist reconciliation outcomes through repository ports and commit ``uow``."""
-
-    _ = (association_instructions_by_claim, link_instructions_by_claim, apply_result)
+    _ = link_instructions_by_claim
 
     persisted_entities = 0
     persisted_sidecars = 0
@@ -182,7 +188,29 @@ def persist_reconciliation(
         keys_after = _keys_for_entity(existing_after, entity=sidecar_target)
         persisted_sidecars += len(keys_after - keys_before)
 
+    for created_association in _created_association_targets(
+        association_instructions_by_claim=association_instructions_by_claim,
+        apply_result=apply_result,
+    ):
+        uow.repositories.mutations.attach_created(created_association)
+
+    dirty_targets = _dirty_targets_for_update(
+        entity_instructions_by_claim=entity_instructions_by_claim,
+        association_instructions_by_claim=association_instructions_by_claim,
+    )
+    for dirty_target in dirty_targets:
+        uow.repositories.mutations.update(
+            dirty_target,
+            changed_fields=dirty_target.changed_fields,
+        )
+
     uow.commit()
+    _clear_dirty_fields_after_commit(
+        graph=graph,
+        apply_result=apply_result,
+        entity_instructions_by_claim=entity_instructions_by_claim,
+        association_instructions_by_claim=association_instructions_by_claim,
+    )
     return PersistenceResult(
         committed=True,
         persisted_entities=persisted_entities,
@@ -265,6 +293,147 @@ def _add_entity(entity: IdentifiedEntity, *, repositories: ReconciliationReposit
         case _:
             msg = f"Unsupported reconciliation persistence entity type: {type(entity).__name__}"
             raise TypeError(msg)
+
+
+def _dirty_targets_for_update(
+    *,
+    entity_instructions_by_claim: EntityInstructionsByClaim,
+    association_instructions_by_claim: AssociationInstructionsByClaim,
+) -> tuple[Entity, ...]:
+    ordered_targets: list[Entity] = []
+    seen: set[int] = set()
+
+    for instruction in entity_instructions_by_claim.values():
+        match instruction:
+            case MergeInstruction(target=target) | NoopInstruction(target=target):
+                if not isinstance(target, Entity):
+                    continue
+                if not target.has_changes or id(target) in seen:
+                    continue
+                ordered_targets.append(target)
+                seen.add(id(target))
+            case _:
+                continue
+
+    for instruction in association_instructions_by_claim.values():
+        match instruction:
+            case MergeInstruction(target=target) | NoopInstruction(target=target):
+                if not isinstance(target, Entity):
+                    continue
+                if not target.has_changes or id(target) in seen:
+                    continue
+                ordered_targets.append(target)
+                seen.add(id(target))
+            case _:
+                continue
+
+    return tuple(ordered_targets)
+
+
+def _created_association_targets(
+    *,
+    association_instructions_by_claim: AssociationInstructionsByClaim,
+    apply_result: ApplyResult,
+) -> tuple[Entity, ...]:
+    ordered_targets: list[Entity] = []
+    seen: set[int] = set()
+
+    for claim_id, instruction in association_instructions_by_claim.items():
+        if not isinstance(instruction, CreateInstruction):
+            continue
+        created = apply_result.associations_by_claim.get(claim_id)
+        if not isinstance(created, Entity):
+            continue
+        marker = id(created)
+        if marker in seen:
+            continue
+        ordered_targets.append(created)
+        seen.add(marker)
+
+    return tuple(ordered_targets)
+
+
+def _clear_dirty_fields_after_commit(
+    *,
+    graph: ClaimGraph,
+    apply_result: ApplyResult,
+    entity_instructions_by_claim: EntityInstructionsByClaim,
+    association_instructions_by_claim: AssociationInstructionsByClaim,
+) -> None:
+    for tracked_object in _tracked_objects_for_clear(
+        graph=graph,
+        apply_result=apply_result,
+        entity_instructions_by_claim=entity_instructions_by_claim,
+        association_instructions_by_claim=association_instructions_by_claim,
+    ):
+        tracked_object.clear_changed_fields()
+
+
+def _tracked_objects_for_clear(
+    *,
+    graph: ClaimGraph,
+    apply_result: ApplyResult,
+    entity_instructions_by_claim: EntityInstructionsByClaim,
+    association_instructions_by_claim: AssociationInstructionsByClaim,
+) -> tuple[Entity, ...]:
+    tracked_objects: list[Entity] = []
+    seen: set[int] = set()
+    for candidate in _tracked_clear_candidates(
+        graph=graph,
+        apply_result=apply_result,
+        entity_instructions_by_claim=entity_instructions_by_claim,
+        association_instructions_by_claim=association_instructions_by_claim,
+    ):
+        _add_tracked_object(candidate, tracked_objects=tracked_objects, seen=seen)
+    return tuple(tracked_objects)
+
+
+def _tracked_clear_candidates(
+    *,
+    graph: ClaimGraph,
+    apply_result: ApplyResult,
+    entity_instructions_by_claim: EntityInstructionsByClaim,
+    association_instructions_by_claim: AssociationInstructionsByClaim,
+) -> tuple[object, ...]:
+    candidates: list[object] = [claim.entity for claim in graph.claims]
+    candidates.extend(
+        relationship.payload
+        for relationship in graph.relationships
+        if isinstance(relationship, AssociationClaim)
+    )
+    candidates.extend(_instruction_targets(entity_instructions_by_claim.values()))
+    candidates.extend(_instruction_targets(association_instructions_by_claim.values()))
+    candidates.extend(apply_result.entities_by_claim.values())
+    candidates.extend(apply_result.associations_by_claim.values())
+    return tuple(candidates)
+
+
+def _instruction_targets(
+    instructions: Iterable[object],
+) -> tuple[object, ...]:
+    targets: list[object] = []
+    for instruction in instructions:
+        if isinstance(instruction, MergeInstruction):
+            targets.append(cast("Any", instruction).target)
+            continue
+        if isinstance(instruction, NoopInstruction):
+            targets.append(cast("Any", instruction).target)
+    return tuple(targets)
+
+
+def _add_tracked_object(
+    candidate: object,
+    *,
+    tracked_objects: list[Entity],
+    seen: set[int],
+) -> None:
+    if not isinstance(candidate, Entity):
+        return
+    marker = id(candidate)
+    if marker in seen:
+        return
+    tracked_objects.append(candidate)
+    seen.add(marker)
 
 
 def _normalization_keys(claim_keys: tuple[ClaimKey, ...]) -> tuple[tuple[object, ...], ...]:

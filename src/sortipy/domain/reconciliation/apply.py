@@ -51,10 +51,7 @@ if TYPE_CHECKING:
 
     from sortipy.domain.model import (
         AssociationEntity,
-        ExternallyIdentifiable,
         IdentifiedEntity,
-        Provenanced,
-        ProvenanceTracked,
     )
 
     from .claims import (
@@ -289,160 +286,27 @@ def _merge_entity_claim_into_target(claim: EntityClaim, *, target: IdentifiedEnt
 
     match (incoming, target):
         case (Artist(), Artist()):
-            _merge_artist(incoming, target)
+            target.absorb(incoming)
         case (ReleaseSet(), ReleaseSet()):
-            _merge_release_set(incoming, target)
+            target.absorb(incoming)
         case (Release(), Release()):
-            _merge_release(incoming, target)
+            target.absorb(incoming)
         case (Recording(), Recording()):
-            _merge_recording(incoming, target)
+            target.absorb(incoming)
         case (Label(), Label()):
-            _merge_label(incoming, target)
+            target.absorb(incoming)
         case (User(), User()):
-            _merge_user(incoming, target)
+            target.absorb(incoming)
         case (LibraryItem(), LibraryItem()):
-            _merge_library_item(incoming, target)
+            target.absorb(incoming)
         case (PlayEvent(), PlayEvent()):
-            _merge_play_event(incoming, target)
+            target.absorb(incoming)
         case _:
             msg = (
                 f"Unsupported merge entity type for claim {claim.claim_id}: "
                 f"{type(incoming).__name__} -> {type(target).__name__}"
             )
             raise TypeError(msg)
-
-
-def _merge_artist(incoming: Artist, target: Artist) -> None:
-    target.name = _prefer_non_empty_string(incoming.name, target.name)
-    target.sort_name = _prefer_optional_string(incoming.sort_name, target.sort_name)
-    target.country = _prefer_optional_value(incoming.country, target.country)
-    target.kind = _prefer_optional_value(incoming.kind, target.kind)
-    target.life_span = _prefer_optional_value(incoming.life_span, target.life_span)
-    target.formed_year = _prefer_optional_value(incoming.formed_year, target.formed_year)
-    target.disbanded_year = _prefer_optional_value(incoming.disbanded_year, target.disbanded_year)
-    _merge_unique_list(target.areas, incoming.areas)
-    _merge_unique_list(target.aliases, incoming.aliases)
-    _merge_external_ids(incoming, target)
-    _merge_sources(incoming, target)
-
-
-def _merge_release_set(incoming: ReleaseSet, target: ReleaseSet) -> None:
-    target.title = _prefer_non_empty_string(incoming.title, target.title)
-    target.primary_type = _prefer_optional_value(incoming.primary_type, target.primary_type)
-    target.first_release = _prefer_optional_value(incoming.first_release, target.first_release)
-    _merge_unique_list(target.secondary_types, incoming.secondary_types)
-    _merge_unique_list(target.aliases, incoming.aliases)
-    _merge_external_ids(incoming, target)
-    _merge_sources(incoming, target)
-
-
-def _merge_release(incoming: Release, target: Release) -> None:
-    target.title = _prefer_non_empty_string(incoming.title, target.title)
-    target.release_date = _prefer_optional_value(incoming.release_date, target.release_date)
-    target.country = _prefer_optional_value(incoming.country, target.country)
-    target.status = _prefer_optional_value(incoming.status, target.status)
-    target.packaging = _prefer_optional_value(incoming.packaging, target.packaging)
-    target.format = _prefer_optional_string(incoming.format, target.format)
-    target.medium_count = _prefer_optional_value(incoming.medium_count, target.medium_count)
-    _merge_external_ids(incoming, target)
-    _merge_sources(incoming, target)
-
-
-def _merge_recording(incoming: Recording, target: Recording) -> None:
-    target.title = _prefer_non_empty_string(incoming.title, target.title)
-    target.duration_ms = _prefer_optional_value(incoming.duration_ms, target.duration_ms)
-    target.version = _prefer_optional_string(incoming.version, target.version)
-    target.disambiguation = _prefer_optional_string(incoming.disambiguation, target.disambiguation)
-    _merge_unique_list(target.aliases, incoming.aliases)
-    _merge_external_ids(incoming, target)
-    _merge_sources(incoming, target)
-
-
-def _merge_label(incoming: Label, target: Label) -> None:
-    target.name = _prefer_non_empty_string(incoming.name, target.name)
-    target.country = _prefer_optional_value(incoming.country, target.country)
-    _merge_external_ids(incoming, target)
-    _merge_sources(incoming, target)
-
-
-def _merge_user(incoming: User, target: User) -> None:
-    target.display_name = _prefer_non_empty_string(incoming.display_name, target.display_name)
-    target.email = _prefer_optional_string(incoming.email, target.email)
-    target.spotify_user_id = _prefer_optional_string(
-        incoming.spotify_user_id,
-        target.spotify_user_id,
-    )
-    target.lastfm_user = _prefer_optional_string(incoming.lastfm_user, target.lastfm_user)
-    _merge_sources(incoming, target)
-
-
-def _merge_library_item(incoming: LibraryItem, target: LibraryItem) -> None:
-    target.source = _prefer_optional_value(incoming.source, target.source)
-    target.saved_at = _prefer_optional_value(incoming.saved_at, target.saved_at)
-    _merge_sources(incoming, target)
-
-
-def _merge_play_event(incoming: PlayEvent, target: PlayEvent) -> None:
-    target.duration_ms = _prefer_optional_value(incoming.duration_ms, target.duration_ms)
-    _merge_sources(incoming, target)
-
-
-def _prefer_non_empty_string(incoming: str, fallback: str) -> str:
-    return incoming if incoming.strip() else fallback
-
-
-def _prefer_optional_string(incoming: str | None, fallback: str | None) -> str | None:
-    if incoming is None or not incoming.strip():
-        return fallback
-    return incoming
-
-
-def _prefer_optional_value[TValue](
-    incoming: TValue | None,
-    fallback: TValue | None,
-) -> TValue | None:
-    return incoming if incoming is not None else fallback
-
-
-def _merge_unique_list[TItem](target: list[TItem], incoming: list[TItem]) -> None:
-    for item in incoming:
-        if item not in target:
-            target.append(item)
-
-
-def _merge_sources(source_entity: Provenanced, target_entity: ProvenanceTracked) -> None:
-    source_provenance = source_entity.provenance
-    if source_provenance is None:
-        return
-    for source in source_provenance.sources:
-        target_entity.add_source(source)
-
-
-def _merge_external_ids(
-    source_entity: ExternallyIdentifiable,
-    target_entity: ExternallyIdentifiable,
-) -> None:
-    source_external_ids = source_entity.external_ids
-    existing_by_namespace = {
-        str(external_id.namespace): external_id.value for external_id in target_entity.external_ids
-    }
-    for external_id in source_external_ids:
-        namespace = str(external_id.namespace)
-        existing_value = existing_by_namespace.get(namespace)
-        if existing_value == external_id.value:
-            continue
-        if existing_value is not None:
-            msg = (
-                "Conflicting external ID namespace during merge: "
-                f"{external_id.namespace} has values {existing_value!r} and {external_id.value!r}"
-            )
-            raise ValueError(msg)
-        target_entity.add_external_id(
-            external_id.namespace,
-            external_id.value,
-            provider=external_id.provider,
-        )
-        existing_by_namespace[namespace] = external_id.value
 
 
 def _create_association(
@@ -604,11 +468,7 @@ def _merge_release_set_contribution(
     *,
     target: ReleaseSetContribution,
 ) -> None:
-    target.role = payload.role
-    target.credit_order = payload.credit_order
-    target.credited_as = payload.credited_as
-    target.join_phrase = payload.join_phrase
-    _merge_sources(payload, target)
+    target.absorb(payload)
 
 
 def _merge_recording_contribution(
@@ -616,11 +476,7 @@ def _merge_recording_contribution(
     *,
     target: RecordingContribution,
 ) -> None:
-    target.role = payload.role
-    target.credit_order = payload.credit_order
-    target.credited_as = payload.credited_as
-    target.join_phrase = payload.join_phrase
-    _merge_sources(payload, target)
+    target.absorb(payload)
 
 
 def _merge_release_track(
@@ -628,12 +484,7 @@ def _merge_release_track(
     *,
     target: ReleaseTrack,
 ) -> None:
-    target.disc_number = payload.disc_number
-    target.track_number = payload.track_number
-    target.title_override = payload.title_override
-    target.duration_ms = payload.duration_ms
-    _merge_external_ids(payload, target)
-    _merge_sources(payload, target)
+    target.absorb(payload)
 
 
 def _prune_superseded_entities(

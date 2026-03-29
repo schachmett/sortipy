@@ -12,6 +12,7 @@ def test_canonicalizable_defaults_to_canonical() -> None:
     assert artist.is_canonical is True
     assert artist.canonical_id is None
     assert artist.resolved_id == artist.id
+    assert artist.changed_fields == frozenset()
 
 
 def test_point_to_canonical_sets_pointer_and_resolves() -> None:
@@ -23,6 +24,7 @@ def test_point_to_canonical_sets_pointer_and_resolves() -> None:
     assert duplicate.is_canonical is False
     assert duplicate.canonical_id == canonical.id
     assert duplicate.resolved_id == canonical.id
+    assert duplicate.changed_fields == frozenset({"canonical_id"})
 
 
 def test_point_to_canonical_normalizes_self_pointer_to_none() -> None:
@@ -63,3 +65,4 @@ def test_clear_canonical_resets_pointer() -> None:
     assert duplicate.is_canonical is True
     assert duplicate.canonical_id is None
     assert duplicate.resolved_id == duplicate.id
+    assert duplicate.changed_fields == frozenset({"canonical_id"})

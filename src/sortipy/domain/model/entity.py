@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from uuid import UUID
 
     from .enums import EntityType
@@ -36,6 +37,7 @@ class Entity:
     """Internal identity exists immediately in the domain."""
 
     id: UUID = field(default_factory=new_id)
+    _changed_fields: set[str] = field(default_factory=set[str], repr=False, init=False)
 
     # class-level discriminator; subclasses must override
     ENTITY_TYPE: ClassVar[EntityType]
@@ -48,6 +50,70 @@ class Entity:
     def resolved_id(self) -> UUID:
         """Default: no canonicalization semantics"""
         return self.id
+
+    def _ensure_changed_fields(self) -> set[str]:
+        changed_fields = getattr(self, "_changed_fields", None)
+        if changed_fields is None:
+            changed_fields = set[str]()
+            self._changed_fields = changed_fields
+        return changed_fields
+
+    def mark_changed(self, *fields: str) -> None:
+        changed_fields = self._ensure_changed_fields()
+        for field_name in fields:
+            if not field_name:
+                continue
+            changed_fields.add(field_name)
+
+    @property
+    def changed_fields(self) -> frozenset[str]:
+        return frozenset(self._ensure_changed_fields())
+
+    @property
+    def has_changes(self) -> bool:
+        return bool(self._ensure_changed_fields())
+
+    def clear_changed_fields(self) -> None:
+        self._ensure_changed_fields().clear()
+
+    def _set_field(self, field_name: str, value: object) -> None:
+        if getattr(self, field_name) == value:
+            return
+        setattr(self, field_name, value)
+        self.mark_changed(field_name)
+
+    def _prefer_non_empty_string_field(self, field_name: str, incoming: str) -> None:
+        if incoming.strip():
+            self._set_field(field_name, incoming)
+
+    def _prefer_optional_string_field(
+        self,
+        field_name: str,
+        incoming: str | None,
+    ) -> None:
+        if incoming is None or not incoming.strip():
+            return
+        self._set_field(field_name, incoming)
+
+    def _prefer_optional_value_field(self, field_name: str, incoming: object) -> None:
+        if incoming is None:
+            return
+        self._set_field(field_name, incoming)
+
+    def _merge_unique_list_field(
+        self,
+        field_name: str,
+        incoming: Iterable[object],
+    ) -> None:
+        target = cast("list[object]", getattr(self, field_name))
+        changed = False
+        for item in incoming:
+            if item in target:
+                continue
+            target.append(item)
+            changed = True
+        if changed:
+            self.mark_changed(field_name)
 
 
 @dataclass(eq=False, kw_only=True)
@@ -71,7 +137,10 @@ class CanonicalizableMixin(Entity, ABC):
 
     def clear_canonical(self) -> None:
         """Mark this entity as canonical (no pointer)."""
+        if self._canonical_id is None:
+            return
         self._canonical_id = None
+        self.mark_changed("canonical_id")
 
     def point_to_canonical(self, canonical: IdentifiedEntity) -> None:
         """Point this entity at a canonical/root identity.
@@ -83,6 +152,9 @@ class CanonicalizableMixin(Entity, ABC):
         canonical_id = canonical.resolved_id
         # Normalization: pointing at self means "no pointer".
         if canonical_id == self.id:
-            self._canonical_id = None
+            self.clear_canonical()
+            return
+        if self._canonical_id == canonical_id:
             return
         self._canonical_id = canonical_id
+        self.mark_changed("canonical_id")

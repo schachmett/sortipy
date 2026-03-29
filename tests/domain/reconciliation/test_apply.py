@@ -89,6 +89,8 @@ def test_apply_reconciliation_instructions_counts_instruction_outcomes() -> None
 
 def test_apply_reconciliation_instructions_merges_entity_fields_into_target() -> None:
     incoming = Artist(name="Incoming")
+    incoming.aliases.append("Alias")
+    incoming.add_source(Provider.MUSICBRAINZ)
     canonical = Artist(name="Canonical")
     claim = EntityClaim(
         entity=incoming,
@@ -109,8 +111,34 @@ def test_apply_reconciliation_instructions_merges_entity_fields_into_target() ->
     )
 
     assert canonical.name == "Incoming"
+    assert canonical.aliases == ["Alias"]
     assert result.entities.applied == 1
     assert result.entities.merged == 1
+    assert canonical.changed_fields == frozenset({"aliases", "name", "provenance"})
+
+
+def test_apply_reconciliation_instructions_leaves_unchanged_target_clean() -> None:
+    claim = EntityClaim(
+        entity=Artist(name="Same"),
+        metadata=ClaimMetadata(source=Provider.SPOTIFY),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    canonical = Artist(name="Same")
+    canonical.clear_changed_fields()
+    entity_instructions: EntityInstructionsByClaim = {
+        claim.claim_id: MergeInstruction(target=canonical)
+    }
+
+    apply_reconciliation_instructions(
+        graph,
+        entity_instructions_by_claim=entity_instructions,
+        association_instructions_by_claim={},
+        link_instructions_by_claim={},
+    )
+
+    assert canonical.changed_fields == frozenset()
 
 
 def test_apply_reconciliation_rejects_conflicting_external_id_namespace_merge() -> None:
@@ -178,6 +206,7 @@ def test_apply_reconciliation_instructions_merges_user_fields_into_target() -> N
     assert canonical.display_name == "Listener"
     assert canonical.email == "listener@example.com"
     assert result.entities.merged == 1
+    assert canonical.changed_fields == frozenset({"display_name", "email"})
 
 
 def test_apply_reconciliation_instructions_rejects_unknown_claim_instruction() -> None:
@@ -337,6 +366,9 @@ def test_apply_reconciliation_instructions_merges_association_payload() -> None:
     assert existing_track.title_override == "Incoming Title"
     assert result.associations.applied == 1
     assert result.associations.merged == 1
+    assert existing_track.changed_fields == frozenset(
+        {"disc_number", "title_override", "track_number"}
+    )
 
 
 def test_apply_reconciliation_instructions_exposes_materialized_objects_by_claim() -> None:

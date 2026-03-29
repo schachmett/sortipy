@@ -80,6 +80,19 @@ class Artist(CanonicalEntity):
     def recordings(self) -> tuple[Recording, ...]:
         return tuple(c.recording for c in self._recording_contributions)
 
+    def absorb(self, other: Artist) -> None:
+        self._prefer_non_empty_string_field("name", other.name)
+        self._prefer_optional_string_field("sort_name", other.sort_name)
+        self._prefer_optional_value_field("country", other.country)
+        self._prefer_optional_value_field("kind", other.kind)
+        self._prefer_optional_value_field("life_span", other.life_span)
+        self._prefer_optional_value_field("formed_year", other.formed_year)
+        self._prefer_optional_value_field("disbanded_year", other.disbanded_year)
+        self._merge_unique_list_field("areas", other.areas)
+        self._merge_unique_list_field("aliases", other.aliases)
+        self.absorb_external_ids(other)
+        self.absorb_sources(other)
+
 
 @dataclass(eq=False, kw_only=True)
 class ReleaseSet(CanonicalEntity):
@@ -109,18 +122,31 @@ class ReleaseSet(CanonicalEntity):
     def artists(self) -> tuple[Artist, ...]:
         return tuple(c.artist for c in self._contributions)
 
+    def absorb(self, other: ReleaseSet) -> None:
+        self._prefer_non_empty_string_field("title", other.title)
+        self._prefer_optional_value_field("primary_type", other.primary_type)
+        self._prefer_optional_value_field("first_release", other.first_release)
+        self._merge_unique_list_field("secondary_types", other.secondary_types)
+        self._merge_unique_list_field("aliases", other.aliases)
+        self.absorb_external_ids(other)
+        self.absorb_sources(other)
+
     # Commands (ownership here)
     def add_release(self, release: Release) -> None:
         if release.release_set is not self:
             internal.set_release_release_set(release, self)
+            release.mark_changed("release_set")
+            self.mark_changed("releases")
         if release not in self._releases:
             self._releases.append(release)
+            self.mark_changed("releases")
 
     def remove_release(self, release: Release) -> None:
         if release.release_set is not self:
             raise ValueError("release not owned by this release set")
         if release in self._releases:
             self._releases.remove(release)
+            self.mark_changed("releases")
 
     def create_release(
         self,
@@ -161,6 +187,8 @@ class ReleaseSet(CanonicalEntity):
         )
         internal.attach_release_set_contribution_to_release_set(self, c)
         internal.attach_release_set_contribution_to_artist(artist, c)
+        self.mark_changed("contributions")
+        artist.mark_changed("release_sets")
         return c
 
     def move_contributions_to(self, new_owner: ReleaseSet) -> None:
@@ -170,6 +198,9 @@ class ReleaseSet(CanonicalEntity):
             internal.detach_release_set_contribution_from_release_set(self, c)
             internal.set_release_set_contribution_release_set(c, new_owner)
             internal.attach_release_set_contribution_to_release_set(new_owner, c)
+            c.mark_changed("release_set")
+        self.mark_changed("contributions")
+        new_owner.mark_changed("contributions")
 
     def adopt_contribution(
         self,
@@ -187,6 +218,8 @@ class ReleaseSet(CanonicalEntity):
             )
             internal.set_release_set_contribution_release_set(contribution, self)
             internal.attach_release_set_contribution_to_release_set(self, contribution)
+            contribution.mark_changed("release_set")
+            self.mark_changed("contributions")
         if contribution.artist is not target_artist:
             internal.detach_release_set_contribution_from_artist(
                 contribution.artist,
@@ -194,6 +227,7 @@ class ReleaseSet(CanonicalEntity):
             )
             internal.set_release_set_contribution_artist(contribution, target_artist)
             internal.attach_release_set_contribution_to_artist(target_artist, contribution)
+            contribution.mark_changed("artist")
         return contribution
 
     def replace_artist(self, old: Artist, new: Artist) -> None:
@@ -205,12 +239,15 @@ class ReleaseSet(CanonicalEntity):
             internal.detach_release_set_contribution_from_artist(old, c)
             internal.set_release_set_contribution_artist(c, new)
             internal.attach_release_set_contribution_to_artist(new, c)
+            c.mark_changed("artist")
 
     def remove_artist(self, artist: Artist) -> None:
         for c in list(self._contributions):
             if c.artist is artist:
                 internal.detach_release_set_contribution_from_release_set(self, c)
                 internal.detach_release_set_contribution_from_artist(artist, c)
+                self.mark_changed("contributions")
+                artist.mark_changed("release_sets")
                 return
         raise ValueError("artist not linked to this release set")
 
@@ -221,6 +258,12 @@ class Label(CanonicalEntity):
 
     name: str
     country: CountryCode | None = None
+
+    def absorb(self, other: Label) -> None:
+        self._prefer_non_empty_string_field("name", other.name)
+        self._prefer_optional_value_field("country", other.country)
+        self.absorb_external_ids(other)
+        self.absorb_sources(other)
 
 
 @dataclass(eq=False, kw_only=True)
@@ -257,6 +300,17 @@ class Release(CanonicalEntity):
     def labels(self) -> tuple[Label, ...]:
         return tuple(self._labels)
 
+    def absorb(self, other: Release) -> None:
+        self._prefer_non_empty_string_field("title", other.title)
+        self._prefer_optional_value_field("release_date", other.release_date)
+        self._prefer_optional_value_field("country", other.country)
+        self._prefer_optional_value_field("status", other.status)
+        self._prefer_optional_value_field("packaging", other.packaging)
+        self._prefer_optional_string_field("format", other.format)
+        self._prefer_optional_value_field("medium_count", other.medium_count)
+        self.absorb_external_ids(other)
+        self.absorb_sources(other)
+
     # Commands (ownership here)
     def add_track(
         self,
@@ -277,6 +331,8 @@ class Release(CanonicalEntity):
         )
         internal.attach_release_track_to_release(self, t)
         internal.attach_release_track_to_recording(recording, t)
+        self.mark_changed("tracks")
+        recording.mark_changed("releases")
         return t
 
     def move_tracks_to(self, new_release: Release) -> None:
@@ -286,6 +342,9 @@ class Release(CanonicalEntity):
             internal.detach_release_track_from_release(self, track)
             internal.set_release_track_release(track, new_release)
             internal.attach_release_track_to_release(new_release, track)
+            track.mark_changed("release")
+        self.mark_changed("tracks")
+        new_release.mark_changed("tracks")
 
     def adopt_track(
         self,
@@ -300,10 +359,13 @@ class Release(CanonicalEntity):
             internal.detach_release_track_from_release(track.release, track)
             internal.set_release_track_release(track, self)
             internal.attach_release_track_to_release(self, track)
+            track.mark_changed("release")
+            self.mark_changed("tracks")
         if track.recording is not target_recording:
             internal.detach_release_track_from_recording(track.recording, track)
             internal.set_release_track_recording(track, target_recording)
             internal.attach_release_track_to_recording(target_recording, track)
+            track.mark_changed("recording")
         return track
 
     def move_track_to_recording(self, track: ReleaseTrack, recording: Recording) -> None:
@@ -315,17 +377,21 @@ class Release(CanonicalEntity):
         internal.detach_release_track_from_recording(old_recording, track)
         internal.set_release_track_recording(track, recording)
         internal.attach_release_track_to_recording(recording, track)
+        track.mark_changed("recording")
 
     def remove_track(self, track: ReleaseTrack) -> None:
         internal.detach_release_track_from_release(self, track)
         internal.detach_release_track_from_recording(track.recording, track)
+        self.mark_changed("tracks")
 
     def add_label(self, label: Label) -> None:
         if label not in self._labels:
             self._labels.append(label)
+            self.mark_changed("labels")
 
     def remove_label(self, label: Label) -> None:
         self._labels.remove(label)
+        self.mark_changed("labels")
 
 
 @dataclass(eq=False, kw_only=True)
@@ -362,6 +428,15 @@ class Recording(CanonicalEntity):
     def releases(self) -> tuple[Release, ...]:
         return tuple(rt.release for rt in self._release_tracks)
 
+    def absorb(self, other: Recording) -> None:
+        self._prefer_non_empty_string_field("title", other.title)
+        self._prefer_optional_value_field("duration_ms", other.duration_ms)
+        self._prefer_optional_string_field("version", other.version)
+        self._prefer_optional_string_field("disambiguation", other.disambiguation)
+        self._merge_unique_list_field("aliases", other.aliases)
+        self.absorb_external_ids(other)
+        self.absorb_sources(other)
+
     # Commands (ownership here)
     def add_artist(
         self,
@@ -382,6 +457,8 @@ class Recording(CanonicalEntity):
         )
         internal.attach_recording_contribution_to_recording(self, c)
         internal.attach_recording_contribution_to_artist(artist, c)
+        self.mark_changed("contributions")
+        artist.mark_changed("recordings")
         return c
 
     def move_contributions_to(self, new_recording: Recording) -> None:
@@ -391,6 +468,9 @@ class Recording(CanonicalEntity):
             internal.detach_recording_contribution_from_recording(self, c)
             internal.set_recording_contribution_recording(c, new_recording)
             internal.attach_recording_contribution_to_recording(new_recording, c)
+            c.mark_changed("recording")
+        self.mark_changed("contributions")
+        new_recording.mark_changed("contributions")
 
     def adopt_contribution(
         self,
@@ -408,6 +488,8 @@ class Recording(CanonicalEntity):
             )
             internal.set_recording_contribution_recording(contribution, self)
             internal.attach_recording_contribution_to_recording(self, contribution)
+            contribution.mark_changed("recording")
+            self.mark_changed("contributions")
         if contribution.artist is not target_artist:
             internal.detach_recording_contribution_from_artist(
                 contribution.artist,
@@ -415,6 +497,7 @@ class Recording(CanonicalEntity):
             )
             internal.set_recording_contribution_artist(contribution, target_artist)
             internal.attach_recording_contribution_to_artist(target_artist, contribution)
+            contribution.mark_changed("artist")
         return contribution
 
     def replace_artist(self, old: Artist, new: Artist) -> None:
@@ -426,12 +509,15 @@ class Recording(CanonicalEntity):
             internal.detach_recording_contribution_from_artist(old, c)
             internal.set_recording_contribution_artist(c, new)
             internal.attach_recording_contribution_to_artist(new, c)
+            c.mark_changed("artist")
 
     def remove_artist(self, artist: Artist) -> None:
         for c in list(self._contributions):
             if c.artist is artist:
                 internal.detach_recording_contribution_from_recording(self, c)
                 internal.detach_recording_contribution_from_artist(artist, c)
+                self.mark_changed("contributions")
+                artist.mark_changed("recordings")
                 return
         raise ValueError("artist not linked to this recording")
 

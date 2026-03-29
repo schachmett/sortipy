@@ -41,6 +41,13 @@ class User(ProvenanceTrackedMixin):
     def play_events(self) -> tuple[PlayEvent, ...]:
         return tuple(self._play_events)
 
+    def absorb(self, other: User) -> None:
+        self._prefer_non_empty_string_field("display_name", other.display_name)
+        self._prefer_optional_string_field("email", other.email)
+        self._prefer_optional_string_field("spotify_user_id", other.spotify_user_id)
+        self._prefer_optional_string_field("lastfm_user", other.lastfm_user)
+        self.absorb_sources(other)
+
     def save_entity(
         self,
         entity: IdentifiedEntity,
@@ -74,12 +81,14 @@ class User(ProvenanceTrackedMixin):
             saved_at=saved_at,
         )
         self._library_items.append(item)
+        self.mark_changed("library_items")
         return item
 
     def remove_library_item(self, item: LibraryItem) -> None:
         if item.user is not self:
             raise ValueError("library item not owned by this user")
         self._library_items.remove(item)
+        self.mark_changed("library_items")
 
     def rehydrate_library_item(self, item: LibraryItem) -> None:
         """Attach a library item to this user instance.
@@ -104,6 +113,7 @@ class User(ProvenanceTrackedMixin):
             target_type=target.entity_type,
             target_id=target.resolved_id,
         )
+        item.mark_changed("target")
 
     def log_play(
         self,
@@ -125,12 +135,14 @@ class User(ProvenanceTrackedMixin):
             duration_ms=duration_ms,
         )
         self._play_events.append(event)
+        self.mark_changed("play_events")
         return event
 
     def remove_play_event(self, event: PlayEvent) -> None:
         if event.user is not self:
             raise ValueError("play event not owned by this user")
         self._play_events.remove(event)
+        self.mark_changed("play_events")
 
     def rehydrate_play_event(self, event: PlayEvent) -> None:
         """Attach a play event to this user instance.
@@ -159,6 +171,7 @@ class User(ProvenanceTrackedMixin):
             raise ValueError("track.recording must match recording")
         internal.set_play_event_track(event, track)
         internal.set_play_event_recording_ref(event, None if track is not None else recording)
+        event.mark_changed("track", "recording")
 
     def link_play_to_track(self, event: PlayEvent, track: ReleaseTrack) -> None:
         if event.user is not self:
@@ -173,6 +186,7 @@ class User(ProvenanceTrackedMixin):
             raise ValueError("track.recording must match play event recording")
         internal.set_play_event_track(event, track)
         internal.set_play_event_recording_ref(event, None)
+        event.mark_changed("track", "recording")
 
     def move_play_event_to(self, event: PlayEvent, recording: Recording) -> None:
         if event.user is not self:
@@ -182,6 +196,7 @@ class User(ProvenanceTrackedMixin):
         if event.recording_ref is recording:
             return
         internal.set_play_event_recording_ref(event, recording)
+        event.mark_changed("recording")
 
 
 @dataclass(eq=False, kw_only=True)
@@ -228,6 +243,11 @@ class LibraryItem(ProvenanceTrackedMixin):
         # Validate target shape; ownership is managed by User commands.
         if self._target is not None and self._target.resolved_id != self._target_id:
             raise ValueError("target_id must match target.resolved_id")
+
+    def absorb(self, other: LibraryItem) -> None:
+        self._prefer_optional_value_field("source", other.source)
+        self._prefer_optional_value_field("saved_at", other.saved_at)
+        self.absorb_sources(other)
 
 
 @dataclass(eq=False, kw_only=True)
@@ -279,3 +299,7 @@ class PlayEvent(ProvenanceTrackedMixin):
     @property
     def release(self) -> Release | None:
         return self._track.release if self._track is not None else None
+
+    def absorb(self, other: PlayEvent) -> None:
+        self._prefer_optional_value_field("duration_ms", other.duration_ms)
+        self.absorb_sources(other)

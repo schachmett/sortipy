@@ -41,6 +41,7 @@ def test_user_retarget_library_item_updates_hydrated_target_identity() -> None:
     assert item.target is canonical
     assert item.target_type == canonical.entity_type
     assert item.target_id == canonical.resolved_id
+    assert item.changed_fields == frozenset({"target"})
 
 
 def test_user_log_play_attaches_event_to_user_and_recording() -> None:
@@ -128,6 +129,7 @@ def test_user_rebind_play_event_swaps_between_recording_and_track() -> None:
     user.rebind_play_event(event, recording=canonical)
     assert event.track is None
     assert event.recording is canonical
+    assert event.changed_fields == frozenset({"recording", "track"})
 
     user.rebind_play_event(event, recording=canonical, track=canonical_track)
     assert event.track is canonical_track

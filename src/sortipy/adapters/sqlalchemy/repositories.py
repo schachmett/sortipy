@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from sqlalchemy import select
+from sqlalchemy.orm import attributes, object_session
 
 from sortipy.domain.model import (
     Artist,
@@ -18,7 +19,7 @@ from sortipy.domain.model import (
     ReleaseSet,
     User,
 )
-from sortipy.domain.ports.persistence import NormalizationSidecarRepository
+from sortipy.domain.ports.persistence import MutationRepository, NormalizationSidecarRepository
 
 from .mappings import (
     CLASS_BY_ENTITY_TYPE,
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
     from sortipy.domain.model import (
+        Entity,
         EntityType,
         LibraryItem,
         Namespace,
@@ -205,6 +207,95 @@ class SqlAlchemyLibraryItemRepository:
         return self.session.execute(stmt).scalar_one_or_none() is not None
 
 
+class SqlAlchemyMutationRepository(MutationRepository):
+    """Adapter for explicitly marking attached objects dirty before commit."""
+
+    _FIELD_ATTRIBUTE_MAP: ClassVar[dict[type[object], dict[str, tuple[str, ...]]]] = {
+        Artist: {
+            "areas": ("areas",),
+            "aliases": ("aliases",),
+        },
+        ReleaseSet: {
+            "secondary_types": ("secondary_types",),
+            "aliases": ("aliases",),
+        },
+        Recording: {
+            "aliases": ("aliases",),
+        },
+    }
+
+    _RELATIONSHIP_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "external_ids",
+            "release_set",
+            "releases",
+            "tracks",
+            "contributions",
+            "labels",
+            "artist",
+            "recording",
+            "user",
+            "target",
+            "release_sets",
+            "recordings",
+            "library_items",
+            "play_events",
+            "track",
+        }
+    )
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def attach_created(self, entity: Entity) -> None:
+        attached_session = object_session(entity)
+        if attached_session is self.session:
+            return
+        if attached_session is not None and attached_session is not self.session:
+            raise ValueError(
+                f"Cannot attach foreign-session entity {type(entity).__name__} as created"
+            )
+        self.session.add(entity)
+
+    def update(self, entity: Entity, *, changed_fields: frozenset[str]) -> None:
+        if not changed_fields:
+            return
+        attached_session = object_session(entity)
+        if attached_session is None or attached_session is not self.session:
+            raise ValueError(
+                f"Cannot persist detached or foreign-session entity {type(entity).__name__}"
+            )
+
+        for changed_field in changed_fields:
+            self._mark_field_dirty(entity, changed_field)
+
+    def _mark_field_dirty(self, entity: Entity, changed_field: str) -> None:
+        if changed_field == "provenance":
+            self._mark_provenance_dirty(entity)
+            return
+        if changed_field in self._RELATIONSHIP_ONLY_FIELDS:
+            return
+
+        field_map = self._FIELD_ATTRIBUTE_MAP.get(type(entity), {})
+        attribute_names = field_map.get(changed_field)
+        if attribute_names is None:
+            # Scalar assignments and composite replacements are already tracked by
+            # SQLAlchemy. Explicit flagging is only needed for in-place mutation of
+            # custom-typed container fields and provenance sources.
+            return
+        for attribute_name in attribute_names:
+            attributes.flag_modified(entity, attribute_name)
+
+    def _mark_provenance_dirty(self, entity: Entity) -> None:
+        provenance = getattr(entity, "provenance", None)
+        if provenance is None:
+            return
+        attached_session = object_session(provenance)
+        if attached_session is not self.session:
+            return
+        attributes.flag_modified(provenance, "sources")
+
+
 class SqlAlchemyNormalizationSidecarRepository(NormalizationSidecarRepository):
     """Persist and query normalization sidecars for canonicalization."""
 
@@ -286,3 +377,4 @@ if TYPE_CHECKING:
     _recording_repo: RecordingRepository = SqlAlchemyRecordingRepository(_session_stub)
     _user_repo: UserRepository = SqlAlchemyUserRepository(_session_stub)
     _library_item_repo: LibraryItemRepository = SqlAlchemyLibraryItemRepository(_session_stub)
+    _mutation_repo: MutationRepository = SqlAlchemyMutationRepository(_session_stub)
