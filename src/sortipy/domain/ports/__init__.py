@@ -11,6 +11,7 @@ from .fetching import (
 from .persistence import (
     ArtistRepository,
     CanonicalEntityRepository,
+    ExternalIdRedirectRepository,
     LabelRepository,
     LibraryItemRepository,
     MutationRepository,
@@ -33,6 +34,7 @@ __all__ = [
     "ArtistRepository",
     "CanonicalEntityRepository",
     "CatalogRepositories",
+    "ExternalIdRedirectRepository",
     "LabelRepository",
     "LibraryItemFetchResult",
     "LibraryItemFetcher",

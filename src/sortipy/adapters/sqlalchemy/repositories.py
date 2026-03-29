@@ -11,7 +11,6 @@ from sqlalchemy.orm import attributes, object_session
 
 from sortipy.domain.model import (
     Artist,
-    IdentifiedEntity,
     Label,
     PlayEvent,
     Recording,
@@ -20,11 +19,16 @@ from sortipy.domain.model import (
     ReleaseTrack,
     User,
 )
-from sortipy.domain.ports.persistence import MutationRepository, NormalizationSidecarRepository
+from sortipy.domain.ports.persistence import (
+    ExternalIdRedirectRepository,
+    MutationRepository,
+    NormalizationSidecarRepository,
+)
 
 from .mappings import (
     CLASS_BY_ENTITY_TYPE,
     ENTITY_TYPE_BY_CLASS,
+    external_id_redirect_table,
     external_id_table,
     library_item_table,
     normalization_sidecar_table,
@@ -39,13 +43,18 @@ if TYPE_CHECKING:
     from sortipy.domain.model import (
         Entity,
         EntityType,
+        IdentifiedEntity,
         LibraryItem,
         Namespace,
+        Provider,
     )
     from sortipy.domain.ports.persistence import PriorityKeysData
 
 
 class MissingParentError(Exception): ...
+
+
+type _CanonicalEntity = Artist | Label | ReleaseSet | Release | Recording
 
 
 def _serialize_normalized_key(key: tuple[object, ...]) -> str:
@@ -132,7 +141,7 @@ class SqlAlchemyPlayEventRepository:
         return attached
 
 
-class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
+class SqlAlchemyCanonicalRepository[TEntity: _CanonicalEntity]:
     """Shared helpers for repositories managing catalog entities with external IDs."""
 
     def __init__(self, session: Session, entity_cls: type[TEntity]) -> None:
@@ -144,6 +153,9 @@ class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
         self.session.add(entity)
 
     def get_by_external_id(self, namespace: Namespace, value: str) -> TEntity | None:
+        in_session = self._find_in_session_by_external_id(namespace, value)
+        if in_session is not None:
+            return in_session
         stmt = (
             select(external_id_table.c._owner_id)  # noqa: SLF001
             .where(external_id_table.c.namespace == namespace)
@@ -155,6 +167,17 @@ class SqlAlchemyCanonicalRepository[TEntity: IdentifiedEntity]:
         if not isinstance(entity_id, uuid.UUID):
             return None
         return self.session.get(self._entity_cls, entity_id)
+
+    def _find_in_session_by_external_id(self, namespace: Namespace, value: str) -> TEntity | None:
+        attached = tuple(self.session.identity_map.values()) + tuple(self.session.new)
+        for entity in attached:
+            if not isinstance(entity, self._entity_cls):
+                continue
+            entry = entity.external_ids_by_namespace.get(namespace)
+            if entry is None or entry.value != value:
+                continue
+            return entity
+        return None
 
 
 class SqlAlchemyArtistRepository(SqlAlchemyCanonicalRepository[Artist]):
@@ -242,6 +265,62 @@ class SqlAlchemyLibraryItemRepository:
             .limit(1)
         )
         return self.session.execute(stmt).scalar_one_or_none() is not None
+
+
+class SqlAlchemyExternalIdRedirectRepository(ExternalIdRedirectRepository):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def save_redirect(
+        self,
+        namespace: Namespace,
+        source_value: str,
+        target_value: str,
+        *,
+        provider: Provider | None = None,
+    ) -> None:
+        if source_value == target_value:
+            return
+        stmt = (
+            select(external_id_redirect_table.c.id)
+            .where(external_id_redirect_table.c.namespace == str(namespace))
+            .where(external_id_redirect_table.c.source_value == source_value)
+            .limit(1)
+        )
+        existing_id = self.session.execute(stmt).scalar_one_or_none()
+        if isinstance(existing_id, uuid.UUID):
+            self.session.execute(
+                external_id_redirect_table.update()
+                .where(external_id_redirect_table.c.id == existing_id)
+                .values(target_value=target_value, provider=provider)
+            )
+            return
+        self.session.execute(
+            external_id_redirect_table.insert().values(
+                namespace=str(namespace),
+                source_value=source_value,
+                target_value=target_value,
+                provider=provider,
+            )
+        )
+
+    def resolve(self, namespace: Namespace, value: str) -> str | None:
+        current_value = value
+        visited = {value}
+        while True:
+            stmt = (
+                select(external_id_redirect_table.c.target_value)
+                .where(external_id_redirect_table.c.namespace == str(namespace))
+                .where(external_id_redirect_table.c.source_value == current_value)
+                .limit(1)
+            )
+            redirected = self.session.execute(stmt).scalar_one_or_none()
+            if not isinstance(redirected, str):
+                return None if current_value == value else current_value
+            if redirected in visited:
+                return None if current_value == value else current_value
+            visited.add(redirected)
+            current_value = redirected
 
 
 class SqlAlchemyMutationRepository(MutationRepository):

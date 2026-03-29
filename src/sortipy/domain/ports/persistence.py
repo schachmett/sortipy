@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         EntityType,
         IdentifiedEntity,
         Namespace,
+        Provider,
     )
 
 
@@ -42,6 +43,22 @@ class MutationRepository(Protocol):
     def attach_created(self, entity: Entity) -> None: ...
 
     def update(self, entity: Entity, *, changed_fields: frozenset[str]) -> None: ...
+
+
+@runtime_checkable
+class ExternalIdRedirectRepository(Protocol):
+    """Repository contract for external-ID redirects observed from providers."""
+
+    def save_redirect(
+        self,
+        namespace: Namespace,
+        source_value: str,
+        target_value: str,
+        *,
+        provider: Provider | None = None,
+    ) -> None: ...
+
+    def resolve(self, namespace: Namespace, value: str) -> str | None: ...
 
 
 @runtime_checkable

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     )
     from sortipy.domain.ports.persistence import (
         ArtistRepository,
+        ExternalIdRedirectRepository,
         LabelRepository,
         LibraryItemRepository,
         MutationRepository,
@@ -96,6 +97,9 @@ class ReconciliationRepositories(RepositoryCollection, Protocol):
 
     @property
     def mutations(self) -> MutationRepository: ...
+
+    @property
+    def external_id_redirects(self) -> ExternalIdRedirectRepository: ...
 
 
 type ReconciliationUnitOfWork = UnitOfWork[ReconciliationRepositories]

@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from sortipy.domain.model import IdentifiedEntity, Namespace
     from sortipy.domain.ports.persistence import (
         ArtistRepository,
+        ExternalIdRedirectRepository,
         LabelRepository,
         NormalizationSidecarRepository,
         RecordingRepository,
@@ -111,6 +112,9 @@ class ResolveRepositories(RepositoryCollection, Protocol):
 
     @property
     def normalization_sidecars(self) -> NormalizationSidecarRepository: ...
+
+    @property
+    def external_id_redirects(self) -> ExternalIdRedirectRepository: ...
 
 
 class ResolveError(Exception):
@@ -209,6 +213,7 @@ def resolve_claim_graph(
             claim,
             candidates=_dedupe_candidates(candidates),
             matched_key=matched_key,
+            repositories=repositories,
         )
 
     association_resolutions_by_claim: AssociationResolutionsByClaim = {}
@@ -248,9 +253,15 @@ def _find_by_external_id_from_repositories(
         if repository is None:
             return ()
         candidate = repository.get_by_external_id(namespace, value)
-        if candidate is None:
+        if candidate is not None:
+            return (candidate,)
+        redirected_value = repositories.external_id_redirects.resolve(namespace, value)
+        if redirected_value is None or redirected_value == value:
             return ()
-        return (candidate,)
+        redirected_candidate = repository.get_by_external_id(namespace, redirected_value)
+        if redirected_candidate is None:
+            return ()
+        return (redirected_candidate,)
 
     return _find_by_external_id
 
@@ -325,6 +336,7 @@ def _resolution_for_claim(
     *,
     candidates: tuple[ClaimEntity, ...],
     matched_key: ClaimKey | None,
+    repositories: ResolveRepositories | None = None,
 ) -> EntityResolution:
     if any(candidate.entity_type is not claim.entity_type for candidate in candidates):
         return ConflictResolution(
@@ -335,7 +347,12 @@ def _resolution_for_claim(
         )
 
     if any(
-        _has_external_id_namespace_conflict(claim.entity, candidate) for candidate in candidates
+        _has_external_id_namespace_conflict(
+            claim.entity,
+            candidate,
+            repositories=repositories,
+        )
+        for candidate in candidates
     ):
         return ConflictResolution(
             candidates=candidates,
@@ -369,6 +386,8 @@ type _ExternallyIdentifiableClaimEntity = Artist | Label | ReleaseSet | Release 
 def _has_external_id_namespace_conflict(
     claim_entity: ClaimEntity,
     candidate: ClaimEntity,
+    *,
+    repositories: ResolveRepositories | None = None,
 ) -> bool:
     match (claim_entity, candidate):
         case (
@@ -378,7 +397,12 @@ def _has_external_id_namespace_conflict(
             claim_external_ids = _external_ids_by_namespace(claim_identified)
             candidate_external_ids = _external_ids_by_namespace(candidate_identified)
             return any(
-                candidate_value != claim_value
+                _is_external_id_value_conflict(
+                    namespace,
+                    claim_value,
+                    candidate_value,
+                    repositories=repositories,
+                )
                 for namespace, claim_value in claim_external_ids.items()
                 if (candidate_value := candidate_external_ids.get(namespace)) is not None
             )
@@ -388,8 +412,23 @@ def _has_external_id_namespace_conflict(
 
 def _external_ids_by_namespace(
     entity: _ExternallyIdentifiableClaimEntity,
-) -> dict[str, str]:
-    return {str(external_id.namespace): external_id.value for external_id in entity.external_ids}
+) -> dict[Namespace, str]:
+    return {external_id.namespace: external_id.value for external_id in entity.external_ids}
+
+
+def _is_external_id_value_conflict(
+    namespace: Namespace,
+    claim_value: str,
+    candidate_value: str,
+    *,
+    repositories: ResolveRepositories | None = None,
+) -> bool:
+    if candidate_value == claim_value:
+        return False
+    if repositories is None:
+        return True
+    redirected_value = repositories.external_id_redirects.resolve(namespace, claim_value)
+    return redirected_value != candidate_value
 
 
 def _association_resolution_for_claim(

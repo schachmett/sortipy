@@ -213,7 +213,33 @@ def test_fetch_release_graph_full_adapter(
             client=fake,
         )
         assert fake.fetch_release_mbid == mbid
-        assert _release_signature(graph) == _release_signature(translate_release(release))
+        assert graph.requested_mbid == mbid
+        assert graph.resolved_mbid == release.id
+        assert graph.redirected is False
+        assert _release_signature(graph.release) == _release_signature(translate_release(release))
+
+
+def test_fetch_release_graph_marks_redirect_when_payload_id_differs(
+    release_payloads_by_id: dict[str, dict[str, object]],
+    musicbrainz_config: MusicBrainzConfig,
+) -> None:
+    payloads = {
+        mbid: MBRelease.model_validate(payload) for mbid, payload in release_payloads_by_id.items()
+    }
+    requested_mbid, release = next(iter(payloads.items()))
+    redirected_payload = release.model_copy(update={"id": "0772539c-7916-4504-bfdd-3ea8e011bb4d"})
+    fake = FakeMusicBrainzClient(release_payloads={requested_mbid: redirected_payload})
+
+    graph = fetch_release_graph(
+        MusicBrainzReleaseCandidate(mbid=requested_mbid),
+        config=musicbrainz_config,
+        client=fake,
+    )
+
+    assert fake.fetch_release_mbid == requested_mbid
+    assert graph.requested_mbid == requested_mbid
+    assert graph.resolved_mbid == "0772539c-7916-4504-bfdd-3ea8e011bb4d"
+    assert graph.redirected is True
 
 
 def _release_signature(release: Release) -> dict[str, object]:

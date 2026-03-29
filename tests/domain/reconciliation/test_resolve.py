@@ -372,6 +372,20 @@ def test_resolve_claim_graph_uses_repository_backed_lookup_when_provided() -> No
                 return {key: candidate}
             return {}
 
+    class _NullExternalIdRedirectRepository:
+        def save_redirect(
+            self,
+            namespace: object,
+            source_value: str,
+            target_value: str,
+            *,
+            provider: object | None = None,
+        ) -> None:
+            _ = (namespace, source_value, target_value, provider)
+
+        def resolve(self, namespace: object, value: str) -> None:
+            _ = (namespace, value)
+
     class _Repositories:
         def __init__(self) -> None:
             self.artists = _ArtistRepository()
@@ -380,6 +394,7 @@ def test_resolve_claim_graph_uses_repository_backed_lookup_when_provided() -> No
             self.releases = _NullRepository()
             self.recordings = _NullRepository()
             self.normalization_sidecars = _NormalizationSidecars()
+            self.external_id_redirects = _NullExternalIdRedirectRepository()
 
     (
         entity_resolutions_by_claim,
@@ -429,6 +444,20 @@ def test_resolve_claim_graph_uses_sidecar_lookup_for_user_claim() -> None:
                 return {key: candidate}
             return {}
 
+    class _NullExternalIdRedirectRepository:
+        def save_redirect(
+            self,
+            namespace: object,
+            source_value: str,
+            target_value: str,
+            *,
+            provider: object | None = None,
+        ) -> None:
+            _ = (namespace, source_value, target_value, provider)
+
+        def resolve(self, namespace: object, value: str) -> None:
+            _ = (namespace, value)
+
     class _Repositories:
         def __init__(self) -> None:
             self.artists = _NullRepository()
@@ -437,6 +466,7 @@ def test_resolve_claim_graph_uses_sidecar_lookup_for_user_claim() -> None:
             self.releases = _NullRepository()
             self.recordings = _NullRepository()
             self.normalization_sidecars = _NormalizationSidecars()
+            self.external_id_redirects = _NullExternalIdRedirectRepository()
 
     (
         entity_resolutions_by_claim,
@@ -453,6 +483,101 @@ def test_resolve_claim_graph_uses_sidecar_lookup_for_user_claim() -> None:
     assert resolution.status is ResolutionStatus.RESOLVED
     assert resolution.target == candidate
     assert resolution.matched_key == key
+    assert association_resolutions_by_claim == {}
+    assert link_resolutions_by_claim == {}
+
+
+def test_resolve_claim_graph_falls_back_through_external_id_redirects() -> None:
+    claim_release = ReleaseSet(title="BLUSH").create_release(title="BLUSH")
+    claim_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "e6b9c875-f521-4261-892b-b0318a1b9b1b",
+    )
+    claim = EntityClaim(
+        entity=claim_release,
+        metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    candidate_release = ReleaseSet(title="BLUSH").create_release(title="BLUSH")
+    candidate_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "0772539c-7916-4504-bfdd-3ea8e011bb4d",
+    )
+
+    class _NullRepository:
+        def get_by_external_id(self, _namespace: object, _value: str) -> object | None:
+            return None
+
+    class _ReleaseRepository:
+        def get_by_external_id(self, namespace: object, value: str) -> object | None:
+            if (
+                namespace is ExternalNamespace.MUSICBRAINZ_RELEASE
+                and value == "0772539c-7916-4504-bfdd-3ea8e011bb4d"
+            ):
+                return candidate_release
+            return None
+
+    class _NormalizationSidecars:
+        def save(self, _entity: object, _data: object) -> None:
+            return None
+
+        def find_by_keys(
+            self,
+            _entity_type: object,
+            _keys: tuple[tuple[object, ...], ...],
+        ) -> dict[tuple[object, ...], object]:
+            return {}
+
+    class _ExternalIdRedirects:
+        def save_redirect(
+            self,
+            namespace: object,
+            source_value: str,
+            target_value: str,
+            *,
+            provider: object | None = None,
+        ) -> None:
+            _ = (namespace, source_value, target_value, provider)
+
+        def resolve(self, namespace: object, value: str) -> str | None:
+            if (
+                namespace is ExternalNamespace.MUSICBRAINZ_RELEASE
+                and value == "e6b9c875-f521-4261-892b-b0318a1b9b1b"
+            ):
+                return "0772539c-7916-4504-bfdd-3ea8e011bb4d"
+            return None
+
+    class _Repositories:
+        def __init__(self) -> None:
+            self.artists = _NullRepository()
+            self.labels = _NullRepository()
+            self.release_sets = _NullRepository()
+            self.releases = _ReleaseRepository()
+            self.recordings = _NullRepository()
+            self.normalization_sidecars = _NormalizationSidecars()
+            self.external_id_redirects = _ExternalIdRedirects()
+
+    (
+        entity_resolutions_by_claim,
+        association_resolutions_by_claim,
+        link_resolutions_by_claim,
+    ) = resolve_claim_graph(
+        graph,
+        keys_by_claim={},
+        repositories=cast("ResolveRepositories", _Repositories()),
+    )
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
+
+    assert resolution is not None
+    assert resolution.status is ResolutionStatus.RESOLVED
+    assert resolution.target == candidate_release
+    assert resolution.matched_key == (
+        "external_id",
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "e6b9c875-f521-4261-892b-b0318a1b9b1b",
+    )
     assert association_resolutions_by_claim == {}
     assert link_resolutions_by_claim == {}
 

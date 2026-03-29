@@ -6,16 +6,21 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session  # noqa: TC002
 
+from sortipy.adapters.sqlalchemy.migrations import upgrade_head
 from sortipy.adapters.sqlalchemy.repositories import (
+    SqlAlchemyExternalIdRedirectRepository,
     SqlAlchemyLibraryItemRepository,
     SqlAlchemyPlayEventRepository,
 )
-from sortipy.domain.model import Artist, User
+from sortipy.domain.model import Artist, ExternalNamespace, Provider, User
 from tests.helpers.play_events import make_play_event
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sortipy.domain.model import PlayEvent
 
 
@@ -94,3 +99,38 @@ def test_library_item_repository_exists_checks_user_target_identity(
         target_type=item.target_type,
         target_id=uuid.uuid4(),
     )
+
+
+def test_external_id_redirect_repository_round_trips_chains(
+    sqlite_session: Session,
+) -> None:
+    repository = SqlAlchemyExternalIdRedirectRepository(sqlite_session)
+
+    repository.save_redirect(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "old-mbid",
+        "mid-mbid",
+        provider=Provider.MUSICBRAINZ,
+    )
+    repository.save_redirect(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "mid-mbid",
+        "new-mbid",
+        provider=Provider.MUSICBRAINZ,
+    )
+    sqlite_session.commit()
+
+    assert repository.resolve(ExternalNamespace.MUSICBRAINZ_RELEASE, "old-mbid") == "new-mbid"
+    assert repository.resolve(ExternalNamespace.MUSICBRAINZ_RELEASE, "mid-mbid") == "new-mbid"
+    assert repository.resolve(ExternalNamespace.MUSICBRAINZ_RELEASE, "new-mbid") is None
+
+
+def test_upgrade_head_creates_external_id_redirect_table(tmp_path: Path) -> None:
+    database_path = tmp_path / "migration.db"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}", future=True)
+
+    try:
+        upgrade_head(engine=engine)
+        assert "external_id_redirect" in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()

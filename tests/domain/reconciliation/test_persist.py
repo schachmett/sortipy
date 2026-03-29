@@ -90,6 +90,21 @@ class _FakeMutationRepository:
         self.calls.append(_MutationCall(entity=entity, changed_fields=changed_fields))
 
 
+class _NullExternalIdRedirectRepository:
+    def save_redirect(
+        self,
+        namespace: object,
+        source_value: str,
+        target_value: str,
+        *,
+        provider: object | None = None,
+    ) -> None:
+        _ = (namespace, source_value, target_value, provider)
+
+    def resolve(self, namespace: object, value: str) -> None:
+        _ = (namespace, value)
+
+
 def _new_artist_repo() -> _NullRepository[Artist]:
     return _NullRepository()
 
@@ -126,6 +141,9 @@ class _FakeRepositories:
     play_events: _NullRepository[PlayEvent] = field(default_factory=_new_play_event_repo)
     normalization_sidecars: _NullSidecarRepository = field(default_factory=_NullSidecarRepository)
     mutations: _FakeMutationRepository = field(default_factory=_FakeMutationRepository)
+    external_id_redirects: _NullExternalIdRedirectRepository = field(
+        default_factory=_NullExternalIdRedirectRepository
+    )
 
 
 class _FakeUnitOfWork:

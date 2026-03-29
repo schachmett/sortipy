@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sortipy.domain.model import ExternalNamespace
 
 from .candidates import (
+    MusicBrainzReleaseGraphFetchResult,
     release_candidate_from_release,
     release_candidate_from_release_ref,
 )
@@ -23,7 +24,7 @@ from .translator import (
 
 if TYPE_CHECKING:
     from sortipy.config.musicbrainz import MusicBrainzConfig
-    from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
+    from sortipy.domain.model import Artist, Recording, ReleaseSet
 
     from .candidates import MusicBrainzReleaseCandidate
     from .client import MusicBrainzLookupClient
@@ -37,12 +38,17 @@ def fetch_release_graph(
     *,
     config: MusicBrainzConfig,
     client: MusicBrainzLookupClient | None = None,
-) -> Release:
+) -> MusicBrainzReleaseGraphFetchResult:
     """Fetch a full release aggregate graph from MusicBrainz."""
 
     active_client = client or MusicBrainzClient(config=config)
     payload = active_client.fetch_release(mbid=candidate.mbid)
-    return translate_release(payload)
+    return MusicBrainzReleaseGraphFetchResult(
+        release=translate_release(payload),
+        requested_mbid=candidate.mbid,
+        resolved_mbid=payload.id,
+        redirected=payload.id != candidate.mbid,
+    )
 
 
 def fetch_release_candidates_from_recording(

@@ -9,7 +9,13 @@ from typing import TYPE_CHECKING, Protocol
 from sortipy.domain.model import Artist, ExternalNamespace, Recording, Release, ReleaseSet
 
 if TYPE_CHECKING:
-    from sortipy.domain.model import CountryCode, Mbid, PartialDate, ReleasePackaging, ReleaseStatus
+    from sortipy.domain.model import (
+        CountryCode,
+        Mbid,
+        PartialDate,
+        ReleasePackaging,
+        ReleaseStatus,
+    )
 
     from .schema import MBRelease, MBReleaseRef
 
@@ -34,7 +40,17 @@ class MusicBrainzReleaseCandidate:
     media_formats: list[str] = field(default_factory=_new_strings)
 
 
-MusicBrainzReleaseGraphFetcher = Callable[[MusicBrainzReleaseCandidate], Release]
+@dataclass(slots=True)
+class MusicBrainzReleaseGraphFetchResult:
+    release: Release
+    requested_mbid: Mbid
+    resolved_mbid: Mbid
+    redirected: bool
+
+
+MusicBrainzReleaseGraphFetcher = Callable[
+    [MusicBrainzReleaseCandidate], MusicBrainzReleaseGraphFetchResult
+]
 MusicBrainzReleaseCandidatesFromRecording = Callable[[Recording], list[MusicBrainzReleaseCandidate]]
 MusicBrainzReleaseCandidatesFromReleaseSet = Callable[
     [ReleaseSet], list[MusicBrainzReleaseCandidate]

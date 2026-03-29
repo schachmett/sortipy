@@ -8,6 +8,7 @@ from .candidates import (
     MusicBrainzReleaseCandidatesFromRecording,
     MusicBrainzReleaseCandidatesFromReleaseSet,
     MusicBrainzReleaseGraphFetcher,
+    MusicBrainzReleaseGraphFetchResult,
     MusicBrainzReleaseSelectionPolicy,
     resolve_release_candidate,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "MusicBrainzReleaseCandidatesFromArtist",
     "MusicBrainzReleaseCandidatesFromRecording",
     "MusicBrainzReleaseCandidatesFromReleaseSet",
+    "MusicBrainzReleaseGraphFetchResult",
     "MusicBrainzReleaseGraphFetcher",
     "MusicBrainzReleaseSelectionPolicy",
     "fetch_release_candidates_from_artist",

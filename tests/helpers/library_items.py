@@ -177,6 +177,21 @@ class _NullMutationRepository:
         _ = (entity, changed_fields)
 
 
+class _NullExternalIdRedirectRepository:
+    def save_redirect(
+        self,
+        namespace: object,
+        source_value: str,
+        target_value: str,
+        *,
+        provider: object | None = None,
+    ) -> None:
+        _ = (namespace, source_value, target_value, provider)
+
+    def resolve(self, namespace: object, value: str) -> None:
+        _ = (namespace, value)
+
+
 @dataclass(slots=True)
 class _FakeLibraryItemRepositories:
     library_items: FakeLibraryItemRepository
@@ -189,6 +204,7 @@ class _FakeLibraryItemRepositories:
     play_events: _NullPlayEventRepository
     normalization_sidecars: _NullSidecarRepository
     mutations: _NullMutationRepository
+    external_id_redirects: _NullExternalIdRedirectRepository
 
 
 class FakeIngestUnitOfWork:
@@ -206,6 +222,7 @@ class FakeIngestUnitOfWork:
             play_events=_NullPlayEventRepository(),
             normalization_sidecars=_NullSidecarRepository(),
             mutations=_NullMutationRepository(),
+            external_id_redirects=_NullExternalIdRedirectRepository(),
         )
         self.committed = False
         self.rollback_called = False

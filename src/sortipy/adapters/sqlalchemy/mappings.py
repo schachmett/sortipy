@@ -533,6 +533,19 @@ external_id_table = Table(
     Index("ix_external_id_owner", "_owner_type", "_owner_id"),
 )
 
+external_id_redirect_table = Table(
+    "external_id_redirect",
+    mapper_registry.metadata,
+    Column("id", UUIDColumnType, primary_key=True, default=uuid.uuid4),
+    Column("namespace", String, nullable=False),
+    Column("source_value", String, nullable=False),
+    Column("target_value", String, nullable=False),
+    Column("provider", Enum(Provider, native_enum=False), nullable=True),
+    Column("created_at", UTCDateTime(), nullable=False, server_default=func.now()),
+    UniqueConstraint("namespace", "source_value"),
+    Index("ix_external_id_redirect_namespace_source", "namespace", "source_value"),
+)
+
 provenance_table = Table(
     "provenance",
     mapper_registry.metadata,

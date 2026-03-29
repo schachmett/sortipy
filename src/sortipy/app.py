@@ -35,13 +35,16 @@ if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
-    from sortipy.adapters.musicbrainz import MusicBrainzReleaseCandidate
+    from sortipy.adapters.musicbrainz import (
+        MusicBrainzReleaseCandidate,
+        MusicBrainzReleaseGraphFetchResult,
+    )
     from sortipy.application import (
         LibraryItemIngestResult,
         PlayEventIngestResult,
         ReleaseUpdateResult,
     )
-    from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
+    from sortipy.domain.model import Artist, Recording, ReleaseSet
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
     from sortipy.domain.reconciliation import ManualReviewItem
 
@@ -268,7 +271,7 @@ def reconcile_musicbrainz_releases(
             config=musicbrainz_config,
         )
 
-    def _fetch_graph(candidate: MusicBrainzReleaseCandidate) -> Release:
+    def _fetch_graph(candidate: MusicBrainzReleaseCandidate) -> MusicBrainzReleaseGraphFetchResult:
         return fetch_release_graph(
             candidate,
             config=musicbrainz_config,

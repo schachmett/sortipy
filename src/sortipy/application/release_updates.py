@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import TYPE_CHECKING
 
-from sortipy.adapters.musicbrainz.candidates import (
-    resolve_release_candidate,
-)
+from sortipy.adapters.musicbrainz.candidates import resolve_release_candidate
 from sortipy.domain.model import EntityType, ExternalNamespace, Provider
 from sortipy.domain.reconciliation import (
     AmbiguousResolution,
@@ -32,9 +30,10 @@ if TYPE_CHECKING:
         MusicBrainzReleaseCandidatesFromRecording,
         MusicBrainzReleaseCandidatesFromReleaseSet,
         MusicBrainzReleaseGraphFetcher,
+        MusicBrainzReleaseGraphFetchResult,
         MusicBrainzReleaseSelectionPolicy,
     )
-    from sortipy.domain.model import Release
+    from sortipy.domain.model import Mbid, Release
     from sortipy.domain.reconciliation import PreparedReconciliation
     from sortipy.domain.reconciliation.persist import ReconciliationUnitOfWork
 
@@ -109,26 +108,49 @@ def reconcile_release_updates(  # noqa: PLR0913
                 )
                 continue
 
-            graph_release = fetch_release_graph(candidate)
+            fetch_result = fetch_release_graph(candidate)
             fetched_updates += 1
+            redirect_restore = _apply_release_redirect_if_needed(
+                release,
+                fetch_result=fetch_result,
+                uow=uow,
+            )
+            if isinstance(redirect_restore, ManualReviewItem):
+                anchor_mismatches += 1
+                manual_review_items.append(redirect_restore)
+                log.warning(
+                    f"MusicBrainz redirect collision for release {release.title} "
+                    f"({release.id}): requested_mbid={candidate.mbid} "
+                    f"fetched_mbid={fetch_result.resolved_mbid} "
+                    f"candidate_entity_ids={_format_uuid_tuple(redirect_restore.candidate_entity_ids)}"
+                )
+                continue
 
-            graph_result = build_catalog_claim_graph(roots=(graph_release,), source=source)
+            graph_result = build_catalog_claim_graph(roots=(fetch_result.release,), source=source)
             prepared = active_engine.prepare(
                 graph_result.graph,
                 repositories=uow.repositories,
             )
             anchor_review = _anchor_mismatch_review(release, prepared=prepared)
             if anchor_review is not None:
+                _restore_release_redirect_if_needed(release, restore=redirect_restore)
                 anchor_mismatches += 1
                 manual_review_items.append(anchor_review)
-                fetched_mbid = _release_mbid(graph_release)
                 log.warning(
                     f"MusicBrainz anchor mismatch for release {release.title} "
                     f"({release.id}): requested_mbid={candidate.mbid} "
-                    f"fetched_mbid={fetched_mbid or '-'} "
+                    f"fetched_mbid={fetch_result.resolved_mbid or '-'} "
                     f"candidate_entity_ids={_format_uuid_tuple(anchor_review.candidate_entity_ids)}"
                 )
                 continue
+
+            if fetch_result.redirected:
+                uow.repositories.external_id_redirects.save_redirect(
+                    ExternalNamespace.MUSICBRAINZ_RELEASE,
+                    fetch_result.requested_mbid,
+                    fetch_result.resolved_mbid,
+                    provider=Provider.MUSICBRAINZ,
+                )
 
             executed = active_engine.execute(prepared, uow=uow)
             persisted_entities += executed.persistence_result.persisted_entities
@@ -220,11 +242,64 @@ def _bump_counters(target: ApplyCounters, source: ApplyCounters) -> None:
     target.manual_review += source.manual_review
 
 
-def _release_mbid(release: Release) -> str | None:
-    entry = release.external_ids_by_namespace.get(ExternalNamespace.MUSICBRAINZ_RELEASE)
-    if entry is None:
+def _apply_release_redirect_if_needed(
+    target_release: Release,
+    *,
+    fetch_result: MusicBrainzReleaseGraphFetchResult,
+    uow: ReconciliationUnitOfWork,
+) -> ManualReviewItem | _ReleaseRedirectRestore | None:
+    if not fetch_result.redirected:
         return None
-    return entry.value
+    existing = uow.repositories.releases.get_by_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        fetch_result.resolved_mbid,
+    )
+    if existing is not None and existing.resolved_id != target_release.resolved_id:
+        return ManualReviewItem(
+            claim_id=fetch_result.release.id,
+            subject=ManualReviewSubject.ENTITY,
+            kind=EntityType.RELEASE,
+            candidate_entity_ids=(existing.resolved_id,),
+            reason="musicbrainz_redirect_collision",
+        )
+    current_entry = target_release.external_ids_by_namespace.get(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+    )
+    target_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        fetch_result.resolved_mbid,
+        provider=Provider.MUSICBRAINZ,
+        replace=True,
+    )
+    return _ReleaseRedirectRestore(
+        previous_mbid=current_entry.value if current_entry is not None else None,
+        previous_provider=current_entry.provider if current_entry is not None else None,
+    )
+
+
+@dataclass(slots=True)
+class _ReleaseRedirectRestore:
+    previous_mbid: Mbid | None
+    previous_provider: Provider | None
+
+
+def _restore_release_redirect_if_needed(
+    target_release: Release,
+    *,
+    restore: _ReleaseRedirectRestore | None,
+) -> None:
+    if restore is None:
+        return
+    if restore.previous_mbid is None:
+        target_release.remove_external_id(ExternalNamespace.MUSICBRAINZ_RELEASE)
+    else:
+        target_release.add_external_id(
+            ExternalNamespace.MUSICBRAINZ_RELEASE,
+            restore.previous_mbid,
+            provider=restore.previous_provider,
+            replace=True,
+        )
+    target_release.clear_changed_fields()
 
 
 def _format_uuid_tuple(values: tuple[UUID, ...]) -> str:

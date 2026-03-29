@@ -87,6 +87,8 @@ class ExternallyIdentifiable(ExternalIdCollection, Protocol):
         replace: bool = False,
     ) -> None: ...
 
+    def remove_external_id(self, namespace: Namespace) -> None: ...
+
     @property
     def external_ids_by_namespace(self) -> dict[Namespace, ExternalID]: ...
 
@@ -134,6 +136,15 @@ class ExternallyIdentifiableMixin(Entity, ABC):
         if any(e for e in self._external_ids if e.namespace == namespace):
             raise ValueError(f"External ID {namespace} already exists on {self}")
         self._external_ids.append(ext)
+        self.mark_changed("external_ids")
+
+    def remove_external_id(self, namespace: Namespace) -> None:
+        remaining = [
+            external_id for external_id in self._external_ids if external_id.namespace != namespace
+        ]
+        if len(remaining) == len(self._external_ids):
+            return
+        self._external_ids[:] = remaining
         self.mark_changed("external_ids")
 
     @property

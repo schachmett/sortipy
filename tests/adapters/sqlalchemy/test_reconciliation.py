@@ -11,6 +11,7 @@ from sortipy.domain.model import (
     Artist,
     ArtistRole,
     EntityType,
+    ExternalNamespace,
     PartialDate,
     Provider,
     Release,
@@ -26,9 +27,11 @@ from sortipy.domain.reconciliation import (
     CreateInstruction,
     EntityClaim,
     NoopInstruction,
+    ResolvedResolution,
 )
 from sortipy.domain.reconciliation.apply import ApplyResult
 from sortipy.domain.reconciliation.persist import persist_reconciliation
+from sortipy.domain.reconciliation.resolve import resolve_claim_graph
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -309,6 +312,55 @@ def test_persist_reconciliation_attaches_created_release_set_contributions(
         assert loaded_release_set is not None
         assert count == 1
         assert len(loaded_release_set.contributions) == 1
+
+
+def test_resolve_claim_graph_uses_sqlalchemy_external_id_redirects(
+    sqlite_unit_of_work: Callable[[], SqlAlchemyUnitOfWork],
+) -> None:
+    canonical_release_set = ReleaseSet(title="BLUSH")
+    canonical_release = canonical_release_set.create_release(title="BLUSH")
+    canonical_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "0772539c-7916-4504-bfdd-3ea8e011bb4d",
+        provider=Provider.MUSICBRAINZ,
+    )
+
+    with sqlite_unit_of_work() as uow:
+        uow.repositories.release_sets.add(canonical_release_set)
+        uow.repositories.releases.add(canonical_release)
+        uow.repositories.external_id_redirects.save_redirect(
+            ExternalNamespace.MUSICBRAINZ_RELEASE,
+            "e6b9c875-f521-4261-892b-b0318a1b9b1b",
+            "0772539c-7916-4504-bfdd-3ea8e011bb4d",
+            provider=Provider.MUSICBRAINZ,
+        )
+        uow.commit()
+
+    incoming_release_set = ReleaseSet(title="BLUSH")
+    incoming_release = incoming_release_set.create_release(title="BLUSH")
+    incoming_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "e6b9c875-f521-4261-892b-b0318a1b9b1b",
+        provider=Provider.MUSICBRAINZ,
+    )
+    claim = EntityClaim(
+        entity=incoming_release,
+        metadata=ClaimMetadata(source=Provider.LASTFM),
+    )
+    graph = ClaimGraph()
+    graph.add(claim)
+
+    with sqlite_unit_of_work() as uow:
+        entity_resolutions_by_claim, _, _ = resolve_claim_graph(
+            graph,
+            keys_by_claim={},
+            repositories=uow.repositories,
+        )
+
+    resolution = entity_resolutions_by_claim.get(claim.claim_id)
+    assert resolution is not None
+    assert isinstance(resolution, ResolvedResolution)
+    assert resolution.target.resolved_id == canonical_release.resolved_id
 
 
 def _empty_apply_result() -> ApplyResult:
