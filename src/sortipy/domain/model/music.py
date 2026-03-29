@@ -196,7 +196,6 @@ class ReleaseSet(CanonicalEntity):
             return
         for c in list(self._contributions):
             internal.detach_release_set_contribution_from_release_set(self, c)
-            internal.set_release_set_contribution_release_set(c, new_owner)
             internal.attach_release_set_contribution_to_release_set(new_owner, c)
             c.mark_changed("release_set")
         self.mark_changed("contributions")
@@ -216,7 +215,6 @@ class ReleaseSet(CanonicalEntity):
                 contribution.release_set,
                 contribution,
             )
-            internal.set_release_set_contribution_release_set(contribution, self)
             internal.attach_release_set_contribution_to_release_set(self, contribution)
             contribution.mark_changed("release_set")
             self.mark_changed("contributions")
@@ -340,7 +338,6 @@ class Release(CanonicalEntity):
             return
         for track in list(self._tracks):
             internal.detach_release_track_from_release(self, track)
-            internal.set_release_track_release(track, new_release)
             internal.attach_release_track_to_release(new_release, track)
             track.mark_changed("release")
         self.mark_changed("tracks")
@@ -357,7 +354,6 @@ class Release(CanonicalEntity):
             return track
         if track.release is not self:
             internal.detach_release_track_from_release(track.release, track)
-            internal.set_release_track_release(track, self)
             internal.attach_release_track_to_release(self, track)
             track.mark_changed("release")
             self.mark_changed("tracks")
@@ -466,7 +462,6 @@ class Recording(CanonicalEntity):
             return
         for c in list(self._contributions):
             internal.detach_recording_contribution_from_recording(self, c)
-            internal.set_recording_contribution_recording(c, new_recording)
             internal.attach_recording_contribution_to_recording(new_recording, c)
             c.mark_changed("recording")
         self.mark_changed("contributions")
@@ -486,7 +481,6 @@ class Recording(CanonicalEntity):
                 contribution.recording,
                 contribution,
             )
-            internal.set_recording_contribution_recording(contribution, self)
             internal.attach_recording_contribution_to_recording(self, contribution)
             contribution.mark_changed("recording")
             self.mark_changed("contributions")

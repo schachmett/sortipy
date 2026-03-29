@@ -34,7 +34,13 @@ def test_unit_of_work_persists_events(sqlite_engine: Engine) -> None:
 
     with factory() as uow:
         event = make_play_event("Persisted", timestamp=datetime.now(tz=UTC))
+        artist = event.recording.contributions[0].artist
+        release = event.release
+        assert release is not None
         uow.repositories.users.add(event.user)
+        uow.repositories.artists.add(artist)
+        uow.repositories.recordings.add(event.recording)
+        uow.repositories.release_sets.add(release.release_set)
         uow.repositories.play_events.add(event)
         uow.commit()
 

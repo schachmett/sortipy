@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text
+from sqlalchemy.exc import SAWarning
 
 from sortipy.domain.model import (
     Artist,
@@ -253,49 +255,51 @@ def test_persist_reconciliation_attaches_created_release_set_contributions(
     graph = ClaimGraph()
     apply_result = ApplyResult()
 
-    with sqlite_unit_of_work() as uow:
-        loaded_artist = uow.session.get(Artist, persistent_artist.id)
-        loaded_release_set = uow.session.get(ReleaseSet, persistent_release_set.id)
-        assert loaded_artist is not None
-        assert loaded_release_set is not None
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SAWarning)
+        with sqlite_unit_of_work() as uow:
+            loaded_artist = uow.session.get(Artist, persistent_artist.id)
+            loaded_release_set = uow.session.get(ReleaseSet, persistent_release_set.id)
+            assert loaded_artist is not None
+            assert loaded_release_set is not None
 
-        adopted = loaded_release_set.adopt_contribution(
-            transient_contribution,
-            artist=loaded_artist,
-        )
-        assert isinstance(adopted, ReleaseSetContribution)
+            adopted = loaded_release_set.adopt_contribution(
+                transient_contribution,
+                artist=loaded_artist,
+            )
+            assert isinstance(adopted, ReleaseSetContribution)
 
-        release_set_claim = EntityClaim(
-            entity=loaded_release_set,
-            metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
-        )
-        artist_claim = EntityClaim(
-            entity=loaded_artist,
-            metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
-        )
-        association_claim = AssociationClaim(
-            source_claim_id=release_set_claim.claim_id,
-            target_claim_id=artist_claim.claim_id,
-            kind=AssociationKind.RELEASE_SET_CONTRIBUTION,
-            metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
-            payload=adopted,
-        )
-        graph.add(release_set_claim)
-        graph.add(artist_claim)
-        graph.add_relationship(association_claim)
-        apply_result.associations_by_claim[association_claim.claim_id] = adopted
+            release_set_claim = EntityClaim(
+                entity=loaded_release_set,
+                metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+            )
+            artist_claim = EntityClaim(
+                entity=loaded_artist,
+                metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+            )
+            association_claim = AssociationClaim(
+                source_claim_id=release_set_claim.claim_id,
+                target_claim_id=artist_claim.claim_id,
+                kind=AssociationKind.RELEASE_SET_CONTRIBUTION,
+                metadata=ClaimMetadata(source=Provider.MUSICBRAINZ),
+                payload=adopted,
+            )
+            graph.add(release_set_claim)
+            graph.add(artist_claim)
+            graph.add_relationship(association_claim)
+            apply_result.associations_by_claim[association_claim.claim_id] = adopted
 
-        persist_reconciliation(
-            graph=graph,
-            keys_by_claim={},
-            entity_instructions_by_claim={},
-            association_instructions_by_claim={
-                association_claim.claim_id: CreateInstruction(),
-            },
-            link_instructions_by_claim={},
-            apply_result=apply_result,
-            uow=uow,
-        )
+            persist_reconciliation(
+                graph=graph,
+                keys_by_claim={},
+                entity_instructions_by_claim={},
+                association_instructions_by_claim={
+                    association_claim.claim_id: CreateInstruction(),
+                },
+                link_instructions_by_claim={},
+                apply_result=apply_result,
+                uow=uow,
+            )
 
     with sqlite_unit_of_work() as uow:
         count = uow.session.execute(

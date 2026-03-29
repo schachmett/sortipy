@@ -102,6 +102,8 @@ def attach_release_set_contribution_to_release_set(
 ) -> None:
     if contribution not in release_set._contributions:
         release_set._contributions.append(contribution)
+    if contribution._release_set is not release_set:
+        contribution._release_set = release_set
 
 
 def detach_release_set_contribution_from_release_set(
@@ -118,6 +120,8 @@ def attach_release_set_contribution_to_artist(
 ) -> None:
     if contribution not in artist._release_set_contributions:
         artist._release_set_contributions.append(contribution)
+    if contribution._artist is not artist:
+        contribution._artist = artist
 
 
 def detach_release_set_contribution_from_artist(
@@ -134,6 +138,8 @@ def attach_recording_contribution_to_recording(
 ) -> None:
     if contribution not in recording._contributions:
         recording._contributions.append(contribution)
+    if contribution._recording is not recording:
+        contribution._recording = recording
 
 
 def detach_recording_contribution_from_recording(
@@ -150,6 +156,8 @@ def attach_recording_contribution_to_artist(
 ) -> None:
     if contribution not in artist._recording_contributions:
         artist._recording_contributions.append(contribution)
+    if contribution._artist is not artist:
+        contribution._artist = artist
 
 
 def detach_recording_contribution_from_artist(
@@ -163,6 +171,8 @@ def detach_recording_contribution_from_artist(
 def attach_release_track_to_release(release: Release, track: ReleaseTrack) -> None:
     if track not in release._tracks:
         release._tracks.append(track)
+    if track._release is not release:
+        track._release = release
 
 
 def detach_release_track_from_release(release: Release, track: ReleaseTrack) -> None:
@@ -173,6 +183,8 @@ def detach_release_track_from_release(release: Release, track: ReleaseTrack) -> 
 def attach_release_track_to_recording(recording: Recording, track: ReleaseTrack) -> None:
     if track not in recording._release_tracks:
         recording._release_tracks.append(track)
+    if track._recording is not recording:
+        track._recording = recording
 
 
 def detach_release_track_from_recording(recording: Recording, track: ReleaseTrack) -> None:

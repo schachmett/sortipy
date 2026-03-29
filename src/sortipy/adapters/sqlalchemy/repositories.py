@@ -17,6 +17,7 @@ from sortipy.domain.model import (
     Recording,
     Release,
     ReleaseSet,
+    ReleaseTrack,
     User,
 )
 from sortipy.domain.ports.persistence import MutationRepository, NormalizationSidecarRepository
@@ -64,12 +65,13 @@ class SqlAlchemyPlayEventRepository:
         self.session = session
 
     def add(self, entity: PlayEvent) -> None:
-        # Re-bind the owning user to this session. Detached user objects won't
-        # populate the FK, and we explicitly avoid cascade persistence.
-        attached_user = self._ensure_user_attached(entity.user)
-        attached_user.rehydrate_play_event(entity)
-        self._prepare_event(entity)
-        self.session.add(entity)
+        # Re-bind the event and its catalog references into this session before
+        # flush so SQLAlchemy does not need to infer transient relationship state.
+        with self.session.no_autoflush:
+            self.session.add(entity)
+            attached_user = self._ensure_user_attached(entity.user)
+            attached_user.rehydrate_play_event(entity)
+            self._prepare_event(entity, user=attached_user)
 
     def exists(self, event: PlayEvent) -> bool:
         stmt = (
@@ -85,13 +87,48 @@ class SqlAlchemyPlayEventRepository:
         stmt = select(played_at_column).order_by(played_at_column.desc()).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def _prepare_event(self, event: PlayEvent) -> None:
-        _ = event
+    def _prepare_event(self, event: PlayEvent, *, user: User) -> None:
+        if event.track is not None:
+            attached_track = self._ensure_track_attached(event.track)
+            user.rebind_play_event(
+                event,
+                recording=attached_track.recording,
+                track=attached_track,
+            )
+            return
+
+        recording_ref = event.recording_ref
+        if recording_ref is None:
+            raise ValueError("play event requires a recording reference when track is absent")
+        attached_recording = self._ensure_recording_attached(recording_ref)
+        user.rebind_play_event(
+            event,
+            recording=attached_recording,
+            track=None,
+        )
 
     def _ensure_user_attached(self, user: User) -> User:
+        if object_session(user) is self.session:
+            return user
         attached = self.session.get(User, user.id)
         if attached is None:
             raise MissingParentError(f"User {user.id} does not exist")
+        return attached
+
+    def _ensure_track_attached(self, track: ReleaseTrack) -> ReleaseTrack:
+        if object_session(track) is self.session:
+            return track
+        attached = self.session.get(ReleaseTrack, track.id)
+        if attached is None:
+            raise MissingParentError(f"ReleaseTrack {track.id} does not exist")
+        return attached
+
+    def _ensure_recording_attached(self, recording: Recording) -> Recording:
+        if object_session(recording) is self.session:
+            return recording
+        attached = self.session.get(Recording, recording.id)
+        if attached is None:
+            raise MissingParentError(f"Recording {recording.id} does not exist")
         return attached
 
 
