@@ -404,6 +404,15 @@ class MusicBrainzLookupClient(Protocol):
 
     def fetch_release(self, *, mbid: str, inc: tuple[str, ...] | None = None) -> MBRelease: ...
 
+    def search_releases(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        offset: int = 0,
+        inc: tuple[str, ...] | None = None,
+    ) -> MBReleaseSearch: ...
+
     def browse_releases_by_release_group(
         self,
         *,

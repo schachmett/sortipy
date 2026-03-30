@@ -8,15 +8,17 @@ from sortipy.adapters.musicbrainz.candidates import MusicBrainzReleaseCandidate
 from sortipy.adapters.musicbrainz.client import MusicBrainzAPIError, MusicBrainzNotFoundError
 from sortipy.adapters.musicbrainz.fetcher import (
     fetch_release_candidates_from_recording,
+    fetch_release_candidates_from_release,
     fetch_release_graph,
 )
 from sortipy.adapters.musicbrainz.schema import (
     MBRecordingSearch,
     MBRelease,
+    MBReleaseRef,
     MBReleaseSearch,
 )
-from sortipy.adapters.musicbrainz.translator import translate_release
-from sortipy.domain.model import Artist, ExternalNamespace, Recording
+from sortipy.adapters.musicbrainz.translator import parse_partial_date, translate_release
+from sortipy.domain.model import Artist, ExternalNamespace, Recording, ReleaseSet
 
 if TYPE_CHECKING:
     from sortipy.adapters.musicbrainz.schema import (
@@ -43,10 +45,12 @@ class FakeMusicBrainzClient:
             self._recording_payload = recording_payload
         self._release_payloads = release_payloads or {}
         self._search_results = search_results or MBRecordingSearch(recordings=[])
+        self._release_search_results = MBReleaseSearch(releases=[])
         self._recording_error = recording_error
         self.fetch_recording_mbid: str | None = None
         self.fetch_release_mbid: str | None = None
         self.search_query: str | None = None
+        self.release_search_query: str | None = None
 
     def fetch_recording(
         self,
@@ -89,6 +93,18 @@ class FakeMusicBrainzClient:
             return self._release_payloads[mbid]
         except KeyError as exc:
             raise AssertionError(f"release payload not configured for {mbid}") from exc
+
+    def search_releases(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        offset: int = 0,
+        inc: tuple[str, ...] | None = None,
+    ) -> MBReleaseSearch:
+        del limit, offset, inc
+        self.release_search_query = query
+        return self._release_search_results
 
     def browse_releases_by_release_group(
         self,
@@ -234,6 +250,34 @@ def test_fetch_release_candidates_skips_on_recording_fetch_error(
         )
 
         assert candidates == []
+
+
+def test_fetch_release_candidates_from_release_searches_by_title_and_artist(
+    musicbrainz_config: MusicBrainzConfig,
+) -> None:
+    release_set = ReleaseSet(title="Two Ribbons")
+    release = release_set.create_release(title="Two Ribbons")
+    recording = Recording(title="Watching You Go")
+    recording.add_artist(Artist(name="Let's Eat Grandma"))
+    release.add_track(recording)
+    release_ref = MBReleaseRef(
+        id="2f06e168-8d4f-4253-8c85-4a097685ece0",
+        title="Two Ribbons",
+        date="2022-04-08",
+    )
+    fake = FakeMusicBrainzClient()
+    fake._release_search_results = MBReleaseSearch(releases=[release_ref])
+
+    candidates = fetch_release_candidates_from_release(
+        release,
+        config=musicbrainz_config,
+        client=fake,
+    )
+
+    assert fake.release_search_query == 'release:"Two Ribbons" AND artist:"Let\'s Eat Grandma"'
+    assert len(candidates) == 1
+    assert candidates[0].mbid == "2f06e168-8d4f-4253-8c85-4a097685ece0"
+    assert candidates[0].release_date == parse_partial_date("2022-04-08")
 
 
 def test_fetch_release_candidates_skips_on_empty_search(

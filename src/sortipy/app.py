@@ -9,6 +9,7 @@ from sortipy.adapters.lastfm import fetch_play_events, should_cache_recent_track
 from sortipy.adapters.musicbrainz import (
     fetch_release_candidates_from_artist,
     fetch_release_candidates_from_recording,
+    fetch_release_candidates_from_release,
     fetch_release_candidates_from_release_set,
     fetch_release_graph,
 )
@@ -44,7 +45,7 @@ if TYPE_CHECKING:
         PlayEventIngestResult,
         ReleaseUpdateResult,
     )
-    from sortipy.domain.model import Artist, Recording, ReleaseSet
+    from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
     from sortipy.domain.ports import LibraryItemFetchResult, PlayEventFetchResult
     from sortipy.domain.reconciliation import ManualReviewItem
 
@@ -259,6 +260,12 @@ def reconcile_musicbrainz_releases(
             config=musicbrainz_config,
         )
 
+    def _from_release(release: Release) -> list[MusicBrainzReleaseCandidate]:
+        return fetch_release_candidates_from_release(
+            release,
+            config=musicbrainz_config,
+        )
+
     def _from_release_set(release_set: ReleaseSet) -> list[MusicBrainzReleaseCandidate]:
         return fetch_release_candidates_from_release_set(
             release_set,
@@ -281,6 +288,7 @@ def reconcile_musicbrainz_releases(
     result = reconcile_release_updates(
         fetch_release_graph=_fetch_graph,
         fetch_candidates_from_recording=_from_recording,
+        fetch_candidates_from_release=_from_release,
         fetch_candidates_from_release_set=_from_release_set,
         fetch_candidates_from_artist=_from_artist,
         unit_of_work_factory=unit_of_work_factory,

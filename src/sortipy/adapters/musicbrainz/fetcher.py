@@ -24,13 +24,14 @@ from .translator import (
 
 if TYPE_CHECKING:
     from sortipy.config.musicbrainz import MusicBrainzConfig
-    from sortipy.domain.model import Artist, Recording, ReleaseSet
+    from sortipy.domain.model import Artist, Recording, Release, ReleaseSet
 
     from .candidates import MusicBrainzReleaseCandidate
     from .client import MusicBrainzLookupClient
     from .schema import MBRecording
 
 log = getLogger(__name__)
+RECORDING_SEARCH_LIMIT = 5
 
 
 def fetch_release_graph(
@@ -60,19 +61,51 @@ def fetch_release_candidates_from_recording(
     """Find release candidates for a recording via MusicBrainz."""
 
     active_client = client or MusicBrainzClient(config=config)
-    payload = _recording_payload(active_client, recording)
-    if payload is None:
+    payloads = _recording_payloads(active_client, recording)
+    if not payloads:
+        return []
+    candidates_by_mbid: dict[str, MusicBrainzReleaseCandidate] = {}
+    for payload in payloads:
+        for release in payload.releases:
+            candidates_by_mbid.setdefault(
+                release.id,
+                release_candidate_from_release(
+                    release,
+                    release_date=parse_partial_date(release.date),
+                    status=release_status(release.status),
+                    packaging=release_packaging(release.packaging),
+                    track_count=release_track_count(release),
+                    media_formats=release_media_formats(release),
+                ),
+            )
+
+    return list(candidates_by_mbid.values())
+
+
+def fetch_release_candidates_from_release(
+    release: Release,
+    *,
+    config: MusicBrainzConfig,
+    client: MusicBrainzLookupClient | None = None,
+) -> list[MusicBrainzReleaseCandidate]:
+    """Find release candidates for a release via MusicBrainz release search."""
+
+    query = _release_search_query(release)
+    if query is None:
+        return []
+    active_client = client or MusicBrainzClient(config=config)
+    results = active_client.search_releases(query=query, limit=5)
+    if not results.releases:
+        log.info("MusicBrainz search returned no results for release %s", release.id)
         return []
     return [
-        release_candidate_from_release(
-            release,
-            release_date=parse_partial_date(release.date),
-            status=release_status(release.status),
-            packaging=release_packaging(release.packaging),
-            track_count=release_track_count(release),
-            media_formats=release_media_formats(release),
+        release_candidate_from_release_ref(
+            candidate,
+            release_date=parse_partial_date(candidate.date),
+            status=release_status(candidate.status),
+            packaging=release_packaging(candidate.packaging),
         )
-        for release in payload.releases
+        for candidate in results.releases
     ]
 
 
@@ -124,27 +157,27 @@ def fetch_release_candidates_from_artist(
     ]
 
 
-def _recording_payload(
+def _recording_payloads(
     client: MusicBrainzLookupClient,
     recording: Recording,
-) -> MBRecording | None:
+) -> list[MBRecording]:
     mbid = _recording_mbid(recording)
     try:
         if mbid is not None:
             try:
-                return client.fetch_recording(mbid=mbid)
+                return [client.fetch_recording(mbid=mbid)]
             except MusicBrainzNotFoundError:
                 log.info(
                     "MusicBrainz recording %s not found for recording %s; falling back to search",
                     mbid,
                     recording.id,
                 )
-                return _search_recording(client, recording)
-        payload = _search_recording(client, recording)
+                return _search_recordings(client, recording)
+        payloads = _search_recordings(client, recording)
     except MusicBrainzAPIError as exc:
         log.warning("MusicBrainz fetch failed for recording %s: %s", recording.id, exc)
-        return None
-    return payload
+        return []
+    return payloads
 
 
 def _recording_mbid(recording: Recording) -> str | None:
@@ -168,18 +201,18 @@ def _artist_mbid(artist: Artist) -> str | None:
     return entry.value
 
 
-def _search_recording(
+def _search_recordings(
     client: MusicBrainzLookupClient,
     recording: Recording,
-) -> MBRecording | None:
+) -> list[MBRecording]:
     query = _search_query(recording)
     if query is None:
-        return None
-    results = client.search_recordings(query=query, limit=1)
+        return []
+    results = client.search_recordings(query=query, limit=RECORDING_SEARCH_LIMIT)
     if not results.recordings:
         log.info("MusicBrainz search returned no results for recording %s", recording.id)
-        return None
-    return results.recordings[0]
+        return []
+    return results.recordings
 
 
 def _search_query(recording: Recording) -> str | None:
@@ -191,3 +224,25 @@ def _search_query(recording: Recording) -> str | None:
         return f'recording:"{title}"'
     artist = artists[0].name
     return f'recording:"{title}" AND artist:"{artist}"'
+
+
+def _release_search_query(release: Release) -> str | None:
+    title = release.title.strip()
+    if not title:
+        return None
+    artist_names = _release_artist_names(release)
+    if not artist_names:
+        return f'release:"{title}"'
+    return f'release:"{title}" AND artist:"{artist_names[0]}"'
+
+
+def _release_artist_names(release: Release) -> list[str]:
+    seen: set[str] = set()
+    names: list[str] = []
+    for recording in release.recordings:
+        for artist in recording.artists:
+            if artist.name in seen:
+                continue
+            seen.add(artist.name)
+            names.append(artist.name)
+    return names

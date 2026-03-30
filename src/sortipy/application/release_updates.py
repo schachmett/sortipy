@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from sortipy.adapters.musicbrainz.candidates import (
         MusicBrainzReleaseCandidatesFromArtist,
         MusicBrainzReleaseCandidatesFromRecording,
+        MusicBrainzReleaseCandidatesFromRelease,
         MusicBrainzReleaseCandidatesFromReleaseSet,
         MusicBrainzReleaseGraphFetcher,
         MusicBrainzReleaseGraphFetchResult,
@@ -50,10 +51,11 @@ class ReleaseUpdateResult(IngestRunResult):
     anchor_mismatches: int
 
 
-def reconcile_release_updates(  # noqa: PLR0913
+def reconcile_release_updates(  # noqa: PLR0913,PLR0915
     *,
     fetch_release_graph: MusicBrainzReleaseGraphFetcher,
     fetch_candidates_from_recording: MusicBrainzReleaseCandidatesFromRecording,
+    fetch_candidates_from_release: MusicBrainzReleaseCandidatesFromRelease,
     fetch_candidates_from_release_set: MusicBrainzReleaseCandidatesFromReleaseSet,
     fetch_candidates_from_artist: MusicBrainzReleaseCandidatesFromArtist,
     unit_of_work_factory: Callable[[], ReconciliationUnitOfWork],
@@ -98,6 +100,7 @@ def reconcile_release_updates(  # noqa: PLR0913
             candidate = resolve_release_candidate(
                 release,
                 fetch_candidates_from_recording=fetch_candidates_from_recording,
+                fetch_candidates_from_release=fetch_candidates_from_release,
                 fetch_candidates_from_release_set=fetch_candidates_from_release_set,
                 fetch_candidates_from_artist=fetch_candidates_from_artist,
                 policy=policy,
@@ -121,12 +124,27 @@ def reconcile_release_updates(  # noqa: PLR0913
                 )
                 continue
             fetched_updates += 1
+            candidate_restore = _apply_release_candidate_anchor_if_needed(
+                release,
+                candidate_mbid=candidate.mbid,
+                uow=uow,
+            )
+            if isinstance(candidate_restore, ManualReviewItem):
+                anchor_mismatches += 1
+                manual_review_items.append(candidate_restore)
+                log.warning(
+                    f"MusicBrainz candidate collision for release {release.title} "
+                    f"({release.id}): candidate_mbid={candidate.mbid} "
+                    f"candidate_entity_ids={_format_uuid_tuple(candidate_restore.candidate_entity_ids)}"
+                )
+                continue
             redirect_restore = _apply_release_redirect_if_needed(
                 release,
                 fetch_result=fetch_result,
                 uow=uow,
             )
             if isinstance(redirect_restore, ManualReviewItem):
+                _restore_release_anchor_if_needed(release, restore=candidate_restore)
                 anchor_mismatches += 1
                 manual_review_items.append(redirect_restore)
                 log.warning(
@@ -134,6 +152,23 @@ def reconcile_release_updates(  # noqa: PLR0913
                     f"({release.id}): requested_mbid={candidate.mbid} "
                     f"fetched_mbid={fetch_result.resolved_mbid} "
                     f"candidate_entity_ids={_format_uuid_tuple(redirect_restore.candidate_entity_ids)}"
+                )
+                continue
+            release_set_restore = _apply_release_set_anchor_if_needed(
+                release,
+                fetch_result=fetch_result,
+                uow=uow,
+            )
+            if isinstance(release_set_restore, ManualReviewItem):
+                _restore_release_redirect_if_needed(release, restore=redirect_restore)
+                _restore_release_anchor_if_needed(release, restore=candidate_restore)
+                anchor_mismatches += 1
+                manual_review_items.append(release_set_restore)
+                release_group_mbid = _release_set_mbid(fetch_result.release) or "-"
+                log.warning(
+                    f"MusicBrainz release-set collision for release {release.title} "
+                    f"({release.id}): release_group_mbid={release_group_mbid} "
+                    f"candidate_entity_ids={_format_uuid_tuple(release_set_restore.candidate_entity_ids)}"
                 )
                 continue
 
@@ -144,7 +179,9 @@ def reconcile_release_updates(  # noqa: PLR0913
             )
             anchor_review = _anchor_mismatch_review(release, prepared=prepared)
             if anchor_review is not None:
+                _restore_release_set_anchor_if_needed(release, restore=release_set_restore)
                 _restore_release_redirect_if_needed(release, restore=redirect_restore)
+                _restore_release_anchor_if_needed(release, restore=candidate_restore)
                 anchor_mismatches += 1
                 manual_review_items.append(anchor_review)
                 log.warning(
@@ -258,7 +295,7 @@ def _apply_release_redirect_if_needed(
     *,
     fetch_result: MusicBrainzReleaseGraphFetchResult,
     uow: ReconciliationUnitOfWork,
-) -> ManualReviewItem | _ReleaseRedirectRestore | None:
+) -> ManualReviewItem | _ReleaseAnchorRestore | None:
     if not fetch_result.redirected:
         return None
     existing = uow.repositories.releases.get_by_external_id(
@@ -282,14 +319,14 @@ def _apply_release_redirect_if_needed(
         provider=Provider.MUSICBRAINZ,
         replace=True,
     )
-    return _ReleaseRedirectRestore(
+    return _ReleaseAnchorRestore(
         previous_mbid=current_entry.value if current_entry is not None else None,
         previous_provider=current_entry.provider if current_entry is not None else None,
     )
 
 
 @dataclass(slots=True)
-class _ReleaseRedirectRestore:
+class _ReleaseAnchorRestore:
     previous_mbid: Mbid | None
     previous_provider: Provider | None
 
@@ -297,7 +334,81 @@ class _ReleaseRedirectRestore:
 def _restore_release_redirect_if_needed(
     target_release: Release,
     *,
-    restore: _ReleaseRedirectRestore | None,
+    restore: _ReleaseAnchorRestore | None,
+) -> None:
+    _restore_release_anchor_if_needed(target_release, restore=restore)
+
+
+def _apply_release_candidate_anchor_if_needed(
+    target_release: Release,
+    *,
+    candidate_mbid: Mbid,
+    uow: ReconciliationUnitOfWork,
+) -> ManualReviewItem | _ReleaseAnchorRestore | None:
+    current_entry = target_release.external_ids_by_namespace.get(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+    )
+    if current_entry is not None:
+        return None
+    existing = uow.repositories.releases.get_by_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        candidate_mbid,
+    )
+    if existing is not None and existing.resolved_id != target_release.resolved_id:
+        return ManualReviewItem(
+            claim_id=target_release.id,
+            subject=ManualReviewSubject.ENTITY,
+            kind=EntityType.RELEASE,
+            candidate_entity_ids=(existing.resolved_id,),
+            reason="musicbrainz_candidate_collision",
+        )
+    target_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        candidate_mbid,
+        provider=Provider.MUSICBRAINZ,
+    )
+    return _ReleaseAnchorRestore(previous_mbid=None, previous_provider=None)
+
+
+def _apply_release_set_anchor_if_needed(
+    target_release: Release,
+    *,
+    fetch_result: MusicBrainzReleaseGraphFetchResult,
+    uow: ReconciliationUnitOfWork,
+) -> ManualReviewItem | _ReleaseAnchorRestore | None:
+    target_release_set = target_release.release_set
+    current_entry = target_release_set.external_ids_by_namespace.get(
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+    )
+    if current_entry is not None:
+        return None
+    release_group_mbid = _release_set_mbid(fetch_result.release)
+    if release_group_mbid is None:
+        return None
+    existing = uow.repositories.release_sets.get_by_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+        release_group_mbid,
+    )
+    if existing is not None and existing.resolved_id != target_release_set.resolved_id:
+        return ManualReviewItem(
+            claim_id=target_release_set.id,
+            subject=ManualReviewSubject.ENTITY,
+            kind=EntityType.RELEASE_SET,
+            candidate_entity_ids=(existing.resolved_id,),
+            reason="musicbrainz_release_set_collision",
+        )
+    target_release_set.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+        release_group_mbid,
+        provider=Provider.MUSICBRAINZ,
+    )
+    return _ReleaseAnchorRestore(previous_mbid=None, previous_provider=None)
+
+
+def _restore_release_anchor_if_needed(
+    target_release: Release,
+    *,
+    restore: _ReleaseAnchorRestore | None,
 ) -> None:
     if restore is None:
         return
@@ -311,6 +422,35 @@ def _restore_release_redirect_if_needed(
             replace=True,
         )
     target_release.clear_changed_fields()
+
+
+def _restore_release_set_anchor_if_needed(
+    target_release: Release,
+    *,
+    restore: _ReleaseAnchorRestore | None,
+) -> None:
+    if restore is None:
+        return
+    target_release_set = target_release.release_set
+    if restore.previous_mbid is None:
+        target_release_set.remove_external_id(ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP)
+    else:
+        target_release_set.add_external_id(
+            ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+            restore.previous_mbid,
+            provider=restore.previous_provider,
+            replace=True,
+        )
+    target_release_set.clear_changed_fields()
+
+
+def _release_set_mbid(release: Release) -> Mbid | None:
+    entry = release.release_set.external_ids_by_namespace.get(
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+    )
+    if entry is None:
+        return None
+    return entry.value
 
 
 def _format_uuid_tuple(values: tuple[UUID, ...]) -> str:

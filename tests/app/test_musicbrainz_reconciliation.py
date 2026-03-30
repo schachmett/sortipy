@@ -77,9 +77,22 @@ class _FakeReleaseRepository:
         return None
 
 
+class _FakeReleaseSetRepository:
+    def __init__(self, release_sets: list[ReleaseSet]) -> None:
+        self._release_sets = release_sets
+
+    def get_by_external_id(self, namespace: Namespace, value: str) -> ReleaseSet | None:
+        for release_set in self._release_sets:
+            entry = release_set.external_ids_by_namespace.get(namespace)
+            if entry is not None and entry.value == value:
+                return release_set
+        return None
+
+
 class _FakeRepositories:
     def __init__(self, releases: list[Release]) -> None:
         self.releases = _FakeReleaseRepository(releases)
+        self.release_sets = _FakeReleaseSetRepository([release.release_set for release in releases])
         self.external_id_redirects = _FakeExternalIdRedirectRepository()
 
 
@@ -184,6 +197,12 @@ def test_reconcile_release_updates_logs_anchor_mismatch_and_restores_redirect_st
         _ = recording
         return []
 
+    def fake_fetch_candidates_from_release(
+        release: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release
+        return []
+
     def fake_fetch_candidates_from_release_set(
         release_set: object,
     ) -> list[MusicBrainzReleaseCandidate]:
@@ -203,6 +222,7 @@ def test_reconcile_release_updates_logs_anchor_mismatch_and_restores_redirect_st
     result = reconcile_release_updates(
         fetch_release_graph=fake_fetch_release_graph,
         fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release=fake_fetch_candidates_from_release,
         fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
         fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
         unit_of_work_factory=fake_uow_factory,
@@ -256,6 +276,12 @@ def test_reconcile_release_updates_saves_redirect_and_applies_release_update() -
         _ = recording
         return []
 
+    def fake_fetch_candidates_from_release(
+        release: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release
+        return []
+
     def fake_fetch_candidates_from_release_set(
         release_set: object,
     ) -> list[MusicBrainzReleaseCandidate]:
@@ -275,6 +301,7 @@ def test_reconcile_release_updates_saves_redirect_and_applies_release_update() -
     result = reconcile_release_updates(
         fetch_release_graph=fake_fetch_release_graph,
         fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release=fake_fetch_candidates_from_release,
         fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
         fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
         unit_of_work_factory=fake_uow_factory,
@@ -298,6 +325,179 @@ def test_reconcile_release_updates_saves_redirect_and_applies_release_update() -
             provider=Provider.MUSICBRAINZ,
         )
     ]
+
+
+def test_reconcile_release_updates_applies_missing_candidate_anchor() -> None:
+    target_release_set = ReleaseSet(title="Somersaults")
+    target_release = target_release_set.create_release(title="Somersaults")
+
+    fetched_release_set = ReleaseSet(title="Somersaults")
+    fetched_release_set.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+        "95f25301-da18-4fe9-9445-8dc453adfe78",
+        provider=Provider.MUSICBRAINZ,
+    )
+    fetched_release = fetched_release_set.create_release(title="Somersaults")
+    fetched_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38",
+        provider=Provider.MUSICBRAINZ,
+    )
+
+    def fake_fetch_release_graph(
+        candidate: MusicBrainzReleaseCandidate,
+    ) -> MusicBrainzReleaseGraphFetchResult:
+        return MusicBrainzReleaseGraphFetchResult(
+            release=fetched_release,
+            requested_mbid=candidate.mbid,
+            resolved_mbid="6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38",
+            redirected=False,
+        )
+
+    def fake_fetch_candidates_from_recording(
+        recording: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = recording
+        return []
+
+    def fake_fetch_candidates_from_release(
+        release: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release
+        return [
+            cast(
+                "MusicBrainzReleaseCandidate",
+                SimpleNamespace(mbid="6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38"),
+            )
+        ]
+
+    def fake_fetch_candidates_from_release_set(
+        release_set: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release_set
+        return []
+
+    def fake_fetch_candidates_from_artist(artist: object) -> list[MusicBrainzReleaseCandidate]:
+        _ = artist
+        return []
+
+    fake_uow = _FakeUnitOfWork([target_release])
+    fake_engine = _PreparedEngine(target_release)
+
+    def fake_uow_factory() -> ReconciliationUnitOfWork:
+        return cast("ReconciliationUnitOfWork", fake_uow)
+
+    result = reconcile_release_updates(
+        fetch_release_graph=fake_fetch_release_graph,
+        fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release=fake_fetch_candidates_from_release,
+        fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
+        fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
+        unit_of_work_factory=fake_uow_factory,
+        limit=1,
+        source=Provider.MUSICBRAINZ,
+        engine=cast("ReconciliationEngine", fake_engine),
+    )
+
+    assert result.anchor_mismatches == 0
+    assert result.applied_releases == 1
+    assert fake_engine.execute_calls == 1
+    assert (
+        target_release.external_ids_by_namespace[ExternalNamespace.MUSICBRAINZ_RELEASE].value
+        == "6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38"
+    )
+    assert (
+        target_release.release_set.external_ids_by_namespace[
+            ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP
+        ].value
+        == "95f25301-da18-4fe9-9445-8dc453adfe78"
+    )
+
+
+def test_reconcile_release_updates_restores_missing_candidate_anchor_on_mismatch(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    target_release_set = ReleaseSet(title="Somersaults")
+    target_release = target_release_set.create_release(title="Somersaults")
+
+    resolved_release_set = ReleaseSet(title="Different Release")
+    resolved_release = resolved_release_set.create_release(title="Different Release")
+
+    fetched_release_set = ReleaseSet(title="Somersaults")
+    fetched_release_set.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP,
+        "95f25301-da18-4fe9-9445-8dc453adfe78",
+        provider=Provider.MUSICBRAINZ,
+    )
+    fetched_release = fetched_release_set.create_release(title="Somersaults")
+    fetched_release.add_external_id(
+        ExternalNamespace.MUSICBRAINZ_RELEASE,
+        "6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38",
+        provider=Provider.MUSICBRAINZ,
+    )
+
+    def fake_fetch_release_graph(
+        candidate: MusicBrainzReleaseCandidate,
+    ) -> MusicBrainzReleaseGraphFetchResult:
+        return MusicBrainzReleaseGraphFetchResult(
+            release=fetched_release,
+            requested_mbid=candidate.mbid,
+            resolved_mbid="6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38",
+            redirected=False,
+        )
+
+    def fake_fetch_candidates_from_recording(
+        recording: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = recording
+        return []
+
+    def fake_fetch_candidates_from_release(
+        release: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release
+        return [
+            cast(
+                "MusicBrainzReleaseCandidate",
+                SimpleNamespace(mbid="6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38"),
+            )
+        ]
+
+    def fake_fetch_candidates_from_release_set(
+        release_set: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release_set
+        return []
+
+    def fake_fetch_candidates_from_artist(artist: object) -> list[MusicBrainzReleaseCandidate]:
+        _ = artist
+        return []
+
+    fake_uow = _FakeUnitOfWork([target_release])
+
+    def fake_uow_factory() -> ReconciliationUnitOfWork:
+        return cast("ReconciliationUnitOfWork", fake_uow)
+
+    caplog.set_level("INFO")
+    result = reconcile_release_updates(
+        fetch_release_graph=fake_fetch_release_graph,
+        fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release=fake_fetch_candidates_from_release,
+        fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
+        fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
+        unit_of_work_factory=fake_uow_factory,
+        source=Provider.MUSICBRAINZ,
+        engine=cast("ReconciliationEngine", _PreparedEngine(resolved_release)),
+    )
+
+    assert result.anchor_mismatches == 1
+    assert result.applied_releases == 0
+    assert ExternalNamespace.MUSICBRAINZ_RELEASE not in target_release.external_ids_by_namespace
+    assert (
+        ExternalNamespace.MUSICBRAINZ_RELEASE_GROUP
+        not in target_release.release_set.external_ids_by_namespace
+    )
+    assert "MusicBrainz anchor mismatch for release Somersaults" in caplog.text
 
 
 def test_reconcile_release_updates_logs_redirect_collision(
@@ -341,6 +541,12 @@ def test_reconcile_release_updates_logs_redirect_collision(
         _ = recording
         return []
 
+    def fake_fetch_candidates_from_release(
+        release: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release
+        return []
+
     def fake_fetch_candidates_from_release_set(
         release_set: object,
     ) -> list[MusicBrainzReleaseCandidate]:
@@ -361,6 +567,7 @@ def test_reconcile_release_updates_logs_redirect_collision(
     result = reconcile_release_updates(
         fetch_release_graph=fake_fetch_release_graph,
         fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release=fake_fetch_candidates_from_release,
         fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
         fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
         unit_of_work_factory=fake_uow_factory,
@@ -398,16 +605,22 @@ def test_reconcile_release_updates_logs_fetch_failures_and_continues(
         _ = recording
         return []
 
-    def fake_fetch_candidates_from_release_set(
-        release_set: object,
+    def fake_fetch_candidates_from_release(
+        release: object,
     ) -> list[MusicBrainzReleaseCandidate]:
-        _ = release_set
+        _ = release
         return [
             cast(
                 "MusicBrainzReleaseCandidate",
                 SimpleNamespace(mbid="6ab3e4d6-0bc3-4162-93db-f1bbee2c0e38"),
             )
         ]
+
+    def fake_fetch_candidates_from_release_set(
+        release_set: object,
+    ) -> list[MusicBrainzReleaseCandidate]:
+        _ = release_set
+        return []
 
     def fake_fetch_candidates_from_artist(artist: object) -> list[MusicBrainzReleaseCandidate]:
         _ = artist
@@ -423,6 +636,7 @@ def test_reconcile_release_updates_logs_fetch_failures_and_continues(
     result = reconcile_release_updates(
         fetch_release_graph=fake_fetch_release_graph,
         fetch_candidates_from_recording=fake_fetch_candidates_from_recording,
+        fetch_candidates_from_release=fake_fetch_candidates_from_release,
         fetch_candidates_from_release_set=fake_fetch_candidates_from_release_set,
         fetch_candidates_from_artist=fake_fetch_candidates_from_artist,
         unit_of_work_factory=fake_uow_factory,

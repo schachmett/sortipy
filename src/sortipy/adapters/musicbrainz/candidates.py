@@ -52,6 +52,7 @@ MusicBrainzReleaseGraphFetcher = Callable[
     [MusicBrainzReleaseCandidate], MusicBrainzReleaseGraphFetchResult
 ]
 MusicBrainzReleaseCandidatesFromRecording = Callable[[Recording], list[MusicBrainzReleaseCandidate]]
+MusicBrainzReleaseCandidatesFromRelease = Callable[[Release], list[MusicBrainzReleaseCandidate]]
 MusicBrainzReleaseCandidatesFromReleaseSet = Callable[
     [ReleaseSet], list[MusicBrainzReleaseCandidate]
 ]
@@ -71,6 +72,7 @@ def resolve_release_candidate(
     entity: Recording | ReleaseSet | Artist | Release,
     *,
     fetch_candidates_from_recording: MusicBrainzReleaseCandidatesFromRecording,
+    fetch_candidates_from_release: MusicBrainzReleaseCandidatesFromRelease,
     fetch_candidates_from_release_set: MusicBrainzReleaseCandidatesFromReleaseSet,
     fetch_candidates_from_artist: MusicBrainzReleaseCandidatesFromArtist,
     policy: MusicBrainzReleaseSelectionPolicy | None = None,
@@ -95,6 +97,8 @@ def resolve_release_candidate(
                 entity,
                 fetch_candidates_from_recording=fetch_candidates_from_recording,
             )
+        if not candidates:
+            candidates = fetch_candidates_from_release(entity)
 
     if not candidates:
         return None
@@ -236,13 +240,14 @@ def _release_candidates_from_recordings(
             )
             aggregate.recording_hits += 1
 
-    return [
-        aggregate.candidate
-        for aggregate in sorted(
-            aggregated_by_mbid.values(),
-            key=lambda aggregate: _release_candidate_sort_key(release, aggregate),
-        )
-    ]
+    ranked_aggregates = sorted(
+        aggregated_by_mbid.values(),
+        key=lambda aggregate: _release_candidate_sort_key(release, aggregate),
+    )
+    if not _has_confident_recording_candidate(release, ranked_aggregates):
+        return []
+
+    return [aggregate.candidate for aggregate in ranked_aggregates]
 
 
 def _release_candidate_sort_key(
@@ -256,6 +261,35 @@ def _release_candidate_sort_key(
         -_track_count_match_score(len(release.tracks), candidate.track_count),
         candidate.title or "",
         candidate.mbid,
+    )
+
+
+def _has_confident_recording_candidate(
+    release: Release,
+    ranked_aggregates: list[_AggregatedReleaseCandidate],
+) -> bool:
+    if not ranked_aggregates:
+        return False
+
+    top_score = _recording_candidate_confidence_key(release, ranked_aggregates[0])
+    if top_score[0] <= 0:
+        return False
+
+    if len(ranked_aggregates) == 1:
+        return True
+
+    runner_up_score = _recording_candidate_confidence_key(release, ranked_aggregates[1])
+    return top_score > runner_up_score
+
+
+def _recording_candidate_confidence_key(
+    release: Release,
+    aggregate: _AggregatedReleaseCandidate,
+) -> tuple[int, int, int]:
+    return (
+        _title_match_score(release.title, aggregate.candidate.title),
+        aggregate.recording_hits,
+        _track_count_match_score(len(release.tracks), aggregate.candidate.track_count),
     )
 
 
